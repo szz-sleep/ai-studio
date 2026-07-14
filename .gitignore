@@ -1,8 +1,5 @@
 node_modules/
-dist/win-unpacked/
-dist/*.blockmap
-dist/builder-debug.yml
-dist/latest.yml
+dist/
 .DS_Store
 *.bak
 *.log
