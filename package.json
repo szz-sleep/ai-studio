@@ -1,11 +1,11 @@
 {
-  "name": "opc-studio",
+  "name": "ai-studio",
   "version": "1.0.6",
-  "description": "OPC Studio - AI创作工坊",
+  "description": "AI Studio - AI创作工坊",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "pack:win": "electron-packager . OPC-Studio --platform=win32 --arch=x64 --out=dist --overwrite --icon=assets/icon --asar=false",
+    "pack:win": "electron-packager . AI-Studio --platform=win32 --arch=x64 --out=dist --overwrite --icon=assets/icon --asar=false",
     "build:win": "electron-builder --win --x64 --config.win.target=portable --publish=never"
   },
   "author": "湖北生而为一科技有限公司",
@@ -16,8 +16,9 @@
     "electron-packager": "^17.0.0"
   },
   "build": {
-    "appId": "com.zhrccp.opcstudio",
-    "productName": "OPC Studio",
+    "appId": "com.zhrccp.aistudio",
+    "productName": "AI Studio",
+    "executableName": "AIStudio",
     "directories": {
       "output": "dist"
     },
@@ -42,10 +43,10 @@
       ],
       "icon": "assets/icon.png",
       "category": "public.app-category.productivity",
-      "artifactName": "OPC Studio-${version}-${arch}.${ext}"
+      "artifactName": "AI Studio-${version}-${arch}.${ext}"
     },
     "dmg": {
-      "title": "OPC Studio",
+      "title": "AI Studio",
       "contents": [
         { "x": 130, "y": 220 },
         { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
@@ -68,7 +69,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "OPC Studio",
+      "shortcutName": "AI Studio",
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico",
       "installerHeaderIcon": "assets/icon.ico",
