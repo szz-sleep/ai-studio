@@ -1,0 +1,46 @@
+{
+  "name": "opc-studio",
+  "version": "1.0.6",
+  "description": "OPC Studio - AI创作工坊",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack:win": "electron-packager . OPC-Studio --platform=win32 --arch=x64 --out=dist --overwrite --icon=assets/icon --asar=false",
+    "build:win": "electron-builder --win --x64 --config.win.target=portable --publish=never"
+  },
+  "author": "湖北生而为一科技有限公司",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.0.0",
+    "electron-packager": "^17.0.0"
+  },
+  "build": {
+    "appId": "com.zhrccp.opcstudio",
+    "productName": "OPC Studio",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "css/**/*",
+      "js/**/*",
+      "assets/**/*",
+      "models.json",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.png"
+    }
+  }
+}

@@ -1,0 +1,391 @@
+{
+  "version": 1,
+  "description": "OPC Studio 模型配置文件，手动维护模型分类和显示名称",
+  "rules": [
+    {
+      "match": "seedream",
+      "type": "image",
+      "label": "豆包 Seedream",
+      "tags": [
+        "图片生成",
+        "图生图"
+      ]
+    },
+    {
+      "match": "qwen-image",
+      "type": "image",
+      "label": "通义万相",
+      "tags": [
+        "图片生成",
+        "图生图"
+      ]
+    },
+    {
+      "match": "hy-image",
+      "type": "image",
+      "label": "混元图片",
+      "tags": [
+        "图片生成",
+        "图生图"
+      ]
+    },
+    {
+      "match": "agnes-image",
+      "type": "image",
+      "label": "Agnes Image 2.1 Flash",
+      "tags": [
+        "图片生成",
+        "图生图"
+      ]
+    },
+    {
+      "match": "gpt-4o",
+      "type": "text",
+      "label": "GPT-4o",
+      "tags": [
+        "文本对话",
+        "OpenAI"
+      ]
+    },
+    {
+      "match": "gpt-4",
+      "type": "text",
+      "label": "GPT-4",
+      "tags": [
+        "文本对话",
+        "OpenAI"
+      ]
+    },
+    {
+      "match": "gpt-3.5",
+      "type": "text",
+      "label": "GPT-3.5",
+      "tags": [
+        "文本对话",
+        "OpenAI"
+      ]
+    },
+    {
+      "match": "deepseek",
+      "type": "text",
+      "label": "DeepSeek",
+      "tags": [
+        "文本对话",
+        "深度求索"
+      ]
+    },
+    {
+      "match": "claude",
+      "type": "text",
+      "label": "Claude",
+      "tags": [
+        "文本对话",
+        "Anthropic"
+      ]
+    },
+    {
+      "match": "qwen",
+      "type": "text",
+      "label": "通义千问",
+      "tags": [
+        "文本对话",
+        "阿里"
+      ]
+    },
+    {
+      "match": "glm",
+      "type": "text",
+      "label": "GLM 智谱",
+      "tags": [
+        "文本对话",
+        "智谱"
+      ]
+    },
+    {
+      "match": "ernie-text",
+      "type": "text",
+      "label": "文心一言",
+      "tags": [
+        "文本对话",
+        "百度"
+      ]
+    },
+    {
+      "match": "yi-",
+      "type": "text",
+      "label": "零一万物",
+      "tags": [
+        "文本对话"
+      ]
+    },
+    {
+      "match": "llama",
+      "type": "text",
+      "label": "Llama",
+      "tags": [
+        "文本对话",
+        "Meta"
+      ]
+    },
+    {
+      "match": "mistral",
+      "type": "text",
+      "label": "Mistral",
+      "tags": [
+        "文本对话"
+      ]
+    },
+    {
+      "match": "moonshot",
+      "type": "text",
+      "label": "Kimi",
+      "tags": [
+        "文本对话",
+        "月之暗面"
+      ]
+    },
+    {
+      "match": "spark",
+      "type": "text",
+      "label": "讯飞星火",
+      "tags": [
+        "文本对话"
+      ]
+    },
+    {
+      "match": "baichuan",
+      "type": "text",
+      "label": "百川",
+      "tags": [
+        "文本对话"
+      ]
+    },
+    {
+      "match": "chat",
+      "type": "text",
+      "label": "对话模型",
+      "tags": [
+        "文本对话"
+      ]
+    },
+    {
+      "match": "agnes-video",
+      "type": "video",
+      "label": "Agnes Video V2.0",
+      "tags": [
+        "视频生成",
+        "文生视频",
+        "图生视频"
+      ]
+    },
+    {
+      "match": "ernie-image",
+      "type": "image",
+      "label": "文心一格",
+      "tags": [
+        "图片生成",
+        "图生图"
+      ]
+    },
+    {
+      "match": "wanx",
+      "type": "image",
+      "label": "通义万相",
+      "tags": [
+        "图片生成"
+      ]
+    },
+    {
+      "match": "wan2.7-image",
+      "type": "image",
+      "label": "Wan 2.7 Image",
+      "tags": [
+        "图片生成",
+        "图生图"
+      ]
+    },
+    {
+      "match": "flux",
+      "type": "image",
+      "label": "Flux",
+      "tags": [
+        "图片生成",
+        "艺术风格"
+      ]
+    },
+    {
+      "match": "sdxl",
+      "type": "image",
+      "label": "SDXL",
+      "tags": [
+        "图片生成",
+        "高精度"
+      ]
+    },
+    {
+      "match": "dalle",
+      "type": "image",
+      "label": "DALL-E",
+      "tags": [
+        "图片生成",
+        "OpenAI"
+      ]
+    },
+    {
+      "match": "imagen",
+      "type": "image",
+      "label": "Imagen",
+      "tags": [
+        "图片生成",
+        "Google"
+      ]
+    },
+    {
+      "match": "midjourney",
+      "type": "image",
+      "label": "Midjourney",
+      "tags": [
+        "图片生成",
+        "艺术风格"
+      ]
+    },
+    {
+      "match": "stable",
+      "type": "image",
+      "label": "Stable Diffusion",
+      "tags": [
+        "图片生成",
+        "开源"
+      ]
+    },
+    {
+      "match": "wan-2.1",
+      "type": "video",
+      "label": "Wan 2.1",
+      "tags": [
+        "视频生成",
+        "文生视频",
+        "图生视频"
+      ]
+    },
+    {
+      "match": "cogvideo",
+      "type": "video",
+      "label": "CogVideo",
+      "tags": [
+        "视频生成",
+        "文生视频",
+        "图生视频"
+      ]
+    },
+    {
+      "match": "kling",
+      "type": "video",
+      "label": "Kling 可灵",
+      "tags": [
+        "视频生成",
+        "快手"
+      ]
+    },
+    {
+      "match": "pika",
+      "type": "video",
+      "label": "Pika",
+      "tags": [
+        "视频生成",
+        "AI视频"
+      ]
+    },
+    {
+      "match": "runway",
+      "type": "video",
+      "label": "Runway",
+      "tags": [
+        "视频生成",
+        "AI视频"
+      ]
+    },
+    {
+      "match": "sora",
+      "type": "video",
+      "label": "Sora",
+      "tags": [
+        "视频生成",
+        "OpenAI"
+      ]
+    },
+    {
+      "match": "ltx-video",
+      "type": "video",
+      "label": "LTX Video",
+      "tags": [
+        "视频生成"
+      ]
+    },
+    {
+      "match": "mochi",
+      "type": "video",
+      "label": "Mochi",
+      "tags": [
+        "视频生成"
+      ]
+    },
+    {
+      "match": "hunyuan-video",
+      "type": "video",
+      "label": "腾讯混元视频",
+      "tags": [
+        "视频生成",
+        "腾讯"
+      ]
+    },
+    {
+      "match": "wan-video",
+      "type": "video",
+      "label": "Wan Video",
+      "tags": [
+        "视频生成"
+      ]
+    },
+    {
+      "match": "cogvideox",
+      "type": "video",
+      "label": "CogVideoX",
+      "tags": [
+        "视频生成",
+        "图生视频"
+      ]
+    },
+    {
+      "match": "minimax",
+      "type": "video",
+      "label": "MiniMax 海螺",
+      "tags": [
+        "视频生成",
+        "图生视频"
+      ]
+    },
+    {
+      "match": "linkdiff",
+      "type": "video",
+      "label": "LinkDiff",
+      "tags": [
+        "视频生成"
+      ]
+    }
+  ],
+  "fallback": {
+    "image": {
+      "description": "未能识别的图片模型统一归入此类",
+      "tags": [
+        "图片生成"
+      ]
+    },
+    "video": {
+      "description": "未能识别的视频模型统一归入此类",
+      "tags": [
+        "视频生成"
+      ]
+    }
+  }
+}

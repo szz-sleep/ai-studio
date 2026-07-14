@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OPC Studio - AI创作工坊</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+    <!-- 顶部导航 -->
+    <header class="top-bar">
+        <div class="logo">
+            <span class="logo-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>
+            <span class="logo-text">OPC Studio</span>
+            <span class="logo-sub">湖北生而为一科技有限公司</span>
+        </div>
+        <div class="top-right">
+            <span id="keyStatus" class="key-status unset">未设置API Key</span>
+            <button id="settingsBtn" class="btn-icon" title="设置" onclick="document.getElementById('settingsModal').classList.remove('hidden')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+            <button id="themeToggleBtnTop" class="btn-icon" title="切换深色/浅色模式">
+                <svg class="theme-icon-dark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                <svg class="theme-icon-light" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            </button>
+        </div>
+    </header>
+
+    <!-- 设置弹窗 -->
+    <div id="settingsModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>设置</h2>
+                <button class="modal-close" onclick="document.getElementById('settingsModal').classList.add('hidden')">×</button>
+            </div>
+            <div class="modal-body">
+                <!-- 平台选择 -->
+                <div class="form-group">
+                    <label>API 平台</label>
+                    <select id="platformSelect" onchange="App.onPlatformChange()">
+                       <option value="opc">OPC Cloud</option>
+                       <option value="neutoken">牛头词元</option>
+                        <option value="agnes">Agnes AI</option>
+                       <option value="custom">自定义平台</option>
+                   </select>
+                   <p class="form-hint" id="platformHint">选择平台后，API 地址会自动填入默认值，你也可以手动修改。</p>
+                </div>
+
+                <!-- API Key -->
+                <div class="form-group">
+                    <label>API Key</label>
+                    <div class="api-key-wrapper">
+                        <input type="password" id="apiKeyInput" placeholder="请输入当前平台的 API Key" autocomplete="off">
+                        <button type="button" class="eye-toggle" data-target="apiKeyInput" title="显示/隐藏 Key"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                    </div>
+                    <p class="form-hint">每个平台的 Key 独立保存，切换平台时无需重复输入。</p>
+                </div>
+
+                <!-- API 地址：预设平台只读，自定义平台可编辑 -->
+                <div class="form-group" id="baseUrlGroup">
+                    <label id="baseUrlLabel">API 地址</label>
+                    <input type="text" id="apiBaseUrlDisplay" placeholder="选择平台后自动填入，可修改">
+                    <p class="form-hint" id="baseUrlHint"></p>
+                </div>
+
+                <!-- API 标准：仅自定义平台显示 -->
+                <div class="form-group" id="apiStandardGroup" style="display:none;">
+                    <label>API 标准</label>
+                    <select id="apiStandardSelect">
+                        <option value="openai">OpenAI 标准（Authorization: Bearer）</option>
+                        <option value="anthropic">Anthropic 标准（x-api-key）</option>
+                    </select>
+                    <div id="anthropicVersionGroup" style="display:none;margin-top:8px;">
+                        <label style="font-size:12px;">Anthropic 版本</label>
+                        <input type="text" id="anthropicVersionInput" value="2023-06-01" placeholder="2023-06-01" style="font-size:13px;">
+                    </div>
+                    <p class="form-hint">选择 API 提供商兼容的标准。大多数平台使用 OpenAI 标准。</p>
+                </div>
+
+                <!-- 上传限制 -->
+                <div class="form-group">
+                    <label>上传单图大小限制 (MB)</label>
+                    <input type="number" id="uploadSizeInput" min="5" max="500" placeholder="50">
+                    <p class="form-hint">建议5~500MB。当前限制：<span id="uploadSizeDisplay">50</span>MB</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary footer-btn" id="clearApiKeyBtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> 清除 Key</button>
+                <button class="btn-secondary footer-btn" id="resetDefaultsBtn">恢复默认</button>
+                <button class="btn-secondary footer-btn" onclick="document.getElementById('settingsModal').classList.add('hidden')">取消</button>
+                <button class="btn-primary footer-btn" id="saveSettingsBtn">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 首次引导 -->
+    <div id="onboardingModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>欢迎使用 OPC Studio</h2>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>选择 API 平台</label>
+                    <select id="onboardingPlatformSelect">
+                       <option value="opc">OPC Cloud</option>
+                       <option value="neutoken">牛头词元</option>
+                        <option value="agnes">Agnes AI</option>
+                       <option value="custom">自定义平台</option>
+                   </select>
+               </div>
+               <div class="form-group">
+                   <label>API Key</label>
+                   <div class="api-key-wrapper">
+                       <input type="password" id="onboardingKeyInput" placeholder="请输入所选平台的 API Key" autocomplete="off">
+                       <button type="button" class="eye-toggle" data-target="onboardingKeyInput" title="显示/隐藏 Key"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                   </div>
+                    <p class="form-hint" id="onboardingHint">OPC Cloud 平台，填入 API Key 即可开始使用。</p>
+                </div>
+                <div class="form-group" id="onboardingCustomUrlGroup" style="display:none;">
+                    <label>API 地址</label>
+                    <input type="text" id="onboardingCustomUrl" placeholder="例如 https://your-api.com/v1">
+                    <p class="form-hint">选“自定义平台”时填写，认证方式为 Authorization: Bearer {Key}</p>
+                </div>
+
+                <div class="form-group" id="onboardingApiStandardGroup" style="display:none;">
+                    <label>API 标准</label>
+                    <select id="onboardingApiStandard">
+                        <option value="openai">OpenAI 标准（Bearer Key）</option>
+                        <option value="anthropic">Anthropic 标准（x-api-key）</option>
+                    </select>
+                    <p class="form-hint">大多数平台使用 OpenAI 标准。</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-primary" id="onboardingSaveBtn">开始创作</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 图片/视频预览灯箱 -->
+    <div id="previewOverlay" class="preview-overlay hidden" onclick="UI.closePreview()">
+        <div class="preview-content" onclick="event.stopPropagation()">
+            <button class="preview-close" onclick="UI.closePreview()">×</button>
+            <img id="previewImage" class="preview-media hidden" alt="">
+            <video id="previewVideo" class="preview-media hidden" controls></video>
+            <div id="previewInfo" class="preview-info" style="display:none;"></div>
+            <div id="previewDotMenu" class="preview-dot-menu hidden" onclick="UI.downloadPreview()" title="下载">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </div>
+        </div>
+    </div>
+
+    <!-- 主内容区 -->
+    <main class="main-content">
+        <!-- Tab 切换 -->
+        <nav class="tab-bar">
+            <button class="tab-btn active" data-tab="story"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg> 故事创作</button>
+            <button class="tab-btn" data-tab="t2i"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> 文生图</button>
+            <button class="tab-btn" data-tab="i2i"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg> 图生图</button>
+            <button class="tab-btn" data-tab="t2v"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg> 文生视频</button>
+            <button class="tab-btn" data-tab="i2v"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg> 图生视频</button>
+        </nav>
+
+        
+        <!-- ===== 故事创作面板 ===== -->
+        <section id="tab-story" class="tab-panel active">
+            <div class="story-creation-container">
+                <!-- 左侧栏：记录列表 -->
+                <aside class="story-sidebar">
+                    <div class="story-sidebar-header">
+                        <span class="story-sidebar-title">历史记录</span>
+                        <button class="story-new-btn" id="storyNewBtn" title="新建故事">＋</button>
+                    </div>
+                    <div class="story-record-list" id="storyRecordList">
+                        <div class="story-record-empty">暂无记录</div>
+                    </div>
+                    <div class="story-sidebar-footer">
+                        <select id="storyModel" class="select-input story-model-select"><option value="">加载中...</option></select>
+                        <button class="theme-toggle-btn" id="themeToggleBtn" title="切换深色/浅色模式">
+                            <svg class="theme-icon-dark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                            <svg class="theme-icon-light" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                        </button>
+                    </div>
+                </aside>
+
+                <!-- 右侧主区域 -->
+                <div class="story-main-area" id="storyMainArea">
+                    <!-- 欢迎占位（无消息时显示） -->
+                    <div class="story-welcome" id="storyWelcome">
+                        <div class="story-welcome-icon">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                        </div>
+                        <h2 class="story-welcome-title">开始你的故事创作</h2>
+                        <p class="story-welcome-desc">输入你的想法或要求，AI 会帮你写出精彩的故事</p>
+                    </div>
+
+                    <!-- 对话消息列表 -->
+                    <div class="story-chat" id="storyChat" style="display:none;">
+                        <!-- 消息气泡动态插入 -->
+                    </div>
+
+                    <!-- 胶囊输入框 -->
+                    <div class="story-input-pill" id="storyInputPill">
+                        <!-- 工具栏（右上角，对话开始后显示） -->
+                        <div class="story-editor-tools" id="storyTools" style="display:none;">
+                            <span class="story-word-count" id="storyWordCount">0 字</span>
+                            <button id="storyCopyBtn" title="复制全文" class="story-tool-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+                            <button id="storyDownloadBtn" title="下载文件" class="story-tool-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+                            <button id="storyClearBtn" title="清空" class="story-tool-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+                        </div>
+                        <div class="story-pill-row">
+                            <!-- 上传按钮 -->
+                            <div class="story-doc-upload-inline" id="storyDocUpload" title="上传参考文档">
+                                <span class="doc-upload-icon">＋</span>
+                            </div>
+                            <input type="file" id="storyDocInput" accept=".txt,.md,.csv,.json,.log" multiple style="display:none;">
+                            <!-- 已上传文档列表 -->
+                            <div class="doc-file-list-inline" id="storyDocList"></div>
+                            <!-- 单一输入区 -->
+                            <div class="story-input-area">
+                                <div class="mode-panel active" data-mode="generate">
+                                    <textarea id="storyIdeaInput" class="prompt-input story-bottom-input" rows="1" placeholder="输入你的要求，AI 会帮你写出故事..."></textarea>
+                                </div>
+                                <div class="mode-panel" data-mode="edit" style="display:none;">
+                                    <textarea id="storyEditPrompt" class="prompt-input story-bottom-input" rows="1" style="display:none;"></textarea>
+                                </div>
+                                <div class="mode-panel" data-mode="expand" style="display:none;">
+                                    <textarea id="storyExpandPrompt" class="prompt-input story-bottom-input" rows="1" style="display:none;"></textarea>
+                                </div>
+                            </div>
+                            <!-- 发送按钮 -->
+                            <button class="story-send-btn" id="storyGenerateBtn" title="发送"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+                            <button class="story-send-btn" id="storyEditBtn" data-mode="edit" title="修改" style="display:none;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+                            <button class="story-send-btn" id="storyExpandBtn" data-mode="expand" title="扩写" style="display:none;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== 文生图面板 ===== -->
+        <section id="tab-t2i" class="tab-panel">
+            <div class="create-layout">
+                <div class="create-left">
+                    <div class="form-group">
+                        <label>描述你想要的画面</label>
+                        <textarea id="t2iPrompt" class="prompt-input" rows="5" placeholder="例如：一只在夕阳下奔跑的金毛犬，电影质感，暖色调..."></textarea>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group flex-1">
+                            <label>模型</label>
+                            <select id="t2iModel" class="select-input"><option value="">加载中...</option></select>
+                        </div>
+                        <div class="form-group">
+                            <label>生成数量</label>
+                            <select id="t2iCount" class="select-input">
+                                <option value="1" selected>1张</option>
+                                <option value="2">2张</option>
+                                <option value="4">4张</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>画面比例</label>
+                        <div class="ratio-buttons" id="t2iRatio">
+                            <button class="ratio-btn active" data-ratio="1:1">1:1</button>
+                            <button class="ratio-btn" data-ratio="9:16">9:16</button>
+                            <button class="ratio-btn" data-ratio="16:9">16:9</button>
+                            <button class="ratio-btn" data-ratio="21:9">21:9</button>
+                            <button class="ratio-btn" data-ratio="3:4">3:4</button>
+                            <button class="ratio-btn" data-ratio="4:3">4:3</button>
+                            <button class="ratio-btn" data-ratio="2:3">2:3</button>
+                        </div>
+                        <div class="form-group" style="margin-top:6px;">
+                            <label>画质</label>
+                            <div class="quality-buttons" id="t2iQualitySelector">
+                                <button class="quality-btn active" data-quality="1080">1080</button>
+                                <button class="quality-btn" data-quality="2K">2K</button>
+                                <button class="quality-btn" data-quality="4K">4K</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>高级设置</label>
+                        <details class="advanced-settings">
+                            <summary>展开/收起</summary>
+                            <div class="form-row" style="margin-top:8px;">
+                                <div class="form-group flex-1">
+                                    <label>质量</label>
+                                    <select id="t2iQuality" class="select-input">
+                                        <option value="standard">标准</option>
+                                        <option value="hd">高清</option>
+                                    </select>
+                                </div>
+                                <div class="form-group flex-1">
+                                    <label>风格</label>
+                                    <select id="t2iStyle" class="select-input">
+                                        <option value="">默认</option>
+                                        <option value="vivid">鲜明</option>
+                                        <option value="natural">自然</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </details>
+                    </div>
+                    <button class="btn-generate" id="t2iGenerateBtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> 生成图片</button>
+                </div>
+                <div class="create-right">
+                    <div class="result-area" id="t2iResult">
+                        <div class="result-placeholder">生成的图片将显示在这里</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== 图生图面板 ===== -->
+        <section id="tab-i2i" class="tab-panel">
+            <div class="create-layout">
+                <div class="create-left">
+                    <div class="form-group">
+                        <label>上传参考图片（最多9张）</label>
+                        <div class="upload-grid" id="i2iUploadGrid"></div>
+                        <input type="file" id="i2iFileInput" accept="image/*" hidden multiple>
+                        <p class="upload-hint" style="margin-top:6px;color:#777;font-size:12px;">点击空位上传，悬停可删除 · 支持 JPG/PNG/WebP，自动命名图片1、图片2…</p>
+                    </div>
+                    <div class="form-group">
+                        <label>描述修改内容</label>
+                        <textarea id="i2iPrompt" class="prompt-input" rows="4" placeholder="描述你希望如何修改图片，例如：将背景替换为海滩日落，人物穿红色连衣裙..."></textarea>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group flex-1">
+                            <label>模型</label>
+                            <select id="i2iModel" class="select-input"><option value="">加载中...</option></select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>画面比例</label>
+                        <div class="ratio-buttons" id="i2iRatio">
+                            <button class="ratio-btn active" data-ratio="1:1">1:1</button>
+                            <button class="ratio-btn" data-ratio="9:16">9:16</button>
+                            <button class="ratio-btn" data-ratio="16:9">16:9</button>
+                            <button class="ratio-btn" data-ratio="21:9">21:9</button>
+                            <button class="ratio-btn" data-ratio="3:4">3:4</button>
+                            <button class="ratio-btn" data-ratio="4:3">4:3</button>
+                            <button class="ratio-btn" data-ratio="2:3">2:3</button>
+                        </div>
+                        <div class="form-group" style="margin-top:6px;">
+                            <label>画质</label>
+                            <div class="quality-buttons" id="i2iQualitySelector">
+                                <button class="quality-btn active" data-quality="1080">1080</button>
+                                <button class="quality-btn" data-quality="2K">2K</button>
+                                <button class="quality-btn" data-quality="4K">4K</button>
+                            </div>
+                        </div>
+                    </div>
+                    <button class="btn-generate" id="i2iGenerateBtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/></svg> 图生图</button>
+                </div>
+                <div class="create-right">
+                    <div class="result-area" id="i2iResult">
+                        <div class="result-placeholder">图生图的结果将显示在这里</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== 文生视频面板 ===== -->
+        <section id="tab-t2v" class="tab-panel">
+            <div class="create-layout">
+                <div class="create-left">
+                    <div class="form-group">
+                        <label>描述你想要的视频</label>
+                        <textarea id="t2vPrompt" class="prompt-input" rows="5" placeholder="例如：城市夜景延时摄影，车流如织，霓虹灯闪烁..."></textarea>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group flex-1">
+                            <label>模型</label>
+                            <select id="t2vModel" class="select-input"><option value="">加载中...</option></select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>画面比例</label>
+                        <div class="ratio-buttons" id="t2vRatio">
+                            <button class="ratio-btn active" data-w="1280" data-h="720" data-ratio="16:9">16:9</button>
+                            <button class="ratio-btn" data-w="720" data-h="1280" data-ratio="9:16">9:16</button>
+                            <button class="ratio-btn" data-w="1024" data-h="1024" data-ratio="1:1">1:1</button>
+                            <button class="ratio-btn" data-w="1680" data-h="720" data-ratio="21:9">21:9</button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>视频时长（秒）</label>
+                        <div class="ratio-buttons" id="t2vDuration">
+                            <button class="ratio-btn active" data-duration="4">4秒</button>
+                            <button class="ratio-btn" data-duration="7">7秒</button>
+                            <button class="ratio-btn" data-duration="10">10秒</button>
+                            <button class="ratio-btn" data-duration="12">12秒</button>
+                            <button class="ratio-btn" data-duration="15">15秒</button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>高级设置</label>
+                        <details class="advanced-settings">
+                            <summary>展开/收起</summary>
+                            <div class="form-row" style="margin-top:8px;">
+                                <div class="form-group flex-1">
+                                    <label>帧率 (FPS)</label>
+                                    <select id="t2vFps" class="select-input">
+                                        <option value="24">24</option>
+                                        <option value="30" selected>30</option>
+                                        <option value="60">60</option>
+                                    </select>
+                                </div>
+                                <div class="form-group flex-1">
+                                    <label>随机种子</label>
+                                    <input type="number" id="t2vSeed" class="select-input" placeholder="留空则随机">
+                                </div>
+                            </div>
+                        </details>
+                    </div>
+                    <button class="btn-generate" id="t2vGenerateBtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg> 生成视频</button>
+                </div>
+                <div class="create-right">
+                    <div class="result-area" id="t2vResult">
+                        <div class="result-placeholder">生成的视频将显示在这里</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+            <!-- ===== 图生视频面板 ===== -->
+        <section id="tab-i2v" class="tab-panel">
+            <div class="create-layout">
+                <div class="create-left">
+                    <div class="form-group">
+                        <label>上传图片（最多9张）</label>
+                        <div class="upload-grid" id="i2vUploadGrid"></div>
+                        <input type="file" id="i2vFileInput" accept="image/*" hidden multiple>
+                        <p class="upload-hint" style="margin-top:6px;color:#777;font-size:12px;">点击空位上传，悬停可删除 · 支持 JPG/PNG/WebP</p>
+                    </div>
+                    <div class="form-group">
+                        <label>描述视频内容（可选）</label>
+                        <textarea id="i2vPrompt" class="prompt-input" rows="3" placeholder="描述你希望图片如何动起来..."></textarea>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group flex-1">
+                            <label>模型</label>
+                            <select id="i2vModel" class="select-input"><option value="">加载中...</option></select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>画面比例</label>
+                        <div class="ratio-buttons" id="i2vRatio">
+                            <button class="ratio-btn active" data-w="1280" data-h="720" data-ratio="16:9">16:9</button>
+                            <button class="ratio-btn" data-w="720" data-h="1280" data-ratio="9:16">9:16</button>
+                            <button class="ratio-btn" data-w="1680" data-h="720" data-ratio="21:9">21:9</button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>视频时长（秒）</label>
+                        <div class="ratio-buttons" id="i2vDuration">
+                            <button class="ratio-btn active" data-duration="4">4秒</button>
+                            <button class="ratio-btn" data-duration="7">7秒</button>
+                            <button class="ratio-btn" data-duration="10">10秒</button>
+                            <button class="ratio-btn" data-duration="12">12秒</button>
+                            <button class="ratio-btn" data-duration="15">15秒</button>
+                        </div>
+                    </div>
+                    <button class="btn-generate" id="i2vGenerateBtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg> 生成视频</button>
+                </div>
+                <div class="create-right">
+                    <div class="result-area" id="i2vResult">
+                        <div class="result-placeholder">生成的视频将显示在这里</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- 历史记录 -->
+    <section class="history-section">
+        <div class="history-header">
+            <h3>历史记录</h3>
+            <button class="btn-text" id="clearHistoryBtn">清空</button>
+        </div>
+        <div class="history-grid" id="historyGrid">
+            <div class="history-empty">暂无记录</div>
+        </div>
+    </section>
+
+    <!-- Toast 提示 -->
+    <div id="toast" class="toast hidden"></div>
+
+    <!-- 加载遮罩（含取消按钮） -->
+    <div id="loadingOverlay" class="loading-overlay hidden">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <p id="loadingText">正在生成中...</p>
+            <button id="cancelBtn" class="btn-cancel hidden">✕ 取消</button>
+        </div>
+    </div>
+
+    <!-- 版本号 -->
+    <div id="appVersion" class="app-version">OPC Studio V1.0.6</div>
+
+    <!-- 运行日志面板 -->
+    <div id="logPanel" class="log-panel" style="display:none;">
+        <div class="log-header">
+            <span class="log-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:-2px;margin-right:4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>运行日志</span>
+            <div class="log-header-actions">
+                <button id="logClearBtn" class="log-btn" title="清空"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+                <button id="logToggleBtn" class="log-btn" title="最小化">➖</button>
+            </div>
+        </div>
+        <div id="logBody" class="log-body">
+            <div class="log-empty">暂无日志，开始操作后将自动记录</div>
+        </div>
+    </div>
+
+    <script src="js/config.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/image.js"></script>
+    <script src="js/uploader.js"></script>
+    <script src="js/video.js"></script>
+    <script src="js/history.js"></script>
+    <script src="js/redraw.js"></script>
+    <script src="js/story.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
