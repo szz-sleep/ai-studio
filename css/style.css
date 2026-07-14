@@ -1397,56 +1397,148 @@ select.select-input option { background: var(--bg-surface); }
 .mode-tab { display: none; }
 
 /* 上传按钮 */
-.story-doc-upload-inline {
+/* 文档上传虚线框 */
+.story-doc-upload-zone {
+    flex-shrink: 0;
+    width: 80px;
+    height: 80px;
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    overflow: hidden;
+}
+.story-doc-upload-zone:hover {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+}
+.story-doc-upload-zone.drag-over {
+    border-color: var(--accent);
+    background: var(--accent-soft-hover);
+    transform: scale(1.02);
+}
+.doc-zone-thumbs {
+    width: 100%;
+    height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 38px;
-    height: 38px;
-    border-radius: 50%;
-    cursor: pointer;
-    flex-shrink: 0;
-    transition: all var(--transition);
+    position: relative;
+}
+.doc-zone-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
     color: var(--text-muted);
 }
-.story-doc-upload-inline:hover {
-    background: var(--bg-hover);
-    color: var(--text-secondary);
-}
-.story-doc-upload-inline.drag-over {
-    background: var(--accent-soft-hover);
-    color: var(--accent-hover);
-}
-.doc-upload-icon { font-size: 20px; font-weight: 300; line-height: 1; }
+.doc-zone-icon { font-size: 28px; font-weight: 300; line-height: 1; }
+.doc-zone-text { font-size: 11px; }
 
-/* 文档列表（浮层在输入框上方） */
-.doc-file-list-inline {
+/* 有文件时隐藏占位文字 */
+.doc-zone-thumbs.has-files .doc-zone-placeholder { display: none; }
+
+/* 叠层容器：居中定位子元素 */
+.doc-zone-thumbs.has-files {
+    justify-content: center;
+    align-items: center;
+}
+
+/* 文件缩略图叠层 */
+.doc-thumb-item {
     position: absolute;
-    bottom: 100%;
-    left: 0;
-    right: 0;
-    margin-bottom: 4px;
+    width: 48px;
+    height: 48px;
     display: flex;
     align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
-    padding: 4px 0;
+    justify-content: center;
+    font-size: 22px;
+    background: var(--bg-surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: var(--shadow-sm);
+    left: 50%;
+    top: 50%;
 }
-.doc-file-item {
-    display: inline-flex;
+/* 叠层偏移（相对于居中位置） */
+.doc-thumb-item:nth-child(1) { transform: translate(calc(-50% - 14px), calc(-50% - 12px)) rotate(-6deg); z-index: 5; }
+.doc-thumb-item:nth-child(2) { transform: translate(calc(-50% + 12px), calc(-50% - 8px)) rotate(4deg); z-index: 4; }
+.doc-thumb-item:nth-child(3) { transform: translate(calc(-50% - 10px), calc(-50% + 10px)) rotate(-3deg); z-index: 3; }
+.doc-thumb-item:nth-child(4) { transform: translate(calc(-50% + 14px), calc(-50% + 6px)) rotate(5deg); z-index: 2; }
+.doc-thumb-item:nth-child(5) { transform: translate(-50%, -50%) rotate(0deg); z-index: 1; }
+
+/* 缩略图内图片 */
+.doc-thumb-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 6px;
+}
+/* 文本预览 */
+.doc-thumb-text {
+    padding: 4px;
+    font-size: 6px;
+    line-height: 1.3;
+    color: var(--text-muted);
+    overflow: hidden;
+    word-break: break-all;
+}
+/* 系统文件图标 */
+.doc-thumb-system {
+    font-size: 24px;
+}
+.doc-thumb-ext {
+    font-size: 8px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-top: 2px;
+}
+
+/* 超过5个的+计数 */
+.doc-thumb-more {
+    position: absolute;
+    bottom: 4px;
+    right: 4px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    display: flex;
     align-items: center;
-    gap: 5px;
-    background: var(--accent-soft-hover);
-    border: 1px solid var(--accent-border);
-    border-radius: 16px;
-    padding: 3px 8px 3px 10px;
+    justify-content: center;
     font-size: 11px;
+    font-weight: 600;
     color: var(--text-secondary);
-    white-space: nowrap;
+    z-index: 10;
 }
+
+/* 删除按钮 */
 .doc-remove {
-    background: none; border: none;
-    color: var(--red);
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+    z-index: 20;
+}
+.doc-remove:hover { 
+    background: var(--red);
+    color: #fff;
+    border-color: var(--red);
+}
     cursor: pointer;
     font-size: 14px;
     padding: 0 2px;

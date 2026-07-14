@@ -69,29 +69,92 @@ const StoryModule = {
     // ===== 文档上传 =====
     handleDocUpload(files) {
         if (!files || !files.length) return;
-        const supported = ['.txt', '.md', '.csv', '.json', '.log'];
+        const supported = ['.txt', '.md', '.csv', '.json', '.log', '.pdf', '.docx', '.doc', '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg'];
         Array.from(files).forEach(file => {
             const ext = '.' + file.name.split('.').pop().toLowerCase();
             if (!supported.includes(ext)) {
                 UI.toast(`不支持的文件类型: ${file.name}`, 'error');
                 return;
             }
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                this._docs.push({ name: file.name, content: e.target.result });
+            const textTypes = ['.txt', '.md', '.csv', '.json', '.log'];
+            const imageTypes = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg'];
+
+            if (imageTypes.includes(ext)) {
+                // 图片：原生缩略图
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const doc = this._docs.find(d => d.name === file.name);
+                    if (doc) {
+                        doc.thumbUrl = e.target.result;
+                        doc.type = 'image';
+                    }
+                    this.renderDocList();
+                };
+                reader.readAsDataURL(file);
+                this._docs.push({ name: file.name, content: '', type: 'image', thumbUrl: '' });
                 this.renderDocList();
                 UI.toast(`已上传: ${file.name}`, 'success');
-            };
-            reader.readAsText(file);
+            } else if (textTypes.includes(ext)) {
+                // 文本文件：显示内容截断作为缩略图
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const doc = this._docs.find(d => d.name === file.name);
+                    if (doc) {
+                        doc.content = e.target.result;
+                        doc.preview = e.target.result.slice(0, 120).replace(/\n/g, ' ');
+                        doc.type = 'text';
+                    }
+                    this.renderDocList();
+                };
+                reader.readAsText(file);
+                this._docs.push({ name: file.name, content: '', type: 'text', preview: '' });
+                this.renderDocList();
+                UI.toast(`已上传: ${file.name}`, 'success');
+            } else {
+                // 其他文件（PDF/DOCX等）：显示系统文件图标
+                const icon = this._systemFileIcon(ext);
+                this._docs.push({ name: file.name, content: '', type: 'system', icon, ext });
+                this.renderDocList();
+                UI.toast(`已上传: ${file.name}`, 'success');
+            }
         });
     },
 
     renderDocList() {
         const list = document.getElementById('storyDocList');
         if (!list) return;
-        list.innerHTML = this._docs.map((d, i) =>
-            `<span class="doc-file-item">${this._escape(d.name)}<button class="doc-remove" data-idx="${i}">×</button></span>`
-        ).join('');
+        const MAX_PREVIEW = 5;
+        const docs = this._docs.slice(0, MAX_PREVIEW);
+        const remaining = this._docs.length - MAX_PREVIEW;
+
+        if (this._docs.length > 0) {
+            list.classList.add('has-files');
+        } else {
+            list.classList.remove('has-files');
+        }
+
+        list.innerHTML = `
+            <span class="doc-zone-placeholder">
+                <span class="doc-zone-icon">＋</span>
+                <span class="doc-zone-text">上传文件</span>
+            </span>
+        ` + docs.map((d, i) => {
+            let inner = '';
+            if (d.type === 'image' && d.thumbUrl) {
+                inner = `<img class="doc-thumb-img" src="${d.thumbUrl}" alt="">`;
+            } else if (d.type === 'text' && d.preview) {
+                inner = `<span class="doc-thumb-text">${this._escape(d.preview)}</span>`;
+            } else if (d.type === 'system') {
+                inner = `<span class="doc-thumb-system">${d.icon}</span><span class="doc-thumb-ext">.${d.ext}</span>`;
+            }
+            return `<div class="doc-thumb-item" data-idx="${i}" title="${this._escape(d.name)}">
+                ${inner}
+                <button class="doc-remove" data-idx="${i}">×</button>
+            </div>`;
+        }).join('');
+        if (remaining > 0) {
+            list.innerHTML += `<div class="doc-thumb-more">+${remaining}</div>`;
+        }
         list.querySelectorAll('.doc-remove').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -99,6 +162,19 @@ const StoryModule = {
                 this.renderDocList();
             });
         });
+    },
+
+    _systemFileIcon(ext) {
+        if (ext.charAt(0) === '.') ext = ext.slice(1);
+        const map = { pdf: '📄', docx: '📘', doc: '📘', pptx: '📊' };
+        return map[ext] || '📄';
+    },
+
+    _docIcon(ext) {
+        if (typeof ext !== 'string') ext = String(ext);
+        if (ext.charAt(0) === '.') ext = ext.slice(1);
+        const icons = { pdf: '📄', docx: '📄', doc: '📄', txt: '📝', md: '📝', csv: '📊', json: '📋', log: '📋' };
+        return icons[ext] || '📎';
     },
 
     buildDocContext() {

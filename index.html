@@ -209,13 +209,16 @@
                             <button id="storyClearBtn" title="清空" class="story-tool-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
                         </div>
                         <div class="story-pill-row">
-                            <!-- 上传按钮 -->
-                            <div class="story-doc-upload-inline" id="storyDocUpload" title="上传参考文档">
-                                <span class="doc-upload-icon">＋</span>
+                            <!-- 文档上传区（虚线框） -->
+                            <div class="story-doc-upload-zone" id="storyDocUpload" title="点击或拖拽上传参考文档">
+                                <div class="doc-zone-thumbs" id="storyDocList">
+                                    <span class="doc-zone-placeholder">
+                                        <span class="doc-zone-icon">＋</span>
+                                        <span class="doc-zone-text">上传文件</span>
+                                    </span>
+                                </div>
                             </div>
-                            <input type="file" id="storyDocInput" accept=".txt,.md,.csv,.json,.log" multiple style="display:none;">
-                            <!-- 已上传文档列表 -->
-                            <div class="doc-file-list-inline" id="storyDocList"></div>
+                            <input type="file" id="storyDocInput" accept=".txt,.md,.csv,.json,.log,.pdf,.docx,.doc,.jpg,.jpeg,.png,.gif,.webp,.svg" multiple style="display:none;">
                             <!-- 单一输入区 -->
                             <div class="story-input-area">
                                 <div class="mode-panel active" data-mode="generate">
