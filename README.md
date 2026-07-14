@@ -85,7 +85,7 @@ AI Studio 是一款全能型 AI 创作工具，集故事创作、图片生成、
 
 点击右上角 ⚙️ 按钮：
 - **API Key**：输入您的 API Key
-- **API 地址**：默认 `https://openai.zhrccp.com`，一般不用改
+- **API 地址**：输入对应 API 地址
 
 ---
 
