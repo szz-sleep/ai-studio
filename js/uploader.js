@@ -1,5 +1,5 @@
 /**
- * OPC Studio - 多图上传工具（9宫格）
+ * AI Studio - 多图上传工具（9宫格）
  * 供 redraw.js (i2i) 和 video.js (i2v) 共用
  */
 

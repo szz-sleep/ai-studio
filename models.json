@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "OPC Studio 模型配置文件，手动维护模型分类和显示名称",
+  "description": "AI Studio 模型配置文件，手动维护模型分类和显示名称",
   "rules": [
     {
       "match": "seedream",

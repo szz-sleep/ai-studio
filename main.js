@@ -11,7 +11,7 @@ function createWindow() {
     minWidth: 960,
     minHeight: 680,
     show: true,
-  title: 'OPC Studio - AI创作工坊',
+  title: 'AI Studio - AI创作工坊',
     icon: path.join(__dirname, 'assets', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -82,13 +82,13 @@ const menuTemplate = [
     label: '帮助',
     submenu: [
       {
-        label: '关于 OPC Studio',
+        label: '关于 AI Studio',
         click: () => {
           const { dialog } = require('electron');
           dialog.showMessageBox(mainWindow, {
             type: 'info',
-            title: '关于 OPC Studio',
-            message: 'OPC Studio - AI创作工坊',
+            title: '关于 AI Studio',
+            message: 'AI Studio - AI创作工坊',
             detail: '版本 V1.0.6\n湖北生而为一科技有限公司'
           });
         }

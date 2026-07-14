@@ -1,5 +1,5 @@
 /**
- * OPC Studio - 主应用入口
+ * AI Studio - 主应用入口
  */
 
 /**
@@ -446,7 +446,7 @@ const App = {
         });
         document.getElementById('logClearBtn').addEventListener('click', () => Logger.clear());
 
-        Logger.info('OPC Studio 已启动');
+        Logger.info('AI Studio 已启动');
         Logger.info('日志面板位于右下角');
 
         // 初始化各模块

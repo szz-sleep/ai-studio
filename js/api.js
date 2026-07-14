@@ -1,5 +1,5 @@
 /**
- * OPC Studio - API 调用封装
+ * AI Studio - API 调用封装
  * 支持多平台：OPC Cloud / OpenAI / Google Gemini / Anthropic / 自定义
  */
 

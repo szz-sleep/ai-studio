@@ -1,5 +1,5 @@
 /**
- * OPC Studio - 配置与 Key 管理
+ * AI Studio - 配置与 Key 管理
  * 支持多平台 API 接入
  */
 

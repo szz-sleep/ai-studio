@@ -1,9 +1,9 @@
 @echo off
 chcp 65001 >nul
-title OPC Studio - AI创作工坊
+title AI Studio - AI创作工坊
 echo.
 echo  ========================================
-echo   OPC Studio - AI创作工坊
+echo   AI Studio - AI创作工坊
 echo   湖北生而为一科技有限公司
 echo  ========================================
 echo.

@@ -1,5 +1,5 @@
 /**
- * OPC Studio - 历史记录模块
+ * AI Studio - 历史记录模块
  */
 
 const History = {
