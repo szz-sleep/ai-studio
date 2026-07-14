@@ -41,9 +41,9 @@
           ]
         }
       ],
-      "icon": "assets/icon.png",
+      "icon": "assets/icon.icns",
       "category": "public.app-category.productivity",
-      "artifactName": "AI Studio-${version}-${arch}.${ext}"
+      "artifactName": "AI-Studio-${version}-${arch}.${ext}"
     },
     "dmg": {
       "title": "AI Studio",
