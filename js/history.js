@@ -28,6 +28,16 @@ const History = {
     },
 
     /**
+     * 删除单条记录
+     */
+    remove(index) {
+        const list = this.getAll();
+        list.splice(index, 1);
+        localStorage.setItem(Config.STORAGE_KEYS.HISTORY, JSON.stringify(list));
+        this.render();
+    },
+
+    /**
      * 清空
      */
     clear() {
@@ -48,7 +58,7 @@ const History = {
         }
 
         grid.innerHTML = '';
-        list.forEach(item => {
+        list.forEach((item, index) => {
             const div = document.createElement('div');
             div.className = 'history-item';
             const timeStr = new Date(item.time).toLocaleString('zh-CN', {
@@ -61,6 +71,7 @@ const History = {
                 div.innerHTML = `
                     <video src="${item.url}" preload="metadata"></video>
                     <span class="history-item-tag">${timeStr}</span>
+                    <button class="history-item-delete" title="删除">×</button>
                 `;
                 div.addEventListener('click', () => {
                     UI.previewVideo(item.url, item.prompt || '视频');
@@ -69,11 +80,21 @@ const History = {
                 div.innerHTML = `
                     <img src="${item.url}" alt="${item.prompt}">
                     <span class="history-item-tag">${timeStr}</span>
+                    <button class="history-item-delete" title="删除">×</button>
                 `;
                 div.addEventListener('click', () => {
                     UI.previewImage(item.url, item.prompt || '图片');
                 });
             }
+
+            // 单个删除按钮
+            const deleteBtn = div.querySelector('.history-item-delete');
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (confirm('确定删除这条历史记录吗？')) {
+                    this.remove(index);
+                }
+            });
 
             grid.appendChild(div);
         });

@@ -222,8 +222,7 @@ const StoryModule = {
     },
 
     _buildMessages(userPrompt) {
-        const systemContent = '你是一位优秀的创意写作大师，擅长用生动的语言和丰富的细节来讲述故事。请根据用户的要求创作故事，注意人物塑造、情节发展和环境描写。直接输出故事正文，不要加标题前缀或多余解释。';
-        const msgs = [{ role: 'system', content: systemContent }];
+        const msgs = [];
 
         // 把之前的对话历史加上（最多最近 6 轮）
         const recent = this._messages.slice(-12);

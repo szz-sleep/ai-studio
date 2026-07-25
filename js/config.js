@@ -34,6 +34,19 @@ const PLATFORM_PRESETS = {
        headerStyle: 'bearer',
        hint: '牛头词元平台，OpenAI 兼容接口，填入 API Key 即可使用。'
    },
+   volcengine: {
+        name: '火山引擎',
+        baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+        apiKeyPattern: '',
+        modelsEndpoint: null,
+        chatEndpoint: '/chat/completions',
+        imageEndpoint: '/images/generations',
+        imageEditEndpoint: '/images/generations',
+        videoEndpoint: '/contents/generations/tasks',
+        videoPollBase: '/contents/generations/tasks',
+        headerStyle: 'bearer',
+        hint: '火山引擎方舟平台(Ark)，使用豆包 Seedance/Seedream 等模型。API Key 从控制台获取。'
+   },
     agnes: {
         name: 'Agnes AI',
         baseUrl: 'https://apihub.agnes-ai.com',
@@ -64,7 +77,7 @@ const PLATFORM_PRESETS = {
 
 const Config = {
     // 默认平台
-    DEFAULT_PLATFORM: 'opc',
+    DEFAULT_PLATFORM: 'volcengine',
 
     // 默认单图上传限制（MB）
     DEFAULT_UPLOAD_SIZE_MB: 50,
@@ -72,12 +85,100 @@ const Config = {
     // localStorage 键名
     STORAGE_KEYS: {
         PLATFORM: 'opc_platform',
-        API_KEYS: 'opc_api_keys',       // JSON: { opc: "sk-xxx", neutoken: "sk-yyy", custom: "sk-zzz" }
-        CUSTOM_BASE_URL: 'opc_custom_base_url', // 自定义平台地址
-        CUSTOM_API_STANDARD: 'opc_custom_api_standard', // 自定义平台 API 标准 (openai/anthropic)
-        CUSTOM_ANTHROPIC_VERSION: 'opc_custom_anthropic_version', // Anthropic API 版本
+        API_KEYS: 'opc_api_keys',       // JSON: { volcengine: "xxx", custom_1: "yyy", ... }
+        CUSTOM_PLATFORMS: 'opc_custom_platforms', // JSON: [{ id, name, baseUrl, apiKey }, ...]
+        CUSTOM_API_STANDARD: 'opc_custom_api_standard',
+        CUSTOM_ANTHROPIC_VERSION: 'opc_custom_anthropic_version',
         HISTORY: 'opc_history',
         UPLOAD_SIZE: 'opc_upload_size_mb'
+    },
+
+    // ===== 自定义平台管理 =====
+
+    /**
+     * 获取所有自定义平台
+     */
+    getCustomPlatforms() {
+        try {
+            return JSON.parse(localStorage.getItem(this.STORAGE_KEYS.CUSTOM_PLATFORMS) || '[]');
+        } catch { return []; }
+    },
+
+    /**
+     * 保存自定义平台列表
+     */
+    _saveCustomPlatforms(list) {
+        localStorage.setItem(this.STORAGE_KEYS.CUSTOM_PLATFORMS, JSON.stringify(list));
+    },
+
+    /**
+     * 添加自定义平台
+     */
+    addCustomPlatform(name, baseUrl, apiKey) {
+        const list = this.getCustomPlatforms();
+        const id = 'custom_' + Date.now();
+        list.push({ id, name: name || '自定义平台', baseUrl: baseUrl.replace(/\/+$/, ''), apiKey: apiKey || '' });
+        this._saveCustomPlatforms(list);
+        // 同时保存 Key 到 API_KEYS
+        const keys = this._getAllKeys();
+        keys[id] = apiKey || '';
+        localStorage.setItem(this.STORAGE_KEYS.API_KEYS, JSON.stringify(keys));
+        return id;
+    },
+
+    /**
+     * 更新自定义平台
+     */
+    updateCustomPlatform(id, updates) {
+        const list = this.getCustomPlatforms();
+        const item = list.find(p => p.id === id);
+        if (!item) return;
+        Object.assign(item, updates);
+        if (updates.baseUrl) item.baseUrl = updates.baseUrl.replace(/\/+$/, '');
+        this._saveCustomPlatforms(list);
+        if (updates.apiKey !== undefined) {
+            const keys = this._getAllKeys();
+            keys[id] = updates.apiKey;
+            localStorage.setItem(this.STORAGE_KEYS.API_KEYS, JSON.stringify(keys));
+        }
+    },
+
+    /**
+     * 删除自定义平台
+     */
+    removeCustomPlatform(id) {
+        const list = this.getCustomPlatforms().filter(p => p.id !== id);
+        this._saveCustomPlatforms(list);
+        // 删除对应的 Key
+        const keys = this._getAllKeys();
+        delete keys[id];
+        localStorage.setItem(this.STORAGE_KEYS.API_KEYS, JSON.stringify(keys));
+        // 如果当前平台就是被删的，切回默认
+        if (this.getPlatform() === id) {
+            this.setPlatform(this.DEFAULT_PLATFORM);
+        }
+    },
+
+    /**
+     * 获取自定义平台配置（含 baseUrl/name）
+     */
+    getCustomPlatformConfig(id) {
+        const list = this.getCustomPlatforms();
+        const item = list.find(p => p.id === id);
+        if (!item) return null;
+        return {
+            name: item.name,
+            baseUrl: item.baseUrl,
+            apiKey: item.apiKey,
+            modelsEndpoint: '/v1/models',
+            chatEndpoint: '/v1/chat/completions',
+            imageEndpoint: '/v1/images/generations',
+            imageEditEndpoint: '/v1/images/edits',
+            videoEndpoint: '/v1/video/generations',
+            videoPollBase: '/v1/video',
+            headerStyle: 'bearer',
+            hint: `${item.name} — OpenAI 兼容接口`
+        };
     },
 
     // ===== 平台管理 =====
@@ -87,14 +188,16 @@ const Config = {
     },
 
     setPlatform(platformId) {
-        if (PLATFORM_PRESETS[platformId]) {
-            localStorage.setItem(this.STORAGE_KEYS.PLATFORM, platformId);
-        }
+        localStorage.setItem(this.STORAGE_KEYS.PLATFORM, platformId);
     },
 
     getCurrentPlatformConfig() {
         const id = this.getPlatform();
-        return PLATFORM_PRESETS[id] || PLATFORM_PRESETS.opc;
+        if (PLATFORM_PRESETS[id]) return PLATFORM_PRESETS[id];
+        // 自定义平台
+        const custom = this.getCustomPlatformConfig(id);
+        if (custom) return custom;
+        return PLATFORM_PRESETS[this.DEFAULT_PLATFORM];
     },
 
     // ===== API Key 管理（多平台） =====
@@ -126,26 +229,28 @@ const Config = {
         return this.getApiKey().length > 0;
     },
 
-    // ===== API 地址（所有平台均可自定义覆盖） =====
+    // ===== API 地址 =====
 
     getBaseUrl() {
-        const platform = this.getPlatform();
-        // 优先读 localStorage 中用户自定义的地址
-        const customUrl = localStorage.getItem(`opc_base_url_${platform}`);
+        const id = this.getPlatform();
+        // 自定义平台：从自定义平台列表中取
+        const custom = this.getCustomPlatformConfig(id);
+        if (custom) return custom.baseUrl;
+        // 预设平台：优先读 localStorage，回退到预设
+        const customUrl = localStorage.getItem(`opc_base_url_${id}`);
         if (customUrl !== null) return customUrl;
-        // 回退到预设默认值
-        return PLATFORM_PRESETS[platform]?.baseUrl || '';
+        return PLATFORM_PRESETS[id]?.baseUrl || '';
     },
 
     setBaseUrl(url, platform) {
         platform = platform || this.getPlatform();
         url = url.replace(/\/+$/, '');
-        localStorage.setItem(`opc_base_url_${platform}`, url);
-    },
-
-    // 兼容旧方法
-    setCustomBaseUrl(url) {
-        this.setBaseUrl(url, 'custom');
+        const custom = this.getCustomPlatformConfig(platform);
+        if (custom) {
+            this.updateCustomPlatform(platform, { baseUrl: url });
+        } else {
+            localStorage.setItem(`opc_base_url_${platform}`, url);
+        }
     },
 
     // 恢复某平台地址为默认预设值
@@ -201,6 +306,10 @@ const Config = {
         Object.values(this.STORAGE_KEYS)
             .filter(k => !skipKeys.includes(k))
             .forEach(k => localStorage.removeItem(k));
+        // 清除所有平台 base URL 缓存
+        Object.keys(localStorage).forEach(k => {
+            if (k.startsWith('opc_base_url_')) localStorage.removeItem(k);
+        });
     },
 
     // ===== UI 更新 =====

@@ -37,50 +37,39 @@
                 <div class="form-group">
                     <label>API 平台</label>
                     <select id="platformSelect" onchange="App.onPlatformChange()">
-                       <option value="opc">OPC Cloud</option>
-                       <option value="neutoken">牛头词元</option>
+                        <option value="opc">OPC Cloud</option>
+                        <option value="neutoken">牛头词元</option>
                         <option value="agnes">Agnes AI</option>
-                       <option value="custom">自定义平台</option>
-                   </select>
-                   <p class="form-hint" id="platformHint">选择平台后，API 地址会自动填入默认值，你也可以手动修改。</p>
+                        <option value="volcengine">火山引擎</option>
+                    </select>
+                </div>
+
+                <!-- 自定义平台列表 -->
+                <div class="form-group" id="customPlatformList">
+                    <div id="customPlatformItems" style="display:flex;flex-direction:column;gap:6px;"></div>
+                    <button type="button" class="btn-secondary" style="margin-top:8px;padding:6px 18px;" onclick="App.openAddPlatformModal()">+ 添加自定义平台</button>
                 </div>
 
                 <!-- API Key -->
-                <div class="form-group">
+                <div class="form-group" id="apiKeyGroup">
                     <label>API Key</label>
                     <div class="api-key-wrapper">
                         <input type="password" id="apiKeyInput" placeholder="请输入当前平台的 API Key" autocomplete="off">
                         <button type="button" class="eye-toggle" data-target="apiKeyInput" title="显示/隐藏 Key"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
                     </div>
-                    <p class="form-hint">每个平台的 Key 独立保存，切换平台时无需重复输入。</p>
                 </div>
 
-                <!-- API 地址：预设平台只读，自定义平台可编辑 -->
+                <!-- API 地址 -->
                 <div class="form-group" id="baseUrlGroup">
                     <label id="baseUrlLabel">API 地址</label>
                     <input type="text" id="apiBaseUrlDisplay" placeholder="选择平台后自动填入，可修改">
-                    <p class="form-hint" id="baseUrlHint"></p>
-                </div>
-
-                <!-- API 标准：仅自定义平台显示 -->
-                <div class="form-group" id="apiStandardGroup" style="display:none;">
-                    <label>API 标准</label>
-                    <select id="apiStandardSelect">
-                        <option value="openai">OpenAI 标准（Authorization: Bearer）</option>
-                        <option value="anthropic">Anthropic 标准（x-api-key）</option>
-                    </select>
-                    <div id="anthropicVersionGroup" style="display:none;margin-top:8px;">
-                        <label style="font-size:12px;">Anthropic 版本</label>
-                        <input type="text" id="anthropicVersionInput" value="2023-06-01" placeholder="2023-06-01" style="font-size:13px;">
-                    </div>
-                    <p class="form-hint">选择 API 提供商兼容的标准。大多数平台使用 OpenAI 标准。</p>
                 </div>
 
                 <!-- 上传限制 -->
                 <div class="form-group">
                     <label>上传单图大小限制 (MB)</label>
                     <input type="number" id="uploadSizeInput" min="5" max="500" placeholder="50">
-                    <p class="form-hint">建议5~500MB。当前限制：<span id="uploadSizeDisplay">50</span>MB</p>
+                    <p class="form-hint" style="display:none;">当前限制：<span id="uploadSizeDisplay">50</span>MB</p>
                 </div>
             </div>
             <div class="modal-footer">
@@ -88,6 +77,63 @@
                 <button class="btn-secondary footer-btn" id="resetDefaultsBtn">恢复默认</button>
                 <button class="btn-secondary footer-btn" onclick="document.getElementById('settingsModal').classList.add('hidden')">取消</button>
                 <button class="btn-primary footer-btn" id="saveSettingsBtn">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 添加自定义平台弹窗 -->
+    <div id="addPlatformModal" class="modal hidden">
+        <div class="modal-content" style="max-width:440px;">
+            <div class="modal-header">
+                <h2>添加自定义平台</h2>
+                <button class="modal-close" onclick="document.getElementById('addPlatformModal').classList.add('hidden')">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>平台名称</label>
+                    <input type="text" id="addPlatformName" placeholder="例如：我的 API" style="width:100%;">
+                </div>
+                <div class="form-group">
+                    <label>API 地址</label>
+                    <input type="text" id="addPlatformUrl" placeholder="https://api.example.com/v1" style="width:100%;">
+                </div>
+                <div class="form-group">
+                    <label>API Key</label>
+                    <input type="password" id="addPlatformKey" placeholder="sk-..." style="width:100%;" autocomplete="off">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary footer-btn" onclick="document.getElementById('addPlatformModal').classList.add('hidden')">取消</button>
+                <button class="btn-primary footer-btn" id="saveNewPlatformBtn">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 编辑自定义平台弹窗 -->
+    <div id="editPlatformModal" class="modal hidden">
+        <div class="modal-content" style="max-width:440px;">
+            <div class="modal-header">
+                <h2>编辑自定义平台</h2>
+                <button class="modal-close" onclick="document.getElementById('editPlatformModal').classList.add('hidden')">×</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editPlatformId">
+                <div class="form-group">
+                    <label>平台名称</label>
+                    <input type="text" id="editPlatformName" style="width:100%;">
+                </div>
+                <div class="form-group">
+                    <label>API 地址</label>
+                    <input type="text" id="editPlatformUrl" style="width:100%;">
+                </div>
+                <div class="form-group">
+                    <label>API Key</label>
+                    <input type="password" id="editPlatformKey" style="width:100%;" autocomplete="off">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary footer-btn" onclick="document.getElementById('editPlatformModal').classList.add('hidden')">取消</button>
+                <button class="btn-primary footer-btn" id="saveEditPlatformBtn">保存</button>
             </div>
         </div>
     </div>
@@ -105,6 +151,7 @@
                        <option value="opc">OPC Cloud</option>
                        <option value="neutoken">牛头词元</option>
                         <option value="agnes">Agnes AI</option>
+                       <option value="volcengine">火山引擎</option>
                        <option value="custom">自定义平台</option>
                    </select>
                </div>
@@ -264,23 +311,22 @@
                         </div>
                     </div>
                     <div class="form-group">
+                        <label>输出分辨率</label>
+                        <select id="t2iResolution" class="select-input">
+                            <option value="480p">480p</option>
+                            <option value="720p" selected>720p</option>
+                            <option value="1080p">1080p</option>
+                            <option value="4K">4K</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
                         <label>画面比例</label>
                         <div class="ratio-buttons" id="t2iRatio">
-                            <button class="ratio-btn active" data-ratio="1:1">1:1</button>
-                            <button class="ratio-btn" data-ratio="9:16">9:16</button>
-                            <button class="ratio-btn" data-ratio="16:9">16:9</button>
                             <button class="ratio-btn" data-ratio="21:9">21:9</button>
-                            <button class="ratio-btn" data-ratio="3:4">3:4</button>
+                            <button class="ratio-btn active" data-ratio="16:9">16:9</button>
                             <button class="ratio-btn" data-ratio="4:3">4:3</button>
-                            <button class="ratio-btn" data-ratio="2:3">2:3</button>
-                        </div>
-                        <div class="form-group" style="margin-top:6px;">
-                            <label>画质</label>
-                            <div class="quality-buttons" id="t2iQualitySelector">
-                                <button class="quality-btn active" data-quality="1080">1080</button>
-                                <button class="quality-btn" data-quality="2K">2K</button>
-                                <button class="quality-btn" data-quality="4K">4K</button>
-                            </div>
+                            <button class="ratio-btn" data-ratio="3:4">3:4</button>
+                            <button class="ratio-btn" data-ratio="9:16">9:16</button>
                         </div>
                     </div>
                     <div class="form-group">
@@ -337,23 +383,22 @@
                         </div>
                     </div>
                     <div class="form-group">
+                        <label>输出分辨率</label>
+                        <select id="i2iResolution" class="select-input">
+                            <option value="480p">480p</option>
+                            <option value="720p" selected>720p</option>
+                            <option value="1080p">1080p</option>
+                            <option value="4K">4K</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
                         <label>画面比例</label>
                         <div class="ratio-buttons" id="i2iRatio">
-                            <button class="ratio-btn active" data-ratio="1:1">1:1</button>
-                            <button class="ratio-btn" data-ratio="9:16">9:16</button>
-                            <button class="ratio-btn" data-ratio="16:9">16:9</button>
                             <button class="ratio-btn" data-ratio="21:9">21:9</button>
-                            <button class="ratio-btn" data-ratio="3:4">3:4</button>
+                            <button class="ratio-btn active" data-ratio="16:9">16:9</button>
                             <button class="ratio-btn" data-ratio="4:3">4:3</button>
-                            <button class="ratio-btn" data-ratio="2:3">2:3</button>
-                        </div>
-                        <div class="form-group" style="margin-top:6px;">
-                            <label>画质</label>
-                            <div class="quality-buttons" id="i2iQualitySelector">
-                                <button class="quality-btn active" data-quality="1080">1080</button>
-                                <button class="quality-btn" data-quality="2K">2K</button>
-                                <button class="quality-btn" data-quality="4K">4K</button>
-                            </div>
+                            <button class="ratio-btn" data-ratio="3:4">3:4</button>
+                            <button class="ratio-btn" data-ratio="9:16">9:16</button>
                         </div>
                     </div>
                     <button class="btn-generate" id="i2iGenerateBtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/></svg> 图生图</button>
@@ -381,12 +426,22 @@
                         </div>
                     </div>
                     <div class="form-group">
+                        <label>输出分辨率</label>
+                        <select id="t2vResolution" class="select-input">
+                            <option value="480p">480p</option>
+                            <option value="720p" selected>720p</option>
+                            <option value="1080p">1080p</option>
+                            <option value="4k">4K</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
                         <label>画面比例</label>
                         <div class="ratio-buttons" id="t2vRatio">
-                            <button class="ratio-btn active" data-w="1280" data-h="720" data-ratio="16:9">16:9</button>
-                            <button class="ratio-btn" data-w="720" data-h="1280" data-ratio="9:16">9:16</button>
-                            <button class="ratio-btn" data-w="1024" data-h="1024" data-ratio="1:1">1:1</button>
-                            <button class="ratio-btn" data-w="1680" data-h="720" data-ratio="21:9">21:9</button>
+                            <button class="ratio-btn" data-ratio="21:9">21:9</button>
+                            <button class="ratio-btn active" data-ratio="16:9">16:9</button>
+                            <button class="ratio-btn" data-ratio="4:3">4:3</button>
+                            <button class="ratio-btn" data-ratio="3:4">3:4</button>
+                            <button class="ratio-btn" data-ratio="9:16">9:16</button>
                         </div>
                     </div>
                     <div class="form-group">
@@ -419,6 +474,7 @@
                             </div>
                         </details>
                     </div>
+
                     <button class="btn-generate" id="t2vGenerateBtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg> 生成视频</button>
                 </div>
                 <div class="create-right">
@@ -433,12 +489,46 @@
         <section id="tab-i2v" class="tab-panel">
             <div class="create-layout">
                 <div class="create-left">
-                    <div class="form-group">
-                        <label>上传图片（最多9张）</label>
-                        <div class="upload-grid" id="i2vUploadGrid"></div>
-                        <input type="file" id="i2vFileInput" accept="image/*" hidden multiple>
-                        <p class="upload-hint" style="margin-top:6px;color:#777;font-size:12px;">点击空位上传，悬停可删除 · 支持 JPG/PNG/WebP</p>
+                    <!-- 子选项卡：首尾帧 / 多模态参考 -->
+                    <div class="i2v-sub-tabs">
+                        <button class="i2v-sub-tab active" data-mode="firstlast">首尾帧</button>
+                        <button class="i2v-sub-tab" data-mode="multimodal">多模态参考</button>
                     </div>
+
+                    <!-- 首尾帧模式 -->
+                    <div class="i2v-mode-panel active" id="i2vModeFirstLast">
+                        <div class="form-group">
+                            <label>首帧图片</label>
+                            <div class="upload-grid single-upload" id="i2vFirstFrameGrid"></div>
+                            <input type="file" id="i2vFirstFrameInput" accept="image/*" hidden>
+                            <p class="upload-hint">点击上传首帧图片（作为视频起始帧）</p>
+                        </div>
+                        <div class="form-group">
+                            <label>尾帧图片（可选，不上传则仅使用首帧）</label>
+                            <div class="upload-grid single-upload" id="i2vLastFrameGrid"></div>
+                            <input type="file" id="i2vLastFrameInput" accept="image/*" hidden>
+                            <p class="upload-hint">点击上传尾帧图片（作为视频结束帧）</p>
+                        </div>
+                        <div class="form-group">
+                            <label>参考音频</label>
+                            <div class="audio-input-row">
+                                <button type="button" class="btn-icon audio-add-btn" id="i2vFirstLastAudioUploadBtn" title="上传音频">+</button>
+                                <input type="text" id="i2vFirstLastAudioUrl" class="select-input" placeholder="粘贴音频URL">
+                            </div>
+                            <input type="file" id="i2vFirstLastAudioFile" accept="audio/*" hidden>
+                        </div>
+                    </div>
+
+                    <!-- 多模态参考模式 -->
+                    <div class="i2v-mode-panel" id="i2vModeMultimodal">
+                        <div class="form-group">
+                            <label>上传参考素材（最多9个，支持图片/视频/音频）</label>
+                            <div class="upload-grid" id="i2vUploadGrid"></div>
+                            <input type="file" id="i2vFileInput" accept="image/*,video/*,audio/*" hidden multiple>
+                            <p class="upload-hint">点击空位上传文件或粘贴URL · 右键图片可标记为首帧/尾帧 · 支持拖拽</p>
+                        </div>
+                    </div>
+
                     <div class="form-group">
                         <label>描述视频内容（可选）</label>
                         <textarea id="i2vPrompt" class="prompt-input" rows="3" placeholder="描述你希望图片如何动起来..."></textarea>
@@ -450,11 +540,22 @@
                         </div>
                     </div>
                     <div class="form-group">
+                        <label>输出分辨率</label>
+                        <select id="i2vResolution" class="select-input">
+                            <option value="480p">480p</option>
+                            <option value="720p" selected>720p</option>
+                            <option value="1080p">1080p</option>
+                            <option value="4k">4K</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
                         <label>画面比例</label>
                         <div class="ratio-buttons" id="i2vRatio">
-                            <button class="ratio-btn active" data-w="1280" data-h="720" data-ratio="16:9">16:9</button>
-                            <button class="ratio-btn" data-w="720" data-h="1280" data-ratio="9:16">9:16</button>
-                            <button class="ratio-btn" data-w="1680" data-h="720" data-ratio="21:9">21:9</button>
+                            <button class="ratio-btn" data-ratio="21:9">21:9</button>
+                            <button class="ratio-btn active" data-ratio="16:9">16:9</button>
+                            <button class="ratio-btn" data-ratio="4:3">4:3</button>
+                            <button class="ratio-btn" data-ratio="3:4">3:4</button>
+                            <button class="ratio-btn" data-ratio="9:16">9:16</button>
                         </div>
                     </div>
                     <div class="form-group">
@@ -467,6 +568,7 @@
                             <button class="ratio-btn" data-duration="15">15秒</button>
                         </div>
                     </div>
+
                     <button class="btn-generate" id="i2vGenerateBtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg> 生成视频</button>
                 </div>
                 <div class="create-right">
@@ -502,7 +604,7 @@
     </div>
 
     <!-- 版本号 -->
-    <div id="appVersion" class="app-version">AI Studio V1.0.6</div>
+    <div id="appVersion" class="app-version">AI Studio V1.0.7</div>
 
     <!-- 运行日志面板 -->
     <div id="logPanel" class="log-panel" style="display:none;">
@@ -522,6 +624,7 @@
     <script src="js/api.js"></script>
     <script src="js/image.js"></script>
     <script src="js/uploader.js"></script>
+    <script src="js/mediagrid.js"></script>
     <script src="js/video.js"></script>
     <script src="js/history.js"></script>
     <script src="js/redraw.js"></script>

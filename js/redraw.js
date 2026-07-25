@@ -38,29 +38,26 @@ const RedrawModule = {
             });
         });
 
-        // 画质按钮
-        const qualityBtns = document.querySelectorAll('#i2iQualitySelector .quality-btn');
-        qualityBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
-                qualityBtns.forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-            });
-        });
-
         // 生成按钮
         document.getElementById('i2iGenerateBtn').addEventListener('click', () => this.generate());
     },
 
     /**
-     * 根据选中的比例和画质计算实际像素尺寸
+     * 根据选中的分辨率和比例计算实际像素尺寸
      */
     getSelectedSize() {
         const ratio = document.querySelector('#i2iRatio .ratio-btn.active');
-        const quality = document.querySelector('#i2iQualitySelector .quality-btn.active');
-        const ratioKey = ratio ? ratio.dataset.ratio : '1:1';
-        const qualityKey = quality ? quality.dataset.quality : '1080';
-        const sizeMap = QUALITY_SIZE_MAP[qualityKey];
-        return (sizeMap && sizeMap[ratioKey]) || '1024x1024';
+        const resolution = document.getElementById('i2iResolution')?.value || '720p';
+        const ratioKey = ratio ? ratio.dataset.ratio : '16:9';
+        const sizeMap = RESOLUTION_SIZE_MAP[resolution];
+        return (sizeMap && sizeMap[ratioKey]) || '1920x1920';
+    },
+
+    /**
+     * 获取当前选中的分辨率
+     */
+    getSelectedResolution() {
+        return document.getElementById('i2iResolution')?.value || '720p';
     },
 
     /**
@@ -93,7 +90,7 @@ const RedrawModule = {
         btn.disabled = true;
         btn.textContent = '提交中...';
 
-        Logger.info(`[图生图] 开始, 模型=${model}, 尺寸=${size}, 图片数=${images.length}`);
+        Logger.info(`[图生图] 开始, 模型=${model}, 分辨率=${this.getSelectedResolution()}, 尺寸=${size}, 图片数=${images.length}`);
         Logger.req(`提示词: "${prompt.substring(0, 100)}${prompt.length > 100 ? '...' : ''}"`);
 
         UI.showLoading('正在生成图生图...');
@@ -130,15 +127,15 @@ const RedrawModule = {
            imageList.forEach((b64, i) => {
                Logger.info(`[图生图] 图片${i + 1}: ${b64.substring(0, 50)}... (长度:${b64.length})`);
            });
-           const selRatio = document.querySelector('#i2iRatio .ratio-btn.active')?.dataset.ratio || '1:1';
-           const qualityLabel = document.querySelector('#i2iQualitySelector .quality-btn.active')?.dataset.quality || '1080';
+           const selRatio = document.querySelector('#i2iRatio .ratio-btn.active')?.dataset.ratio || '16:9';
+           const resolution = this.getSelectedResolution();
            const result = await API.generateImageEdit({
                prompt,
                model,
                size,
-               images: imageList,  // 所有图片 + 提示词一次发给模型
+               images: imageList,
                ratio: selRatio,
-               qualityLabel,
+               qualityLabel: resolution,
                signal: this.abortController.signal
            });
 
@@ -151,7 +148,7 @@ const RedrawModule = {
                 const url = item.url || (item.b64_json ? `data:image/png;base64,${item.b64_json}` : '');
 
                 if (url) {
-                    const filename = `opc-redraw-${Date.now()}.png`;
+                    const filename = `aistudio-redraw-${Date.now()}.png`;
                     const div = document.createElement('div');
                     div.className = 'result-item';
                     div.innerHTML = `

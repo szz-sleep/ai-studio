@@ -1,12 +1,13 @@
 {
   "name": "ai-studio",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "AI Studio - AI创作工坊",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "pack:win": "electron-packager . AI-Studio --platform=win32 --arch=x64 --out=dist --overwrite --icon=assets/icon --asar=false",
-    "build:win": "electron-builder --win --x64 --config.win.target=portable --publish=never"
+    "build:mac": "electron-builder --mac --x64 --publish=never",
+    "build:win": "electron-builder --win --x64 --publish=never",
+    "build:all": "electron-builder --mac --win --x64 --publish=never"
   },
   "author": "湖北生而为一科技有限公司",
   "license": "MIT",

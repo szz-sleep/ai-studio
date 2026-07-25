@@ -2,34 +2,39 @@
  * AI Studio - 文生图模块
  */
 
-// 画质 → 比例 → 实际像素尺寸映射
-const QUALITY_SIZE_MAP = {
-    '1080': {
-        '1:1': '1920x1920',
-        '9:16': '1440x2560',
-        '16:9': '2560x1440',
-        '21:9': '2688x1408',
-        '3:4': '1680x2240',
-        '4:3': '2240x1680',
-        '2:3': '1600x2400',
+// 分辨率 → 比例 → 实际像素尺寸映射（Seedream 要求 ≥ 3.69M 像素）
+const RESOLUTION_SIZE_MAP = {
+    '480p': {
+        '21:9': '1920x816',
+        '16:9': '1536x864',
+        '4:3': '1408x1056',
+        '1:1': '1152x1152',
+        '3:4': '1056x1408',
+        '9:16': '864x1536',
     },
-    '2K': {
-        '1:1': '2048x2048',
-        '9:16': '1600x2844',
-        '16:9': '2844x1600',
-        '21:9': '3024x1276',
-        '3:4': '1920x2560',
-        '4:3': '2560x1920',
-        '2:3': '1824x2736',
+    '720p': {
+        '21:9': '2880x1232',
+        '16:9': '2304x1296',
+        '4:3': '2112x1584',
+        '1:1': '1920x1920',
+        '3:4': '1584x2112',
+        '9:16': '1296x2304',
+    },
+    '1080p': {
+        '21:9': '3840x1648',
+        '16:9': '3072x1728',
+        '4:3': '2816x2112',
+        '1:1': '2560x2560',
+        '3:4': '2112x2816',
+        '9:16': '1728x3072',
     },
     '4K': {
-        '1:1': '4096x4096',
-        '9:16': '2880x5120',
+        '21:9': '6048x2592',
         '16:9': '5120x2880',
-        '21:9': '6048x2552',
-        '3:4': '3360x4480',
         '4:3': '4480x3360',
-        '2:3': '3200x4800',
+        '1:1': '4096x4096',
+        '3:4': '3360x4480',
+        '9:16': '2880x5120',
     },
 };
 
@@ -47,37 +52,26 @@ const ImageModule = {
             });
         });
 
-        // 画质按钮
-        const qualityBtns = document.querySelectorAll('#t2iQualitySelector .quality-btn');
-        qualityBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
-                qualityBtns.forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-            });
-        });
-
         // 生成按钮
         document.getElementById('t2iGenerateBtn').addEventListener('click', () => this.generate());
     },
 
     /**
-     * 根据选中的比例和画质计算实际像素尺寸
+     * 根据选中的分辨率和比例计算实际像素尺寸
      */
     getSelectedSize() {
         const ratio = document.querySelector('#t2iRatio .ratio-btn.active');
-        const quality = document.querySelector('#t2iQualitySelector .quality-btn.active');
-        const ratioKey = ratio ? ratio.dataset.ratio : '1:1';
-        const qualityKey = quality ? quality.dataset.quality : '1080';
-        const sizeMap = QUALITY_SIZE_MAP[qualityKey];
-        return (sizeMap && sizeMap[ratioKey]) || '1024x1024';
+        const resolution = document.getElementById('t2iResolution')?.value || '720p';
+        const ratioKey = ratio ? ratio.dataset.ratio : '16:9';
+        const sizeMap = RESOLUTION_SIZE_MAP[resolution];
+        return (sizeMap && sizeMap[ratioKey]) || '1920x1920';
     },
 
     /**
-     * 获取当前质量等级的显示名
+     * 获取当前选中的分辨率
      */
-    getSelectedQualityLabel() {
-        const quality = document.querySelector('#t2iQualitySelector .quality-btn.active');
-        return quality ? quality.dataset.quality : '1080';
+    getSelectedResolution() {
+        return document.getElementById('t2iResolution')?.value || '720p';
     },
 
     /**
@@ -100,14 +94,12 @@ const ImageModule = {
         const [w, h] = size.split('x').map(Number);
         const totalPixels = w * h;
 
-        // 检测是否选择了大尺寸模型（如 Seedream 要求 ≥ 3.69M 像素）
+        // 检测是否选择了 Seedream 模型（要求 ≥ 3.69M 像素）
         const modelLower = model.toLowerCase();
-        const isLargeModel = modelLower.includes('seedream') || modelLower.includes('seed');
+        const isSeedream = modelLower.includes('seedream') || modelLower.includes('seed');
         const MIN_PIXELS = 3686400;
-        if (isLargeModel && totalPixels < MIN_PIXELS) {
-            const minSide = Math.ceil(Math.sqrt(MIN_PIXELS));
-            const qualityLabel = this.getSelectedQualityLabel();
-            UI.toast(`Seedream 要求至少 ${(MIN_PIXELS/1000000).toFixed(1)}M 像素（约 ${minSide}×${minSide}），请选择「2K」或「4K」画质 🙏`, 'error', 8000);
+        if (isSeedream && totalPixels < MIN_PIXELS) {
+            UI.toast(`Seedream 要求至少 ${(MIN_PIXELS/1000000).toFixed(1)}M 像素，当前 ${size} 不满足，请选更高分辨率`, 'error', 8000);
             return;
         }
 
@@ -119,7 +111,7 @@ const ImageModule = {
         btn.disabled = true;
         btn.textContent = '生成中...';
 
-        Logger.info(`[文生图] 开始生成, 模型=${model}, 画质=${this.getSelectedQualityLabel()}, 尺寸=${size}, 数量=${n}`);
+        Logger.info(`[文生图] 开始生成, 模型=${model}, 分辨率=${this.getSelectedResolution()}, 尺寸=${size}, 数量=${n}`);
         Logger.req(`prompt: "${prompt.substring(0, 80)}${prompt.length > 80 ? '...' : ''}"`);
 
         UI.showLoading('正在生成图片...');
@@ -138,9 +130,9 @@ const ImageModule = {
 
            let imageUrls = [];
 
-            const selRatio = document.querySelector('#t2iRatio .ratio-btn.active')?.dataset.ratio || '1:1';
-            const qualityLabel = this.getSelectedQualityLabel();
-            const apiOptions = { prompt, model, size, n: 1, quality, style, ratio: selRatio, qualityLabel, signal: abortController.signal };
+            const selRatio = document.querySelector('#t2iRatio .ratio-btn.active')?.dataset.ratio || '16:9';
+            const resolution = this.getSelectedResolution();
+            const apiOptions = { prompt, model, size, n: 1, quality, style, ratio: selRatio, qualityLabel: resolution, signal: abortController.signal };
 
             // n > 1 时并行请求，避免后端不支持批量
             if (n > 1) {
@@ -178,7 +170,7 @@ const ImageModule = {
                 imageUrls.forEach((url, idx) => {
                     const div = document.createElement('div');
                     div.className = 'result-item';
-                    const filename = `opc-image-${Date.now()}-${idx}.png`;
+                    const filename = `aistudio-image-${Date.now()}-${idx}.png`;
                     div.innerHTML = `
                         <img src="${url}" alt="生成结果${idx + 1}">
                         <div class="result-actions">
@@ -216,10 +208,7 @@ const ImageModule = {
             Logger.error(`[文生图] 失败: ${err.message}`);
             // 针对 Seedream 尺寸不足的错误给出友好提示
             if (err.message.includes('image size must be at least')) {
-                const pixelMatch = err.message.match(/(\d+)\s*pixels?/);
-                const minPixels = pixelMatch ? parseInt(pixelMatch[1]) : 3686400;
-                const minSide = Math.ceil(Math.sqrt(minPixels));
-                UI.toast(`当前模型要求最小 ${(minPixels/1000000).toFixed(1)}M 像素（约 ${minSide}×${minSide}），请选择「2K」或「4K」画质 🙏`, 'error', 8000);
+                UI.toast('请选择更高的分辨率（720p 或以上）以满足模型要求', 'error', 6000);
             } else if (err.message.includes('image generation is only supported') || err.message.includes('not valid')) {
                 UI.toast('当前模型不支持图片生成，请在模型下拉列表中换一个模型', 'error', 6000);
             } else {

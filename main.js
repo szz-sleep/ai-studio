@@ -1,6 +1,20 @@
 const { app, BrowserWindow, Menu, shell } = require('electron');
 const path = require('path');
 
+// 单实例锁 — 防止多开
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (event, commandLine, workingDirectory) => {
+    // 有人试图启动第二个实例时，聚焦已有窗口
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+}
+
 // 保持窗口引用
 let mainWindow = null;
 
@@ -30,7 +44,7 @@ function createWindow() {
     mainWindow.focus();
   });
 
-  // 打开 DevTools（开发时可用）
+  // 开发时如需调试，取消下面这行注释
   // mainWindow.webContents.openDevTools();
 
   // 拦截外部链接在系统浏览器中打开

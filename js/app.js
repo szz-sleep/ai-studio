@@ -134,7 +134,12 @@ const UI = {
         img.src = url;
         info.textContent = '';
         this._previewUrl = url;
-        this._previewFilename = filename || url.split('/').pop() || 'image';
+        // 从 URL 提取干净的文件名（去掉 query string）
+        let cleanName = url.split('/').pop() || 'image';
+        cleanName = cleanName.split('?')[0];
+        // 如果没有扩展名，默认补 .png
+        if (!cleanName.includes('.')) cleanName += '.png';
+        this._previewFilename = filename || cleanName;
         dotMenu.classList.remove('hidden');
         overlay.classList.remove('hidden');
     },
@@ -154,8 +159,11 @@ const UI = {
         video.loop = false;
         info.textContent = '';
         this._previewUrl = url;
-        this._previewFilename = filename || url.split('/').pop() || 'video';
-        dotMenu.classList.remove('hidden'); // 视频也显示下载按钮
+        let cleanName = url.split('/').pop() || 'video';
+        cleanName = cleanName.split('?')[0];
+        if (!cleanName.includes('.')) cleanName += '.mp4';
+        this._previewFilename = filename || cleanName;
+        dotMenu.classList.add('hidden'); // 视频不显示单独下载按钮（三点菜单里已有）
         overlay.classList.remove('hidden');
     },
 
@@ -246,26 +254,14 @@ const App = {
 
         // 绑定设置按钮
         document.getElementById('settingsBtn').addEventListener('click', () => {
+            App.renderPlatformSelect();
+            App.renderCustomPlatforms();
             const platform = Config.getPlatform();
             document.getElementById('platformSelect').value = platform;
-            document.getElementById('apiKeyInput').value = Config.getApiKey();
-            document.getElementById('apiBaseUrlDisplay').value = Config.getBaseUrl();
-            const hint = document.getElementById('platformHint');
-            const preset = Config.getCurrentPlatformConfig();
-            if (hint && preset.hint) hint.textContent = preset.hint;
+            App.onPlatformChange();
             const curMB = Config.getUploadSizeMB();
             document.getElementById('uploadSizeInput').value = curMB;
             document.getElementById('uploadSizeDisplay').textContent = curMB;
-
-            // 自定义平台：显示 API 标准选择器并加载当前值
-            const apiStandardGroup = document.getElementById('apiStandardGroup');
-            if (apiStandardGroup) {
-                apiStandardGroup.style.display = platform === 'custom' ? 'block' : 'none';
-                document.getElementById('apiStandardSelect').value = Config.getCustomApiStandard();
-                document.getElementById('anthropicVersionInput').value = Config.getCustomAnthropicVersion();
-                const avGroup = document.getElementById('anthropicVersionGroup');
-                if (avGroup) avGroup.style.display = Config.getCustomApiStandard() === 'anthropic' ? 'block' : 'none';
-            }
             document.getElementById('settingsModal').classList.remove('hidden');
         });
 
@@ -309,22 +305,27 @@ const App = {
             setTimeout(() => window.App.loadModels(), 500);
         });
 
+        // 添加自定义平台保存
+        document.getElementById('saveNewPlatformBtn').addEventListener('click', () => {
+            App.addCustomPlatform();
+        });
+
+        // 编辑自定义平台保存
+        document.getElementById('saveEditPlatformBtn').addEventListener('click', () => {
+            App.saveEditPlatform();
+        });
+
         // 保存设置
         document.getElementById('saveSettingsBtn').addEventListener('click', () => {
             const platform = document.getElementById('platformSelect').value;
             Config.setPlatform(platform);
-            // 自定义平台保存 URL
-            if (platform === 'custom') {
+            const isCustom = Config.getCustomPlatforms().some(p => p.id === platform);
+            if (!isCustom) {
+                // 预设平台：保存 URL 和 Key
                 const baseUrlVal = document.getElementById('apiBaseUrlDisplay').value.trim();
                 if (baseUrlVal) Config.setBaseUrl(baseUrlVal);
-                const std = document.getElementById('apiStandardSelect')?.value || 'openai';
-                Config.setCustomApiStandard(std);
-                const ver = document.getElementById('anthropicVersionInput')?.value.trim();
-                if (ver) Config.setCustomAnthropicVersion(ver);
-            }
-            const key = document.getElementById('apiKeyInput').value.trim();
-            if (key) {
-                Config.setApiKey(key);
+                const key = document.getElementById('apiKeyInput').value.trim();
+                if (key) Config.setApiKey(key);
             }
             const uploadMB = parseInt(document.getElementById('uploadSizeInput').value, 10);
             if (!isNaN(uploadMB) && uploadMB >= 5 && uploadMB <= 500) {
@@ -381,15 +382,6 @@ const App = {
             });
         }
 
-        // API 标准选择切换：显示/隐藏 Anthropic 版本输入
-        const apiStdSelect = document.getElementById('apiStandardSelect');
-        if (apiStdSelect) {
-            apiStdSelect.addEventListener('change', () => {
-                const avGroup = document.getElementById('anthropicVersionGroup');
-                if (avGroup) avGroup.style.display = apiStdSelect.value === 'anthropic' ? 'block' : 'none';
-            });
-        }
-
         // Tab 切换
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -397,9 +389,12 @@ const App = {
                 document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
                 btn.classList.add('active');
                 document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
-                // 故事模式下隐藏底部历史记录
+                // 故事模式下隐藏底部历史记录和日志面板
+                const isStory = btn.dataset.tab === 'story';
                 const histSection = document.querySelector('.history-section');
-                if (histSection) histSection.style.display = (btn.dataset.tab === 'story') ? 'none' : '';
+                const logPanel = document.getElementById('logPanel');
+                if (histSection) histSection.style.display = isStory ? 'none' : '';
+                if (logPanel) logPanel.style.display = isStory ? 'none' : '';
             });
         });
         // 初始：默认故事模式隐藏历史记录
@@ -490,43 +485,153 @@ const App = {
         const platform = document.getElementById('platformSelect').value;
         Config.setPlatform(platform);
         const preset = Config.getCurrentPlatformConfig();
-        const display = document.getElementById('apiBaseUrlDisplay');
-        const label = document.getElementById('baseUrlLabel');
-        const hint = document.getElementById('baseUrlHint');
-        if (platform === 'custom') {
-            // 自定义平台：允许用户填地址
+        const isCustom = Config.getCustomPlatforms().some(p => p.id === platform);
+
+        // 自定义平台：隐藏 Key 和地址输入框（走弹窗管理）
+        // 预设平台：显示 Key 和地址输入框
+        document.getElementById('apiKeyGroup').style.display = isCustom ? 'none' : 'block';
+        document.getElementById('baseUrlGroup').style.display = isCustom ? 'none' : 'block';
+
+        if (!isCustom) {
+            const display = document.getElementById('apiBaseUrlDisplay');
             display.readOnly = false;
             display.style.opacity = '1';
             display.style.cursor = 'auto';
             display.value = Config.getBaseUrl();
-            display.placeholder = '例如 https://your-api.com';
-            label.textContent = 'API 地址（请填）';
-            if (hint) hint.textContent = preset.hint || 'OpenAI 兼容接口，填入 API 地址 + API Key。';
-            // 显示 API 标准选择器
-            const stdGroup = document.getElementById('apiStandardGroup');
-            if (stdGroup) {
-                stdGroup.style.display = 'block';
-                document.getElementById('apiStandardSelect').value = Config.getCustomApiStandard();
-                const avGroup = document.getElementById('anthropicVersionGroup');
-                if (avGroup) avGroup.style.display = Config.getCustomApiStandard() === 'anthropic' ? 'block' : 'none';
-            }
-        } else {
-            // 预设平台：隐藏 API 标准选择器
-            const stdGroup = document.getElementById('apiStandardGroup');
-            if (stdGroup) stdGroup.style.display = 'none';
-            // 预设平台：地址可编辑，默认填入预设值
-            display.readOnly = false;
-            display.style.opacity = '1';
-            display.style.cursor = 'auto';
-            display.value = Config.getBaseUrl();
-            display.placeholder = preset.baseUrl;
-            label.textContent = 'API 地址';
-            if (hint) hint.textContent = preset.hint;
+            display.placeholder = preset.baseUrl || '';
+            document.getElementById('baseUrlLabel').textContent = 'API 地址';
+            document.getElementById('apiKeyInput').value = Config.getApiKey();
         }
-        document.getElementById('apiKeyInput').value = Config.getApiKey();
-        // 平台提示
-        const platformHint = document.getElementById('platformHint');
-        if (platformHint && preset.hint) platformHint.textContent = preset.hint;
+    },
+
+    /**
+     * 渲染平台下拉框（含自定义平台）
+     */
+    renderPlatformSelect() {
+        const select = document.getElementById('platformSelect');
+        const current = Config.getPlatform();
+        let html = `
+            <option value="opc">OPC Cloud</option>
+            <option value="neutoken">牛头词元</option>
+            <option value="agnes">Agnes AI</option>
+            <option value="volcengine">火山引擎</option>
+        `;
+        const customs = Config.getCustomPlatforms();
+        customs.forEach(p => {
+            html += `<option value="${p.id}">${p.name}</option>`;
+        });
+        select.innerHTML = html;
+        select.value = current;
+    },
+
+    /**
+     * 渲染自定义平台列表
+     */
+    renderCustomPlatforms() {
+        const container = document.getElementById('customPlatformItems');
+        const customs = Config.getCustomPlatforms();
+        if (customs.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+        container.innerHTML = '';
+        customs.forEach(p => {
+            const div = document.createElement('div');
+            div.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;';
+            div.innerHTML = `
+                <span style="flex:1;font-size:13px;font-weight:500;">${p.name}</span>
+                <span style="flex:2;font-size:12px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.baseUrl}</span>
+                <button type="button" style="padding:2px 8px;font-size:12px;border:none;border-radius:4px;background:var(--border);cursor:pointer;color:var(--text-primary);" onclick="App.selectCustomPlatform('${p.id}')">选择</button>
+                <button type="button" style="padding:2px 8px;font-size:12px;border:none;border-radius:4px;background:var(--border);cursor:pointer;color:var(--text-primary);" onclick="App.editCustomPlatform('${p.id}')">编辑</button>
+                <button type="button" style="padding:2px 8px;font-size:12px;border:none;border-radius:4px;background:rgba(220,53,53,0.15);cursor:pointer;color:#dc3535;" onclick="App.deleteCustomPlatform('${p.id}')">删除</button>
+            `;
+            container.appendChild(div);
+        });
+    },
+
+    /**
+     * 打开添加自定义平台弹窗
+     */
+    openAddPlatformModal() {
+        document.getElementById('addPlatformName').value = '';
+        document.getElementById('addPlatformUrl').value = '';
+        document.getElementById('addPlatformKey').value = '';
+        document.getElementById('addPlatformModal').classList.remove('hidden');
+        document.getElementById('addPlatformName').focus();
+    },
+
+    /**
+     * 添加自定义平台（从弹窗保存）
+     */
+    addCustomPlatform() {
+        const name = document.getElementById('addPlatformName').value.trim();
+        const url = document.getElementById('addPlatformUrl').value.trim();
+        const key = document.getElementById('addPlatformKey').value.trim();
+        if (!name) { UI.toast('请输入平台名称', 'error'); return; }
+        if (!url) { UI.toast('请输入 API 地址', 'error'); return; }
+        const id = Config.addCustomPlatform(name, url, key);
+        document.getElementById('addPlatformModal').classList.add('hidden');
+        App.renderPlatformSelect();
+        App.renderCustomPlatforms();
+        UI.toast(`已添加平台「${name}」`, 'success');
+    },
+
+    /**
+     * 编辑自定义平台（打开编辑弹窗）
+     */
+    editCustomPlatform(id) {
+        const list = Config.getCustomPlatforms();
+        const p = list.find(x => x.id === id);
+        if (!p) return;
+        document.getElementById('editPlatformId').value = id;
+        document.getElementById('editPlatformName').value = p.name;
+        document.getElementById('editPlatformUrl').value = p.baseUrl;
+        document.getElementById('editPlatformKey').value = p.apiKey || '';
+        document.getElementById('editPlatformModal').classList.remove('hidden');
+    },
+
+    /**
+     * 保存编辑自定义平台
+     */
+    saveEditPlatform() {
+        const id = document.getElementById('editPlatformId').value;
+        const name = document.getElementById('editPlatformName').value.trim();
+        const url = document.getElementById('editPlatformUrl').value.trim();
+        const key = document.getElementById('editPlatformKey').value.trim();
+        if (!name) { UI.toast('请输入平台名称', 'error'); return; }
+        if (!url) { UI.toast('请输入 API 地址', 'error'); return; }
+        Config.updateCustomPlatform(id, { name, baseUrl: url, apiKey: key });
+        document.getElementById('editPlatformModal').classList.add('hidden');
+        App.renderPlatformSelect();
+        App.renderCustomPlatforms();
+        App.onPlatformChange();
+        Config.updateKeyStatus();
+        UI.toast(`已更新平台「${name}」`, 'success');
+    },
+
+    /**
+     * 选择自定义平台
+     */
+    selectCustomPlatform(id) {
+        Config.setPlatform(id);
+        document.getElementById('platformSelect').value = id;
+        App.onPlatformChange();
+        UI.toast('已切换到「' + Config.getCurrentPlatformConfig().name + '」', 'info');
+    },
+
+    /**
+     * 删除自定义平台
+     */
+    deleteCustomPlatform(id) {
+        const p = Config.getCustomPlatforms().find(x => x.id === id);
+        if (!p) return;
+        if (!confirm(`确定删除平台「${p.name}」吗？`)) return;
+        Config.removeCustomPlatform(id);
+        App.renderPlatformSelect();
+        App.renderCustomPlatforms();
+        App.onPlatformChange();
+        Config.updateKeyStatus();
+        UI.toast('已删除', 'info');
     },
 
     async loadModels() {
@@ -601,6 +706,7 @@ const App = {
             // 文本模型（故事创作用）
             if (storySel) {
                 storySel.innerHTML = '';
+                // 火山引擎：只保留已验证可用的聊天模型
                 if (classified.text.length > 0) {
                     classified.text.forEach(m => {
                         const opt = document.createElement('option');

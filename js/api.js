@@ -17,6 +17,13 @@ const API = {
     },
 
     /**
+     * 当前平台是否为火山引擎
+     */
+    _isVolcengine() {
+        return Config.getPlatform() === 'volcengine';
+    },
+
+    /**
      * 画质档位 → Agnes size 档位
      */
     _agnesSizeFromQuality(qualityLabel) {
@@ -77,7 +84,11 @@ const API = {
      * 获取完整请求 URL
      */
     _url(path) {
-        const base = Config.getBaseUrl();
+        let base = Config.getBaseUrl().replace(/\/+$/, ''); // 去尾部斜杠
+        // 如果 base 以 /v1 结尾，且 path 以 /v1 开头，去重
+        if (base.endsWith('/v1') && path.startsWith('/v1')) {
+            path = path.slice(3); // 去掉 path 开头的 /v1
+        }
         return base + path;
     },
 
@@ -106,10 +117,53 @@ const API = {
      */
     async getModels() {
         const platform = Config.getCurrentPlatformConfig();
+
+        // 火山引擎平台：尝试从 API 获取模型列表，失败则使用内置列表
+        if (this._isVolcengine()) {
+            Logger.info('[API/Volcengine] 尝试从 API 获取模型列表');
+            try {
+                const resp = await fetch(this._url('/models'), {
+                    headers: this._headers()
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    const models = data.data || [];
+                    if (models.length > 0) {
+                        Logger.info(`[API/Volcengine] API 返回 ${models.length} 个模型`);
+                        return models;
+                    }
+                }
+                Logger.warn('[API/Volcengine] API 返回空列表或无权限，降级使用内置模型');
+            } catch (e) {
+                Logger.warn('[API/Volcengine] 获取模型列表失败，降级使用内置模型:', e.message);
+            }
+            // fallback: 内置模型列表
+            Logger.info('[API/Volcengine] 使用内置模型列表');
+            return [
+                // 文本模型（已验证可用）
+                { id: 'doubao-seed-2-0-pro-260215', object: 'model', owned_by: 'volcengine' },
+                { id: 'doubao-seed-2-0-lite-260215', object: 'model', owned_by: 'volcengine' },
+                { id: 'doubao-seed-2-0-lite-260428', object: 'model', owned_by: 'volcengine' },
+                { id: 'doubao-seed-character-251128', object: 'model', owned_by: 'volcengine' },
+                { id: 'doubao-1-5-pro-32k-250115', object: 'model', owned_by: 'volcengine' },
+                { id: 'doubao-1-5-lite-32k-250115', object: 'model', owned_by: 'volcengine' },
+                // 视频模型
+                { id: 'doubao-seedance-2-0-260128', object: 'model', owned_by: 'volcengine' },
+                { id: 'doubao-seedance-1-0-pro-250528', object: 'model', owned_by: 'volcengine' },
+                { id: 'doubao-seedance-1-0-lite-t2v-250428', object: 'model', owned_by: 'volcengine' },
+                { id: 'doubao-seedance-1-0-lite-i2v-250428', object: 'model', owned_by: 'volcengine' },
+                // 图片模型
+                { id: 'doubao-seedream-4-5-251128', object: 'model', owned_by: 'volcengine' },
+                { id: 'doubao-seedream-4-0-250828', object: 'model', owned_by: 'volcengine' },
+                { id: 'doubao-seedream-3-0-t2i-250828', object: 'model', owned_by: 'volcengine' },
+                { id: 'doubao-seedream-3-0-t2i-250428', object: 'model', owned_by: 'volcengine' }
+            ];
+        }
+
         // 使用平台配置的 models 端点
        let modelsPath = platform.modelsEndpoint || '/v1/models';
 
-        // Agnes 平台：/v1/models 失败时仍返回已知模型，确保 UI 可用
+        // Agnes：/v1/models 失败时仍返回已知模型，确保 UI 可用
         let models = [];
         try {
             const resp = await fetch(this._url(modelsPath), {
@@ -222,6 +276,10 @@ const API = {
      * @param {AbortSignal} [opts.signal]
      */
     async generateImage({ prompt, model, size, n, quality, style, image, images, ratio, qualityLabel, signal }) {
+        // 火山引擎平台：添加 extra_body.response_format（seedream 4.5 需要）
+        if (this._isVolcengine()) {
+            return this._volcengineGenerateImage({ prompt, model, size, n, image, images, signal });
+        }
         // Agnes AI 平台：size 档位 + ratio，response_format 放 extra_body，图生图走 extra_body.image
         if (this._isAgnes()) {
             return this._agnesGenerateImage({ prompt, model, ratio, qualityLabel, image, images, signal });
@@ -340,6 +398,10 @@ const API = {
      * 注意：不传 size、不传 response_format（由模型自动决定）
      */
     async generateImageEdit({ prompt, model, size, images, ratio, qualityLabel, signal }) {
+        // 火山引擎平台：图生图也走 /images/generations，通过 image 字段传参考图
+        if (this._isVolcengine()) {
+            return this._volcengineImageToImage({ prompt, model, size, images, signal });
+        }
         // Agnes 平台：图生图统一走 /v1/images/generations + extra_body.image
         if (this._isAgnes()) {
             return this._agnesGenerateImage({ prompt, model, ratio, qualityLabel, images, signal });
@@ -379,6 +441,98 @@ const API = {
             if (!resp.ok) {
                 const err = await resp.json().catch(() => ({}));
                 throw new Error(err.error?.message || '图生图失败 (' + resp.status + ')');
+            }
+            return await resp.json();
+        } catch (err) {
+            clearTimeout(timeoutId);
+            if (err.name === 'AbortError') throw new Error('请求超时或已取消，请重试');
+            throw err;
+        }
+    },
+
+    /**
+     * 火山引擎文生图（POST /images/generations，添加 extra_body.response_format=url）
+     */
+    async _volcengineGenerateImage({ prompt, model, size, n, image, images, signal }) {
+        const body = { prompt, model, size: size || '1024x1024', n: n || 1 };
+        if (image) body.image = image;
+        if (Array.isArray(images) && images.length > 0) body.images = images;
+        body.response_format = 'url';
+        body.watermark = false;
+
+        Logger.info('[API/Volcengine] 文生图请求, 模型=' + model + ', 尺寸=' + body.size);
+
+        const controller = new AbortController();
+        const mergedSignal = signal || controller.signal;
+        const timeoutId = setTimeout(() => controller.abort(), 120000);
+
+        try {
+            const resp = await fetch(this._url('/images/generations'), {
+                method: 'POST',
+                headers: this._headers(),
+                body: JSON.stringify(body),
+                signal: mergedSignal
+            });
+            clearTimeout(timeoutId);
+            if (!resp.ok) {
+                const errText = await resp.text().catch(() => '');
+                Logger.error('[API/Volcengine] 图片生成失败: ' + errText.substring(0, 300));
+                let errMsg;
+                try { errMsg = JSON.parse(errText).error?.message; } catch { errMsg = errText.substring(0, 200); }
+                throw new Error(errMsg || '图片生成失败 (' + resp.status + ')');
+            }
+            return await resp.json();
+        } catch (err) {
+            clearTimeout(timeoutId);
+            if (err.name === 'AbortError') throw new Error('请求超时或已取消，请重试');
+            throw err;
+        }
+    },
+
+    /**
+     * 火山引擎图生图（POST /images/generations，通过 image 字段传参考图）
+     */
+    async _volcengineImageToImage({ prompt, model, size, images, signal }) {
+        const body = { prompt: prompt || '', model, n: 1 };
+        if (size) body.size = size;
+
+        if (Array.isArray(images) && images.length > 0) {
+            if (images.length === 1) {
+                body.image = 'data:image/jpeg;base64,' + images[0];
+                Logger.info('[API/Volcengine] 图生图: 1 张参考图, 模型=' + model);
+            } else {
+                Logger.info('[API/Volcengine] 图生图: ' + images.length + ' 张图，正在拼接...');
+                const merged = await this._stitchImages(images);
+                body.image = 'data:image/jpeg;base64,' + merged;
+                Logger.info('[API/Volcengine] 图生图: 拼接完成, 模型=' + model);
+            }
+        }
+
+        // 添加 response_format（seedream 4.5 支持）
+        body.response_format = 'url';
+        body.watermark = false;
+
+        const controller = new AbortController();
+        const mergedSignal = signal || controller.signal;
+        const timeoutId = setTimeout(() => controller.abort(), 180000);
+
+        try {
+            const endpoint = '/images/generations';
+            Logger.info('[API/Volcengine] 图生图请求端点: ' + endpoint);
+            Logger.req(JSON.stringify({ model: body.model, prompt: body.prompt?.substring(0, 60), size: body.size, has_image: !!body.image }).substring(0, 200));
+            const resp = await fetch(this._url(endpoint), {
+                method: 'POST',
+                headers: this._headers(),
+                body: JSON.stringify(body),
+                signal: mergedSignal
+            });
+            clearTimeout(timeoutId);
+            if (!resp.ok) {
+                const errText = await resp.text().catch(() => '');
+                Logger.error('[API/Volcengine] 图生图失败: ' + errText.substring(0, 300));
+                let errMsg;
+                try { errMsg = JSON.parse(errText).error?.message; } catch { errMsg = errText.substring(0, 200); }
+                throw new Error(errMsg || '图生图失败 (' + resp.status + ')');
             }
             return await resp.json();
         } catch (err) {
@@ -445,7 +599,12 @@ const API = {
      * @param {object} opts
      * @param {string[]} [opts.images] - 多图 base64 数组
      */
-   async createVideoTask({ model, prompt, image, images, size, duration, fps, seed, n }) {
+   async createVideoTask({ model, prompt, image, images, resolution, ratio, duration, fps, seed, n, referenceImages, referenceVideos, referenceAudios, firstFrameUrl, lastFrameUrl }) {
+       const size = resolution;  // backward compat for non-volc platforms
+       // 火山引擎平台：使用 contents/generations/tasks API
+       if (this._isVolcengine()) {
+           return this._volcengineCreateVideo({ model, prompt, image, images, resolution, ratio, duration, fps, seed, referenceImages, referenceVideos, referenceAudios, firstFrameUrl, lastFrameUrl });
+       }
        const body = {
            model,
            prompt: prompt || ''
@@ -454,7 +613,7 @@ const API = {
        if (this._isAgnes()) {
            const fr = fps || 24;
            body.frame_rate = fr;
-           if (size) {
+           if (size && typeof size === 'string') {
                const parts = size.split('x').map(Number);
                if (parts.length === 2 && parts.every(v => !isNaN(v))) {
                    body.width = parts[0];
@@ -534,6 +693,124 @@ const API = {
     },
 
     /**
+     * 火山引擎视频任务创建（POST /content_generation/tasks）
+     * 支持 doldu-seedance 系列模型，含参考图片/视频/音频
+     */
+    async _volcengineCreateVideo({ model, prompt, image, images, resolution, ratio, duration, fps, seed, referenceImages, referenceVideos, referenceAudios, firstFrameUrl, lastFrameUrl }) {
+        // 构建 content 数组
+        const content = [];
+
+        // 文本提示词
+        if (prompt) {
+            content.push({ type: 'text', text: prompt });
+        }
+
+        // 首帧参考图（标记为 first_frame）
+        if (firstFrameUrl) {
+            content.push({
+                type: 'image_url',
+                image_url: { url: firstFrameUrl },
+                role: 'first_frame'
+            });
+        }
+
+        // 尾帧参考图（标记为 last_frame）
+        if (lastFrameUrl) {
+            content.push({
+                type: 'image_url',
+                image_url: { url: lastFrameUrl },
+                role: 'last_frame'
+            });
+        }
+
+        // 参考图片（URL 数组）
+        if (Array.isArray(referenceImages)) {
+            referenceImages.forEach(url => {
+                // 跳过已经是首帧/尾帧的图
+                if (url === firstFrameUrl || url === lastFrameUrl) return;
+                content.push({
+                    type: 'image_url',
+                    image_url: { url },
+                    role: 'reference_image'
+                });
+            });
+        }
+
+        // 参考视频（URL 数组）
+        if (Array.isArray(referenceVideos)) {
+            referenceVideos.forEach(url => {
+                content.push({
+                    type: 'video_url',
+                    video_url: { url },
+                    role: 'reference_video'
+                });
+            });
+        }
+
+        // 参考音频（URL 数组）
+        if (Array.isArray(referenceAudios)) {
+            referenceAudios.forEach(url => {
+                content.push({
+                    type: 'audio_url',
+                    audio_url: { url },
+                    role: 'reference_audio'
+                });
+            });
+        }
+
+        // 图生视频：如果上传了本地图片（base64），先转成 URL 再发
+        // 火山引擎目前要求图片通过 URL 引用，base64 需要先上传
+        if (Array.isArray(images) && images.length > 0) {
+            Logger.warn('[API/Volcengine] 火山引擎图生视频需要图片 URL，暂不支持直接传 base64。请通过参考图片 URL 传入。');
+        } else if (image) {
+            Logger.warn('[API/Volcengine] 火山引擎图生视频需要图片 URL，暂不支持直接传 base64。请通过参考图片 URL 传入。');
+        }
+
+        // 使用传入的比例，或默认 16:9
+        const finalRatio = ratio || '16:9';
+
+        const body = {
+            model,
+            content,
+            generate_audio: true,
+            resolution: resolution || '720p',
+            ratio: finalRatio,
+            duration: duration || 5,
+            watermark: false
+        };
+
+        Logger.info(`[API/Volcengine] 视频任务创建, 模型=${model}, 分辨率=${body.resolution}, ratio=${ratio}, duration=${body.duration}s`);
+        Logger.info(`[API/Volcengine] content 数组: ${content.length} 个元素 (text:${content.filter(c=>c.type==='text').length}, image:${content.filter(c=>c.type==='image_url').length}, video:${content.filter(c=>c.type==='video_url').length}, audio:${content.filter(c=>c.type==='audio_url').length})`);
+
+        const platform = Config.getCurrentPlatformConfig();
+        const endpoint = platform.videoEndpoint || '/content_generation/tasks';
+        const resp = await fetch(this._url(endpoint), {
+            method: 'POST',
+            headers: this._headers(),
+            body: JSON.stringify(body)
+        });
+        if (!resp.ok) {
+            const errText = await resp.text().catch(() => '');
+            Logger.error('[API/Volcengine] 视频创建失败响应: ' + errText.substring(0, 500));
+            let errMsg;
+            try {
+                const errJson = JSON.parse(errText);
+                errMsg = errJson.error?.message || errJson.error?.code || errJson.message;
+            } catch {
+                errMsg = '';
+            }
+            // 404 可能意味着未开通 content_generation 权限
+            if (resp.status === 404) {
+                throw new Error('API端点不存在或未开通 Seedance 视频生成权限。请确认：\n1. 已在方舟控制台开通 doubao-seedance 模型\n2. 已获得 Seedance 2.0 公测权限\n3. 申请链接: https://www.volcengine.com/contact/seedance2-0public');
+            }
+            throw new Error(errMsg || `视频任务创建失败 (${resp.status})`);
+        }
+        const result = await resp.json();
+        Logger.success('[API/Volcengine] 视频任务创建成功, task_id=' + (result.id || 'unknown'));
+        return result;
+    },
+
+    /**
      * 查询视频任务状态
      * GET /v1/video/generations/{task_id}
      */
@@ -543,6 +820,18 @@ const API = {
         if (this._isAgnes()) {
             const resultPath = platform.videoResultEndpoint || '/agnesapi';
             const resp = await fetch(this._url(`${resultPath}?video_id=${encodeURIComponent(taskId)}`), {
+                headers: this._headers()
+            });
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                throw new Error(err.error?.message || `查询任务状态失败 (${resp.status})`);
+            }
+            return await resp.json();
+        }
+        // 火山引擎平台：轮询 endpoint/{task_id}
+        if (this._isVolcengine()) {
+            const endpoint = platform.videoEndpoint || '/content_generation/tasks';
+            const resp = await fetch(this._url(`${endpoint}/${taskId}`), {
                 headers: this._headers()
             });
             if (!resp.ok) {

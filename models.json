@@ -372,6 +372,36 @@
       "tags": [
         "视频生成"
       ]
+    },
+    {
+      "match": "seedance",
+      "type": "video",
+      "label": "豆包 Seedance",
+      "tags": [
+        "视频生成",
+        "文生视频",
+        "图生视频",
+        "火山引擎"
+      ]
+    },
+    {
+      "match": "doubao-seedream",
+      "type": "image",
+      "label": "豆包 Seedream",
+      "tags": [
+        "图片生成",
+        "图生图",
+        "火山引擎"
+      ]
+    },
+    {
+      "match": "doubao",
+      "type": "text",
+      "label": "豆包大模型",
+      "tags": [
+        "文本对话",
+        "火山引擎"
+      ]
     }
   ],
   "fallback": {
