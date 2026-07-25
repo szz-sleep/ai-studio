@@ -10,7 +10,35 @@ const StoryModule = {
     _currentRecordId: null,
     _messages: [],  // 对话消息列表 [{role, content}]
 
+    STORAGE_KEY: 'opc_story_records',
+
+    // ===== 持久化 =====
+    _saveToStorage() {
+        try {
+            localStorage.setItem(this.STORAGE_KEY, JSON.stringify({
+                records: this._records,
+                currentId: this._currentRecordId
+            }));
+        } catch (e) { console.warn('Story save failed:', e); }
+    },
+
+    _loadFromStorage() {
+        try {
+            const data = JSON.parse(localStorage.getItem(this.STORAGE_KEY) || '{}');
+            this._records = data.records || [];
+            this._currentRecordId = data.currentId || null;
+        } catch (e) { console.warn('Story load failed:', e); }
+    },
+
     init() {
+        // 加载持久化数据
+        this._loadFromStorage();
+        // 渲染记录列表
+        this._renderRecordList();
+        // 如果有上次正在聊的记录，恢复
+        if (this._currentRecordId) {
+            this._loadRecord(this._currentRecordId);
+        }
         // 文档上传
         const uploadArea = document.getElementById('storyDocUpload');
         const fileInput = document.getElementById('storyDocInput');
@@ -608,7 +636,8 @@ const StoryModule = {
             const rec = this._records.find(r => r.id === this._currentRecordId);
             if (rec) {
                 rec.content = aiText;
-                rec.title = title;
+                // 已有自定义标题则不覆盖
+                if (!rec._customTitle) rec.title = title;
                 rec.updatedAt = now;
                 rec.messages = JSON.parse(JSON.stringify(this._messages));
             }
@@ -618,6 +647,7 @@ const StoryModule = {
             this._currentRecordId = rec.id;
         }
         this._renderRecordList();
+        this._saveToStorage();
     },
 
     _renderRecordList() {
@@ -696,8 +726,12 @@ const StoryModule = {
         const finish = () => {
             const newTitle = input.value.trim() || oldTitle;
             rec.title = newTitle;
-            this._currentRecordId = id;
-            this._renderRecordList();
+            rec._customTitle = true;
+            // 延迟渲染避免 input 被 DOM 移除前触发 blur 问题
+            requestAnimationFrame(() => {
+                this._renderRecordList();
+                this._saveToStorage();
+            });
         };
         input.addEventListener('blur', finish);
         input.addEventListener('keydown', (e) => { if (e.key === 'Enter') finish(); });
@@ -709,6 +743,7 @@ const StoryModule = {
         const [rec] = this._records.splice(idx, 1);
         this._records.unshift(rec);
         this._renderRecordList();
+        this._saveToStorage();
         UI.toast('已置顶', 'success');
     },
 
@@ -730,6 +765,7 @@ const StoryModule = {
             this.updateWordCount();
         }
         this._renderRecordList();
+        this._saveToStorage();
         UI.toast('已删除', 'success');
     },
 
@@ -742,6 +778,7 @@ const StoryModule = {
         this._renderAllMessages();
         this.updateWordCount();
         this._renderRecordList();
+        this._saveToStorage();
     },
 
     _newStory() {
@@ -755,5 +792,6 @@ const StoryModule = {
         if (mainArea) mainArea.classList.remove('has-chat');
         this.updateWordCount();
         this._renderRecordList();
+        this._saveToStorage();
     }
 };
