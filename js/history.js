@@ -74,7 +74,7 @@ const History = {
                     <button class="history-item-delete" title="删除">×</button>
                 `;
                 div.addEventListener('click', () => {
-                    UI.previewVideo(item.url, item.prompt || '视频');
+                    UI.previewVideo(item.url, '');
                 });
             } else {
                 div.innerHTML = `
@@ -83,7 +83,7 @@ const History = {
                     <button class="history-item-delete" title="删除">×</button>
                 `;
                 div.addEventListener('click', () => {
-                    UI.previewImage(item.url, item.prompt || '图片');
+                    UI.previewImage(item.url, '');
                 });
             }
 

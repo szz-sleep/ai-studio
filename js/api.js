@@ -613,13 +613,21 @@ const API = {
        if (this._isAgnes()) {
            const fr = fps || 24;
            body.frame_rate = fr;
-           if (size && typeof size === 'string') {
-               const parts = size.split('x').map(Number);
-               if (parts.length === 2 && parts.every(v => !isNaN(v))) {
-                   body.width = parts[0];
-                   body.height = parts[1];
-               }
-           }
+           // 根据 ratio + resolution 计算精确像素尺寸
+           const resBase = parseInt(String(resolution || '720').replace(/[^0-9]/g, '')) || 720;
+           const ratioMap = {
+               '16:9': [resBase, Math.round(resBase * 9 / 16)],
+               '9:16': [Math.round(resBase * 9 / 16), resBase],
+               '1:1': [resBase, resBase],
+               '4:3': [resBase, Math.round(resBase * 3 / 4)],
+               '3:4': [Math.round(resBase * 3 / 4), resBase],
+               '2:3': [Math.round(resBase * 2 / 3), resBase],
+               '3:2': [resBase, Math.round(resBase * 2 / 3)],
+           };
+           const dims = ratioMap[ratio || '16:9'] || ratioMap['16:9'];
+           // 确保偶数（视频编码要求）
+           body.width = dims[0] - (dims[0] % 2);
+           body.height = dims[1] - (dims[1] % 2);
            if (duration) body.num_frames = this._agnesSecondsToFrames(duration, fr);
            if (seed !== undefined && seed !== '') body.seed = seed;
            // 图生视频：单图用 image，多图走关键帧 extra_body.image
@@ -633,7 +641,7 @@ const API = {
            } else if (image) {
                body.image = image;
            }
-           Logger.info(`[API/Agnes] 视频任务, 模型=${model}, 帧数=${body.num_frames || '默认'}, 帧率=${fr}, 尺寸=${body.width || ''}x${body.height || ''}`);
+           Logger.info(`[API/Agnes] 视频任务, 模型=${model}, 帧数=${body.num_frames || '默认'}, 帧率=${fr}, 尺寸=${body.width}x${body.height}, 比例=${ratio || '16:9'}`);
            return this._agnesCreateVideo(body);
        }
        if (images && images.length > 0) {
