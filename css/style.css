@@ -144,6 +144,12 @@ body {
     transition: background 0.3s, color 0.3s;
 }
 
+/* 桌面应用：隐藏全局滚动条但保留滚动功能 */
+*::-webkit-scrollbar {
+    width: 0; height: 0; display: none;
+}
+* { scrollbar-width: none; -ms-overflow-style: none; }
+
 
 /* ===== 顶部导航 ===== */
 .top-bar {
