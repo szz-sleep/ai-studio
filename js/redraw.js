@@ -26,8 +26,7 @@ const RedrawModule = {
                 } else {
                     Logger.info(`[图生图] 当前 ${images.length} 张图片`);
                 }
-            },
-            onUpload: (dataUrl, fileName) => VideoModule._uploadToTempHost(dataUrl, fileName)
+            }
         });
 
         // 素材库按钮

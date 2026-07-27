@@ -1681,13 +1681,6 @@ select.select-input option { background: var(--bg-surface); }
     color: #fff;
     border-color: var(--red);
 }
-    cursor: pointer;
-    font-size: 14px;
-    padding: 0 2px;
-    line-height: 1;
-}
-.doc-remove:hover { color: var(--red-text); }
-
 /* 输入区 */
 .story-input-area { flex: 1; min-width: 0; position: relative; }
 .mode-panel { display: none; }
