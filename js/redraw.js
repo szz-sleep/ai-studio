@@ -29,42 +29,6 @@ const RedrawModule = {
             }
         });
 
-        // 素材库按钮
-        const materialBtn = document.getElementById('i2iOpenMaterialLibBtn');
-        if (materialBtn) {
-            materialBtn.addEventListener('click', () => {
-                MaterialLib.openPicker((item) => {
-                    if (item.type !== 'image') {
-                        UI.toast('请选择图片文件', 'error');
-                        return;
-                    }
-                    const items = this.uploader.getImages?.() || [];
-                    if (items.length >= 9) {
-                        UI.toast('最多9个素材，已满', 'error');
-                        return;
-                    }
-                    const grid = document.getElementById('i2iUploadGrid');
-                    if (!grid) return;
-                    const emptyCell = grid.querySelector('.upload-grid-cell.empty');
-                    if (!emptyCell) {
-                        UI.toast('最多9个素材，已满', 'error');
-                        return;
-                    }
-                    const index = parseInt(emptyCell.dataset.index);
-                    if (isNaN(index)) return;
-                    if (this.uploader.setItem) {
-                        this.uploader.setItem(index, {
-                            type: 'image',
-                            url: item.url,
-                            name: item.name || '素材'
-                        });
-                        Logger.info(`[素材库] 图生图已使用: ${item.name} (${item.url})`);
-                        UI.toast('已添加到素材区', 'success');
-                    }
-                }, 'image');
-            });
-        }
-
         // 比例按钮
         const ratioBtns = document.querySelectorAll('#i2iRatio .ratio-btn');
         ratioBtns.forEach(btn => {
