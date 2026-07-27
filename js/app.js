@@ -452,6 +452,11 @@ const App = {
         StoryModule.init();
         History.render();
 
+        // 初始化素材库
+        if (typeof MaterialLib !== 'undefined') {
+            MaterialLib.init();
+        }
+
         // ---- 主题切换（顶栏 + 侧边栏联动） ----
         function toggleTheme() {
             const current = document.documentElement.getAttribute('data-theme');

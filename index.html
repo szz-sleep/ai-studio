@@ -109,6 +109,47 @@
         </div>
     </div>
 
+    <!-- 素材库弹窗 -->
+    <div id="materialLibModal" class="modal hidden">
+        <div class="modal-content material-modal-content">
+            <div class="modal-header">
+                <h2>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-4px;margin-right:6px;"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                    素材库
+                </h2>
+                <button class="modal-close" onclick="document.getElementById('materialLibModal').classList.add('hidden')">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="material-lib-toolbar">
+                    <div class="material-filters">
+                        <button class="material-filter-btn active" data-filter="all">全部</button>
+                        <button class="material-filter-btn" data-filter="image">图片</button>
+                        <button class="material-filter-btn" data-filter="audio">音频</button>
+                        <button class="material-filter-btn" data-filter="video">视频</button>
+                    </div>
+                    <div class="material-lib-actions">
+                        <span id="materialCount" class="material-count">共 0 个素材</span>
+                        <button class="btn-secondary" id="materialClearBtn" style="padding:4px 12px;font-size:12px;">清空记录</button>
+                    </div>
+                </div>
+                <div class="material-lib-grid" id="materialLibGrid">
+                    <div class="material-empty">暂无素材，上传素材后会自动记录到这里</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <span class="material-lib-hint">点击素材直接使用 · 上传到 uguu.se 的素材会自动记录</span>
+                <div class="material-footer-actions">
+                    <button class="btn-secondary footer-btn" id="materialUploadBtn">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        上传
+                    </button>
+                    <button class="btn-secondary footer-btn" onclick="document.getElementById('materialLibModal').classList.add('hidden')">关闭</button>
+                </div>
+            </div>
+            <input type="file" id="materialFileInput" accept="image/*,video/*,audio/*" hidden multiple>
+        </div>
+    </div>
+
     <!-- 编辑自定义平台弹窗 -->
     <div id="editPlatformModal" class="modal hidden">
         <div class="modal-content" style="max-width:440px;">
@@ -367,7 +408,13 @@
             <div class="create-layout">
                 <div class="create-left">
                     <div class="form-group">
-                        <label>上传参考图片（最多9张）</label>
+                        <div class="material-header">
+                            <label>上传参考图片（最多9张）</label>
+                            <button type="button" class="btn-material-lib" id="i2iOpenMaterialLibBtn" title="素材库">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                                素材库
+                            </button>
+                        </div>
                         <div class="upload-grid" id="i2iUploadGrid"></div>
                         <input type="file" id="i2iFileInput" accept="image/*" hidden multiple>
                         <p class="upload-hint" style="margin-top:6px;color:#777;font-size:12px;">点击空位上传，悬停可删除 · 支持 JPG/PNG/WebP，自动命名图片1、图片2…</p>
@@ -498,31 +545,41 @@
                     <!-- 首尾帧模式 -->
                     <div class="i2v-mode-panel active" id="i2vModeFirstLast">
                         <div class="form-group">
-                            <label>首帧图片</label>
+                            <div class="material-header">
+                                <label>首帧图片</label>
+                                <button type="button" class="btn-material-lib" id="firstFrameOpenMaterialLibBtn" title="素材库">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                                    素材库
+                                </button>
+                            </div>
                             <div class="upload-grid single-upload" id="i2vFirstFrameGrid"></div>
                             <input type="file" id="i2vFirstFrameInput" accept="image/*" hidden>
                             <p class="upload-hint">点击上传首帧图片（作为视频起始帧）</p>
                         </div>
                         <div class="form-group">
-                            <label>尾帧图片（可选，不上传则仅使用首帧）</label>
+                            <div class="material-header">
+                                <label>尾帧图片（可选，不上传则仅使用首帧）</label>
+                                <button type="button" class="btn-material-lib" id="lastFrameOpenMaterialLibBtn" title="素材库">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                                    素材库
+                                </button>
+                            </div>
                             <div class="upload-grid single-upload" id="i2vLastFrameGrid"></div>
                             <input type="file" id="i2vLastFrameInput" accept="image/*" hidden>
                             <p class="upload-hint">点击上传尾帧图片（作为视频结束帧）</p>
-                        </div>
-                        <div class="form-group">
-                            <label>参考音频</label>
-                            <div class="audio-input-row">
-                                <button type="button" class="btn-icon audio-add-btn" id="i2vFirstLastAudioUploadBtn" title="上传音频">+</button>
-                                <input type="text" id="i2vFirstLastAudioUrl" class="select-input" placeholder="粘贴音频URL">
-                            </div>
-                            <input type="file" id="i2vFirstLastAudioFile" accept="audio/*" hidden>
                         </div>
                     </div>
 
                     <!-- 多模态参考模式 -->
                     <div class="i2v-mode-panel" id="i2vModeMultimodal">
                         <div class="form-group">
-                            <label>上传参考素材（最多9个，支持图片/视频/音频）</label>
+                            <div class="material-header">
+                                <label>上传参考素材（最多9个，支持图片/视频/音频）</label>
+                                <button type="button" class="btn-material-lib" id="multimodalOpenMaterialLibBtn" title="素材库">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                                    素材库
+                                </button>
+                            </div>
                             <div class="upload-grid" id="i2vUploadGrid"></div>
                             <input type="file" id="i2vFileInput" accept="image/*,video/*,audio/*" hidden multiple>
                             <p class="upload-hint">点击空位上传文件或粘贴URL · 右键图片可标记为首帧/尾帧 · 支持拖拽</p>
@@ -625,6 +682,7 @@
     <script src="js/image.js"></script>
     <script src="js/uploader.js"></script>
     <script src="js/mediagrid.js"></script>
+    <script src="js/material.js"></script>
     <script src="js/video.js"></script>
     <script src="js/history.js"></script>
     <script src="js/redraw.js"></script>

@@ -27,7 +27,7 @@ function initUploadGrid(gridId, fileInputId, tabName, callbacks) {
 
             if (images[i]) {
                 const img = document.createElement('img');
-                img.src = images[i].base64;
+                img.src = images[i].base64 || images[i].url;
                 img.alt = images[i].name;
                 cell.appendChild(img);
 
@@ -103,13 +103,46 @@ function initUploadGrid(gridId, fileInputId, tabName, callbacks) {
             }
             Logger.info(`[${tabName}] 正在读取 ${(file.size / 1024 / 1024).toFixed(1)}MB 图片: ${file.name}`);
             const reader = new FileReader();
-            reader.onload = function(e) {
+            reader.onload = async function(e) {
                 const base64 = e.target.result;
                 images[index] = { base64, name: '', file };
                 renumber();
                 render();
                 Logger.info(`[${tabName}] 已上传 ${images[index].name}`);
                 if (callbacks.onImagesChange) callbacks.onImagesChange(getImages());
+
+                // 立即上传到临时托管，拿到 HTTP URL
+                if (callbacks.onUpload) {
+                    try {
+                        const httpUrl = await callbacks.onUpload(base64, file.name);
+                        if (httpUrl && httpUrl.startsWith('http')) {
+                            images[index].url = httpUrl;
+                            images[index].base64 = null; // 释放内存
+
+                            // 保存到素材库
+                            if (typeof MaterialLib !== 'undefined') {
+                                const typeMap = {
+                                    'image/png': 'image', 'image/jpeg': 'image', 'image/webp': 'image',
+                                    'image/gif': 'image', 'image/bmp': 'image'
+                                };
+                                const mediaType = typeMap[file.type] || 'image';
+                                MaterialLib.add({
+                                    name: images[index].name || file.name,
+                                    url: httpUrl,
+                                    type: mediaType,
+                                    mimeType: file.type,
+                                    size: file.size
+                                });
+                            }
+
+                            render();
+                            Logger.info(`[${tabName}] 已上传到网络: ${httpUrl}`);
+                        }
+                    } catch (e) {
+                        Logger.warn(`[${tabName}] 自动上传失败: ${e.message}，使用本地数据`);
+                    }
+                }
+
                 resolve();
             };
             reader.readAsDataURL(file);
@@ -193,5 +226,30 @@ function initUploadGrid(gridId, fileInputId, tabName, callbacks) {
         }
     });
 
-    return { getImages, clearAll };
+    return {
+        getImages,
+        clearAll,
+        /** 从外部直接设置某个格子的图片（用于素材库选择） */
+        setItem(index, item) {
+            if (index < 0 || index >= MAX_GRID_IMAGES) return;
+            images[index] = {
+                base64: null,
+                url: item.url,
+                name: item.name || '素材',
+                file: null
+            };
+            render();
+            if (callbacks.onImagesChange) callbacks.onImagesChange(getImages());
+        },
+        /** 获取当前有效图片数组（含 url 字段） */
+        getImagesWithUrl() {
+            return images.filter(Boolean).map(i => ({
+                base64: i.base64,
+                url: i.url || null,
+                name: i.name
+            }));
+        },
+        /** 获取 grid 元素 */
+        gridElement: grid
+    };
 }

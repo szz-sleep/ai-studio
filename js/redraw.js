@@ -26,8 +26,45 @@ const RedrawModule = {
                 } else {
                     Logger.info(`[图生图] 当前 ${images.length} 张图片`);
                 }
-            }
+            },
+            onUpload: (dataUrl, fileName) => VideoModule._uploadToTempHost(dataUrl, fileName)
         });
+
+        // 素材库按钮
+        const materialBtn = document.getElementById('i2iOpenMaterialLibBtn');
+        if (materialBtn) {
+            materialBtn.addEventListener('click', () => {
+                MaterialLib.openPicker((item) => {
+                    if (item.type !== 'image') {
+                        UI.toast('请选择图片文件', 'error');
+                        return;
+                    }
+                    const items = this.uploader.getImages?.() || [];
+                    if (items.length >= 9) {
+                        UI.toast('最多9个素材，已满', 'error');
+                        return;
+                    }
+                    const grid = document.getElementById('i2iUploadGrid');
+                    if (!grid) return;
+                    const emptyCell = grid.querySelector('.upload-grid-cell.empty');
+                    if (!emptyCell) {
+                        UI.toast('最多9个素材，已满', 'error');
+                        return;
+                    }
+                    const index = parseInt(emptyCell.dataset.index);
+                    if (isNaN(index)) return;
+                    if (this.uploader.setItem) {
+                        this.uploader.setItem(index, {
+                            type: 'image',
+                            url: item.url,
+                            name: item.name || '素材'
+                        });
+                        Logger.info(`[素材库] 图生图已使用: ${item.name} (${item.url})`);
+                        UI.toast('已添加到素材区', 'success');
+                    }
+                }, 'image');
+            });
+        }
 
         // 比例按钮
         const ratioBtns = document.querySelectorAll('#i2iRatio .ratio-btn');
@@ -107,18 +144,40 @@ const RedrawModule = {
         resultArea.innerHTML = '';
 
        try {
-           // 收集所有图片的纯 base64（去掉 data:image/...;base64, 前缀）
+           // 收集所有图片（支持 base64 和 URL 两种方式）
            // 同时自动放大小图，确保满足 API 最低 3686400 像素要求（约 1920x1920）
            const MIN_PIXELS = 3686400;
            const imageList = [];
            for (const img of images) {
-               let b64 = img.base64;
-               const commaIdx = b64.indexOf(',');
-               if (commaIdx >= 0) b64 = b64.substring(commaIdx + 1);
-
-               // 检查图片像素数，不够就放大
-               const upscaled = await this._ensureMinSize(b64, MIN_PIXELS);
-                imageList.push(upscaled);
+               if (img.base64) {
+                   // 本地文件：base64 方式
+                   let b64 = img.base64;
+                   const commaIdx = b64.indexOf(',');
+                   if (commaIdx >= 0) b64 = b64.substring(commaIdx + 1);
+                   const upscaled = await this._ensureMinSize(b64, MIN_PIXELS);
+                   imageList.push(upscaled);
+               } else if (img.url) {
+                   // 素材库选择：URL 方式，直接传 base64（先下载再转）
+                   try {
+                       const resp = await fetch(img.url);
+                       const blob = await resp.blob();
+                       const b64 = await new Promise((resolve) => {
+                           const r = new FileReader();
+                           r.onload = (e) => {
+                               let data = e.target.result;
+                               const idx = data.indexOf(',');
+                               resolve(idx >= 0 ? data.substring(idx + 1) : data);
+                           };
+                           r.readAsDataURL(blob);
+                       });
+                       const upscaled = await this._ensureMinSize(b64, MIN_PIXELS);
+                       imageList.push(upscaled);
+                   } catch (e) {
+                       Logger.warn(`[图生图] 下载 URL 图片失败: ${img.url}`, e);
+                       UI.toast(`图片 ${img.name} 下载失败，请重试`, 'error');
+                       throw e;
+                   }
+               }
            }
            const totalMB = imageList.reduce((s, b) => s + b.length, 0) / 1024 / 1024;
 

@@ -14,6 +14,56 @@ const VideoModule = {
      */
     abortController: null,
 
+    /**
+     * 绑定素材库按钮到指定网格
+     * @param {string} btnId - 按钮 ID
+     * @param {function} getUploader - 获取 uploader 对象的函数
+     * @param {string} filterType - 筛选类型（可选）
+     */
+    _bindMaterialLibBtn(btnId, getUploader, filterType) {
+        const btn = document.getElementById(btnId);
+        if (!btn) return;
+        btn.addEventListener('click', () => {
+            MaterialLib.openPicker((item) => {
+                const uploader = getUploader();
+                if (!uploader) return;
+
+                const items = uploader.getItems?.() || [];
+                const maxSlots = uploader.maxSlots || 9;
+                if (items.length >= maxSlots) {
+                    UI.toast(`最多${maxSlots}个素材，已满`, 'error');
+                    return;
+                }
+
+                // 找到第一个空位
+                const grid = uploader.gridElement;
+                if (!grid) return;
+                const emptyCell = grid.querySelector('.upload-grid-cell.empty');
+                if (!emptyCell) {
+                    UI.toast(`最多${maxSlots}个素材，已满`, 'error');
+                    return;
+                }
+
+                const index = parseInt(emptyCell.dataset.index);
+                if (isNaN(index)) return;
+
+                if (uploader.setItem) {
+                    uploader.setItem(index, {
+                        type: item.type || 'image',
+                        base64: null,
+                        url: item.url,
+                        name: item.name || '素材'
+                    });
+                    Logger.info(`[素材库] 已使用: ${item.name} (${item.url})`);
+                    UI.toast('已添加到素材区', 'success');
+                }
+            }, filterType);
+        });
+    },
+
+    /**
+     * 绑定首尾帧参考音频的素材库按钮
+     */
     // ============ 文生视频 ============
 
     /**
@@ -122,7 +172,8 @@ const VideoModule = {
             maxSlots: 1,
             onItemsChange: (items) => {
                 Logger.info(`[图生视频] 首帧: ${items.length} 张`);
-            }
+            },
+            onUpload: (dataUrl, fileName) => this._uploadToTempHost(dataUrl, fileName)
         });
 
         // 初始化尾帧上传（单图）
@@ -130,33 +181,29 @@ const VideoModule = {
             maxSlots: 1,
             onItemsChange: (items) => {
                 Logger.info(`[图生视频] 尾帧: ${items.length} 张`);
-            }
+            },
+            onUpload: (dataUrl, fileName) => this._uploadToTempHost(dataUrl, fileName)
         });
 
-        // 首尾帧模式下的音频上传按钮
-        const audioUploadBtn = document.getElementById('i2vFirstLastAudioUploadBtn');
-        const audioFileInput = document.getElementById('i2vFirstLastAudioFile');
-        if (audioUploadBtn && audioFileInput) {
-            audioUploadBtn.addEventListener('click', () => audioFileInput.click());
-            audioFileInput.addEventListener('change', (e) => {
-                const file = e.target.files[0];
-                if (file) {
-                    const urlInput = document.getElementById('i2vFirstLastAudioUrl');
-                    if (urlInput) {
-                        urlInput.value = file.name;
-                    }
-                    this._firstLastAudioFile = file;
-                    Logger.info(`[图生视频] 首尾帧音频文件: ${file.name} (${(file.size / 1024).toFixed(1)}KB)`);
-                }
-            });
-        }
-
+        // 首尾帧模式下的音频上传按钮（实时上传到 uguu.se 并保存到素材库）
         // 初始化多模态参考九宫格
         this.i2vUploader = initMediaGrid('i2vUploadGrid', 'i2vFileInput', '图生视频', {
             onItemsChange: (items) => {
                 Logger.info(`[图生视频] 当前 ${items.length} 个素材`);
+            },
+            // 选文件后立即上传到 uguu.se
+            onUpload: async (dataUrl, fileName) => {
+                return await this._uploadToTempHost(dataUrl, fileName);
             }
         });
+
+        // 素材库按钮
+        // 素材库按钮 — 多模态参考九宫格
+        this._bindMaterialLibBtn('multimodalOpenMaterialLibBtn', () => this.i2vUploader);
+        // 素材库按钮 — 首帧
+        this._bindMaterialLibBtn('firstFrameOpenMaterialLibBtn', () => this.firstFrameUploader, 'image');
+        // 素材库按钮 — 尾帧
+        this._bindMaterialLibBtn('lastFrameOpenMaterialLibBtn', () => this.lastFrameUploader, 'image');
 
         // 画幅比例按钮
         document.querySelectorAll('#i2vRatio .ratio-btn').forEach(btn => {
@@ -232,13 +279,9 @@ const VideoModule = {
                     lastFrameUrl = lastItems[0].url || lastItems[0].base64;
                 }
 
-                // 首尾帧模式下不传参考音频
-                // 火山引擎 Seedance 首尾帧 API 要求 content 只包含 first_frame/last_frame 图片，
-                // 不允许混入 reference_audio/reference_video 等参考媒体
                 refAudios = null;
 
                 Logger.info(`[图生视频·首尾帧] 模型=${model}, 分辨率=${resolution}, 比例=${ratio}, 时长=${duration}s, 首帧=${!!firstFrameUrl}, 尾帧=${!!lastFrameUrl}`);
-                if (refAudios) Logger.info(`[图生视频·首尾帧] 参考音频: ${refAudios.length}个`);
                 UI.showLoading('正在创建首尾帧视频生成任务...');
 
             } else {
@@ -708,6 +751,30 @@ const VideoModule = {
             if (result.success && result.files && result.files[0]) {
                 const httpUrl = result.files[0].url;
                 Logger.info(`[上传托管] 成功! URL: ${httpUrl}`);
+
+                // 保存到素材库
+                try {
+                    const typeMap = {
+                        'audio/mpeg': 'audio', 'audio/mp3': 'audio', 'audio/wav': 'audio',
+                        'audio/ogg': 'audio', 'audio/mp4': 'audio', 'audio/x-m4a': 'audio',
+                        'video/mp4': 'video', 'video/webm': 'video', 'video/quicktime': 'video',
+                        'image/png': 'image', 'image/jpeg': 'image', 'image/webp': 'image',
+                        'image/gif': 'image'
+                    };
+                    const mediaType = typeMap[mimeType] || 'unknown';
+                    const blobSize = blob.size;
+                    MaterialLib.add({
+                        name: safeName,
+                        url: httpUrl,
+                        type: mediaType,
+                        mimeType: mimeType,
+                        size: blobSize
+                    });
+                    Logger.info(`[素材库] 已保存: ${safeName} (${mediaType})`);
+                } catch (e) {
+                    Logger.warn(`[素材库] 保存失败: ${e.message}`);
+                }
+
                 return httpUrl;
             }
 
@@ -716,6 +783,74 @@ const VideoModule = {
         } catch (e) {
             Logger.error(`[上传托管] 异常: ${e.message}`);
             return dataUrl; // 降级
+        }
+    },
+
+    /**
+     * 从素材库 URL 下载文件并填充到九宫格
+     * @param {string} url - 素材库中的 HTTP URL
+     * @param {string} type - 类型 ('image' | 'audio' | 'video')
+     * @param {number} index - 九宫格索引
+     */
+    async _fetchUrlToMedia(url, type, index) {
+        try {
+            Logger.info(`[素材库] 正在加载: ${url}`);
+
+            // 先通过 fetch 下载
+            const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
+            if (!resp.ok) {
+                UI.toast('素材加载失败', 'error');
+                return;
+            }
+
+            const blob = await resp.blob();
+            const mimeType = blob.type || (type === 'image' ? 'image/png' : type === 'audio' ? 'audio/mpeg' : 'video/mp4');
+
+            // 构造文件名
+            const extMap = {
+                'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp',
+                'audio/mpeg': '.mp3', 'audio/wav': '.wav', 'audio/ogg': '.ogg',
+                'video/mp4': '.mp4', 'video/webm': '.webm', 'video/quicktime': '.mov'
+            };
+            const ext = extMap[mimeType] || '.bin';
+            const name = '素材_' + Date.now() + ext;
+
+            // 创建 File 对象
+            const file = new File([blob], name, { type: mimeType });
+
+            // 通过 mediagrid 的 handleMediaFile 来填充
+            // 由于 handleMediaFile 是 initMediaGrid 的闭包内部函数，无法直接调用
+            // 我们使用另一种方式：触发文件输入，或直接通过九宫格暴露的接口
+
+            // 查找九宫格内部是否有可用的文件输入
+            const fileInput = document.getElementById('i2vFileInput');
+            if (fileInput) {
+                // 使用 DataTransfer 模拟文件选择
+                const dt = new DataTransfer();
+                dt.items.add(file);
+                fileInput.files = dt.files;
+
+                // 触发 change 事件（mediagrid 监听了此事件）
+                fileInput.dispatchEvent(new Event('change'));
+
+                Logger.info(`[素材库] 已填充到九宫格: ${name}`);
+                UI.toast('已添加到素材区', 'success');
+            }
+
+            // 也要保存到素材库（如果还没有的话）
+            const lib = MaterialLib.getAll();
+            if (!lib.find(i => i.url === url)) {
+                MaterialLib.add({
+                    name: name,
+                    url: url,
+                    type: type,
+                    mimeType: mimeType,
+                    size: blob.size
+                });
+            }
+        } catch (e) {
+            Logger.error(`[素材库] 加载失败: ${e.message}`);
+            UI.toast('素材加载失败，请重试', 'error');
         }
     }
 };

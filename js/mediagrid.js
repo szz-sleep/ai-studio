@@ -120,14 +120,53 @@ function initMediaGrid(gridId, fileInputId, tabName, callbacks) {
             else if (['mp3','wav','ogg','flac','aac','m4a','wma'].includes(ext)) type = 'audio';
             else type = 'image';
         }
+
+        // 自动重命名：图片1/图片2/音频1/音频2/视频1/视频2...
         const typeLabel = type === 'video' ? '视频' : type === 'audio' ? '音频' : '图片';
-        Logger.info(`[${tabName}] 读取${typeLabel}: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB)`);
+        const typeCount = items.filter(i => i && i.type === type).length + 1;
+        const autoName = `${typeLabel}${typeCount}`;
+        Logger.info(`[${tabName}] 读取${typeLabel}: ${file.name} → 重命名为 ${autoName} (${(file.size / 1024 / 1024).toFixed(1)}MB)`);
         return new Promise((resolve) => {
             const reader = new FileReader();
-            reader.onload = function(e) {
-                items[index] = { type, base64: e.target.result, url: null, name: file.name };
+            reader.onload = async function(e) {
+                const dataUrl = e.target.result;
+                items[index] = { type, base64: dataUrl, url: null, name: autoName };
                 render();
                 if (callbacks.onItemsChange) callbacks.onItemsChange(getItems());
+
+                // 立即上传到临时托管，拿到 HTTP URL
+                if (callbacks.onUpload) {
+                    try {
+                        const httpUrl = await callbacks.onUpload(dataUrl, file.name);
+                        if (httpUrl && httpUrl.startsWith('http')) {
+                            items[index].url = httpUrl;
+                            items[index].base64 = null; // 释放内存
+                            render();
+
+                            // 保存到素材库
+                            if (typeof MaterialLib !== 'undefined') {
+                                const typeMap = {
+                                    'image/png': 'image', 'image/jpeg': 'image', 'image/webp': 'image',
+                                    'image/gif': 'image', 'image/bmp': 'image',
+                                    'audio/mpeg': 'audio', 'audio/mp3': 'audio', 'audio/wav': 'audio',
+                                    'audio/ogg': 'audio', 'audio/mp4': 'audio', 'audio/x-m4a': 'audio',
+                                    'video/mp4': 'video', 'video/webm': 'video', 'video/quicktime': 'video'
+                            };
+                                const mediaType = typeMap[file.type] || type;
+                                MaterialLib.add({
+                                    name: autoName,
+                                    url: httpUrl,
+                                    type: mediaType,
+                                    mimeType: file.type,
+                                    size: file.size
+                                });
+                            }
+                        }
+                    } catch (e) {
+                        Logger.warn(`[${tabName}] 自动上传失败: ${e.message}，使用本地数据`);
+                    }
+                }
+
                 resolve();
             };
             reader.readAsDataURL(file);
@@ -253,5 +292,13 @@ function initMediaGrid(gridId, fileInputId, tabName, callbacks) {
         }
     });
 
-    return { getItems, getMediaByType, getImages, clearAll };
+    /** 直接设置指定索引的素材（用于素材库等外部调用） */
+    function setItem(index, item) {
+        if (index < 0 || index >= maxSlots) return;
+        items[index] = item;
+        render();
+        if (callbacks.onItemsChange) callbacks.onItemsChange(getItems());
+    }
+
+    return { getItems, getMediaByType, getImages, clearAll, setItem, gridElement: grid, maxSlots: maxSlots };
 }
