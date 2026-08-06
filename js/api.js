@@ -656,11 +656,17 @@ const API = {
         } else if (image) {
             body.image = image;
         }
-        if (size) body.size = size;
+         if (size) body.size = size;
         if (duration) body.duration = duration;
         if (fps) body.fps = fps;
         if (seed !== undefined && seed !== '') body.seed = seed;
         if (n) body.n = n;
+        // 多模态参考素材（图片/视频/音频 URL）
+        if (referenceImages && referenceImages.length > 0) body.images = referenceImages;
+        if (referenceVideos && referenceVideos.length > 0) body.videos = referenceVideos;
+        if (referenceAudios && referenceAudios.length > 0) body.audios = referenceAudios;
+        if (firstFrameUrl) body.first_frame = firstFrameUrl;
+        if (lastFrameUrl) body.last_frame = lastFrameUrl;
 
         const platform = Config.getCurrentPlatformConfig();
         const endpoint = platform.videoEndpoint || '/v1/video/generations';
