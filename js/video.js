@@ -262,6 +262,9 @@ const VideoModule = {
             const ratioBtn = document.querySelector('#i2vRatio .ratio-btn.active');
             const ratio = ratioBtn?.dataset.ratio || '16:9';
 
+            // 判断是否为本地模型（首尾帧和多模态共用，决定素材传 URL 还是 base64）
+            const isLocalModel = API._isLocalModel(model);
+
             if (mode === 'firstlast') {
                 // 首尾帧模式
                 const firstItems = this.firstFrameUploader?.getItems?.() || [];
@@ -274,14 +277,24 @@ const VideoModule = {
                     return;
                 }
 
-                firstFrameUrl = firstItems[0].url || firstItems[0].base64;
+                firstFrameUrl = isLocalModel ? (firstItems[0].base64 || firstItems[0].url) : (firstItems[0].url || firstItems[0].base64);
                 if (lastItems.length > 0) {
-                    lastFrameUrl = lastItems[0].url || lastItems[0].base64;
+                    lastFrameUrl = isLocalModel ? (lastItems[0].base64 || lastItems[0].url) : (lastItems[0].url || lastItems[0].base64);
+                }
+
+                // 本地模型：保留 base64；云端/火山：上传托管获取 URL
+                if (!isLocalModel) {
+                    if (firstFrameUrl && firstFrameUrl.startsWith('data:')) {
+                        firstFrameUrl = await VideoModule._uploadToTempHost(firstFrameUrl, 'first_frame');
+                    }
+                    if (lastFrameUrl && lastFrameUrl.startsWith('data:')) {
+                        lastFrameUrl = await VideoModule._uploadToTempHost(lastFrameUrl, 'last_frame');
+                    }
                 }
 
                 refAudios = null;
 
-                Logger.info(`[图生视频·首尾帧] 模型=${model}, 分辨率=${resolution}, 比例=${ratio}, 时长=${duration}s, 首帧=${!!firstFrameUrl}, 尾帧=${!!lastFrameUrl}`);
+                Logger.info(`[图生视频·首尾帧] 模型=${model}, 分辨率=${resolution}, 比例=${ratio}, 时长=${duration}s, 首帧=${!!firstFrameUrl}, 尾帧=${!!lastFrameUrl}${isLocalModel ? ' (本地模型)' : ''}`);
                 UI.showLoading('正在创建首尾帧视频生成任务...');
 
             } else {
@@ -299,58 +312,63 @@ const VideoModule = {
                 const lastFrame = refItems.find(i => i.role === 'last_frame');
                 firstFrameUrl = firstFrame?.url || firstFrame?.base64 || null;
                 lastFrameUrl = lastFrame?.url || lastFrame?.base64 || null;
-                // 对首尾帧的 base64 也上传
-                if (firstFrameUrl && firstFrameUrl.startsWith('data:')) {
-                    firstFrameUrl = await VideoModule._uploadToTempHost(firstFrameUrl, 'first_frame');
-                }
-                if (lastFrameUrl && lastFrameUrl.startsWith('data:')) {
-                    lastFrameUrl = await VideoModule._uploadToTempHost(lastFrameUrl, 'last_frame');
+                // 本地模型：保留 base64；云端/火山：上传托管
+                if (!isLocalModel) {
+                    if (firstFrameUrl && firstFrameUrl.startsWith('data:')) {
+                        firstFrameUrl = await VideoModule._uploadToTempHost(firstFrameUrl, 'first_frame');
+                    }
+                    if (lastFrameUrl && lastFrameUrl.startsWith('data:')) {
+                        lastFrameUrl = await VideoModule._uploadToTempHost(lastFrameUrl, 'last_frame');
+                    }
                 }
 
-                // 按类型分类（排除首尾帧）
-                refImages = refItems.filter(i => i.type === 'image' && i.role !== 'first_frame' && i.role !== 'last_frame').map(i => i.url || i.base64);
-                // 对 base64 格式的图片也上传到临时托管
-                if (refImages.length > 0) {
-                    const imageItems = refItems.filter(i => i.type === 'image' && i.role !== 'first_frame' && i.role !== 'last_frame');
-                    refImages = [];
-                    for (const item of imageItems) {
-                        const dataUrl = item.url || item.base64;
-                        const httpUrl = await VideoModule._uploadToTempHost(dataUrl, item.name || 'image');
-                        refImages.push(httpUrl);
+                // 按类型分类（排除首尾帧），本地模型保留 base64，云端/火山上传 uguu.se
+                if (isLocalModel) {
+                    refImages = refItems.filter(i => i.type === 'image' && i.role !== 'first_frame' && i.role !== 'last_frame').map(i => i.base64 || i.url);
+                    refVideos = refItems.filter(i => i.type === 'video').map(i => i.base64 || i.url);
+                    refAudios = refItems.filter(i => i.type === 'audio' || (!i.type && (i.url || i.base64 || '').startsWith('data:audio/'))).map(i => i.base64 || i.url);
+                    Logger.info(`[图生视频] 本地模型素材(base64优先): 图[0]=${(refImages[0]||'').substring(0,40)}...`);
+                } else {
+                    refImages = refItems.filter(i => i.type === 'image' && i.role !== 'first_frame' && i.role !== 'last_frame').map(i => i.url || i.base64);
+                    if (refImages.length > 0) {
+                        const imageItems = refItems.filter(i => i.type === 'image' && i.role !== 'first_frame' && i.role !== 'last_frame');
+                        refImages = [];
+                        for (const item of imageItems) {
+                            const dataUrl = item.url || item.base64;
+                            const httpUrl = await VideoModule._uploadToTempHost(dataUrl, item.name || 'image');
+                            refImages.push(httpUrl);
+                        }
                     }
-                }
-                // 视频：通过 type 字段或用 base64/url 的内容格式判断
-                refVideos = refItems.filter(i => {
-                    if (i.type === 'video') return true;
-                    const data = i.url || i.base64 || '';
-                    return data.startsWith('data:video/') || /\.(mp4|mov|webm|avi|mkv|m4v)(\?|$)/i.test(data);
-                }).map(i => i.url || i.base64);
-                // 音频：通过 type 字段或用 base64/url 的内容格式判断
-                const audioItems = refItems.filter(i => {
-                    if (i.type === 'audio') return true;
-                    const data = i.url || i.base64 || '';
-                    return data.startsWith('data:audio/') || /\.(mp3|wav|ogg|flac|aac|m4a|wma)(\?|$)/i.test(data);
-                });
-                refAudios = audioItems.map(i => i.url || i.base64);
-                // 将 base64 格式上传到临时托管获取 HTTP URL（Seedance 不支持 base64）
-                if (refAudios.length > 0) {
-                    UI.updateLoading('正在上传参考音频...', 0);
-                    const audioItems = refItems.filter(i => i.type === 'audio');
-                    refAudios = [];
-                    for (const item of audioItems) {
-                        const dataUrl = item.url || item.base64;
-                        const httpUrl = await VideoModule._uploadToTempHost(dataUrl, item.name || 'audio');
-                        refAudios.push(httpUrl);
+                    refVideos = refItems.filter(i => {
+                        if (i.type === 'video') return true;
+                        const data = i.url || i.base64 || '';
+                        return data.startsWith('data:video/') || /\.(mp4|mov|webm|avi|mkv|m4v)(\?|$)/i.test(data);
+                    }).map(i => i.url || i.base64);
+                    const audioItems = refItems.filter(i => {
+                        if (i.type === 'audio') return true;
+                        const data = i.url || i.base64 || '';
+                        return data.startsWith('data:audio/') || /\.(mp3|wav|ogg|flac|aac|m4a|wma)(\?|$)/i.test(data);
+                    });
+                    refAudios = audioItems.map(i => i.url || i.base64);
+                    if (refAudios.length > 0) {
+                        UI.updateLoading('正在上传参考音频...', 0);
+                        const aItems = refItems.filter(i => i.type === 'audio');
+                        refAudios = [];
+                        for (const item of aItems) {
+                            const dataUrl = item.url || item.base64;
+                            const httpUrl = await VideoModule._uploadToTempHost(dataUrl, item.name || 'audio');
+                            refAudios.push(httpUrl);
+                        }
                     }
-                }
-                if (refVideos.length > 0) {
-                    UI.updateLoading('正在上传参考视频...', 0);
-                    const videoItems = refItems.filter(i => i.type === 'video');
-                    refVideos = [];
-                    for (const item of videoItems) {
-                        const dataUrl = item.url || item.base64;
-                        const httpUrl = await VideoModule._uploadToTempHost(dataUrl, item.name || 'video');
-                        refVideos.push(httpUrl);
+                    if (refVideos.length > 0) {
+                        UI.updateLoading('正在上传参考视频...', 0);
+                        const vItems = refItems.filter(i => i.type === 'video');
+                        refVideos = [];
+                        for (const item of vItems) {
+                            const dataUrl = item.url || item.base64;
+                            const httpUrl = await VideoModule._uploadToTempHost(dataUrl, item.name || 'video');
+                            refVideos.push(httpUrl);
+                        }
                     }
                 }
                 if (refAudios.length > 0 && (firstFrameUrl || lastFrameUrl)) {

@@ -24,6 +24,36 @@ const API = {
     },
 
     /**
+     * 根据模型名称从 models.json 查询匹配的规则
+     */
+    _getModelRule(modelName) {
+        if (!this._modelConfig || !this._modelConfig.rules) return null;
+        const name = (modelName || '').toLowerCase();
+        return this._modelConfig.rules.find(r => name.includes(r.match.toLowerCase())) || null;
+    },
+
+    /**
+     * 判断模型是否为本地自部署模型
+     * 通过 models.json 中的 local 字段识别
+     */
+    _isLocalModel(modelName) {
+        const rule = this._getModelRule(modelName);
+        return !!(rule && rule.local);
+    },
+
+    /**
+     * 获取本地模型支持的分辨率（1024x576 等）
+     * 根据比例自动匹配
+     */
+    _getLocalModelSize(ratio, modelName) {
+        const rule = this._getModelRule(modelName);
+        if (rule && rule.supportedSizes) {
+            return rule.supportedSizes[ratio] || Object.values(rule.supportedSizes)[0];
+        }
+        return null;
+    },
+
+    /**
      * 画质档位 → Agnes size 档位
      */
     _agnesSizeFromQuality(qualityLabel) {
@@ -656,20 +686,36 @@ const API = {
         } else if (image) {
             body.image = image;
         }
-         if (size) body.size = size;
+
+        // 本地模型分辨率匹配
+        const localSize = this._getLocalModelSize(ratio, model);
+        if (localSize) {
+            body.size = localSize;
+            Logger.info(`[API] 本地模型大小映射: ${ratio} → ${localSize}`);
+        } else if (size) {
+            body.size = size;
+        }
         if (duration) body.duration = duration;
         if (fps) body.fps = fps;
         if (seed !== undefined && seed !== '') body.seed = seed;
         if (n) body.n = n;
-        // 多模态参考素材（图片/视频/音频 URL）
-        if (referenceImages && referenceImages.length > 0) body.images = referenceImages;
-        if (referenceVideos && referenceVideos.length > 0) body.videos = referenceVideos;
-        if (referenceAudios && referenceAudios.length > 0) body.audios = referenceAudios;
+
+        // 本地模型：传 base64 data URI；云端/火山模型：传 URL
+        if (referenceImages && referenceImages.length > 0) {
+            body.images = referenceImages;
+        }
+        if (referenceVideos && referenceVideos.length > 0) {
+            body.videos = referenceVideos;
+        }
+        if (referenceAudios && referenceAudios.length > 0) {
+            body.audios = referenceAudios;
+        }
         if (firstFrameUrl) body.first_frame = firstFrameUrl;
         if (lastFrameUrl) body.last_frame = lastFrameUrl;
 
         const platform = Config.getCurrentPlatformConfig();
         const endpoint = platform.videoEndpoint || '/v1/video/generations';
+        Logger.info(`[API/视频] 请求体: ${JSON.stringify({...body, prompt: (body.prompt||'').substring(0, 80)+'...'})}`);
         const resp = await fetch(this._url(endpoint), {
             method: 'POST',
             headers: this._headers(),

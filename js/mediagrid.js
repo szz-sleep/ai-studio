@@ -140,7 +140,7 @@ function initMediaGrid(gridId, fileInputId, tabName, callbacks) {
                         const httpUrl = await callbacks.onUpload(dataUrl, file.name);
                         if (httpUrl && httpUrl.startsWith('http')) {
                             items[index].url = httpUrl;
-                            items[index].base64 = null; // 释放内存
+                            // 保留 base64 供本地/自部署模型使用（不释放内存）
                             render();
 
                             // 保存到素材库
