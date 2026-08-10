@@ -474,15 +474,33 @@ const MaterialLib = {
                 assetUrl: httpUrl,
             });
 
-            // 用 MaaS 返回的真实 ID 更新本地记录
-            this._upsert({
-                id: maasResult.id,
-                status: maasResult.status || 'processing',
-                sourceUrl: maasResult.sourceUrl || httpUrl,
-            });
-
-            // 删除临时记录
-            this.remove(tempId);
+            // 用 MaaS 返回的真实 ID 更新本地记录（保留 tempId 记录的 type/size 等本地字段）
+            const list = this.getAll();
+            const tempIdx = list.findIndex(i => i.id === tempId);
+            if (tempIdx >= 0) {
+                // 原地更新：保留本地字段，替换 ID 与状态
+                list[tempIdx] = {
+                    ...list[tempIdx],
+                    id: maasResult.id,
+                    status: maasResult.status || 'processing',
+                    sourceUrl: maasResult.sourceUrl || httpUrl,
+                    url: httpUrl,
+                };
+                this._save(list);
+            } else {
+                // 临时记录不存在（如页面刷新过），新建一条，用本地已知的 type
+                this._upsert({
+                    id: maasResult.id,
+                    name: file.name,
+                    url: httpUrl,
+                    sourceUrl: maasResult.sourceUrl || httpUrl,
+                    type,
+                    mimeType: file.type,
+                    size: file.size,
+                    status: maasResult.status || 'processing',
+                    time: Date.now(),
+                });
+            }
 
             console.log(`[素材库] MaaS 同步成功: ${maasResult.id}, 状态: ${maasResult.status}`);
 
