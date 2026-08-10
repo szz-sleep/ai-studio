@@ -1,7 +1,7 @@
 {
   "name": "ai-studio",
-  "version": "1.0.13",
-  "description": "AI Studio - AI创作工坊",
+  "version": "1.0.14",
+  "description": "AI Studio - AI\u521b\u4f5c\u5de5\u574a",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -9,7 +9,7 @@
     "build:win": "electron-builder --win --x64 --publish=never",
     "build:all": "electron-builder --mac --win --x64 --publish=never"
   },
-  "author": "湖北生而为一科技有限公司",
+  "author": "\u6e56\u5317\u751f\u800c\u4e3a\u4e00\u79d1\u6280\u6709\u9650\u516c\u53f8",
   "license": "MIT",
   "devDependencies": {
     "electron": "^33.4.11",
@@ -49,8 +49,16 @@
     "dmg": {
       "title": "AI Studio",
       "contents": [
-        { "x": 130, "y": 220 },
-        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
       ]
     },
     "win": {
