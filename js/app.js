@@ -297,7 +297,6 @@ const App = {
             document.getElementById('platformSelect').value = Config.DEFAULT_PLATFORM;
             document.getElementById('apiKeyInput').value = '';
             document.getElementById('apiBaseUrlDisplay').value = Config.getBaseUrl();
-            document.getElementById('platformHint').textContent = Config.getCurrentPlatformConfig().hint;
             document.getElementById('uploadSizeInput').value = Config.DEFAULT_UPLOAD_SIZE_MB;
             document.getElementById('uploadSizeDisplay').textContent = Config.DEFAULT_UPLOAD_SIZE_MB;
             Config.updateKeyStatus();
@@ -319,14 +318,11 @@ const App = {
         document.getElementById('saveSettingsBtn').addEventListener('click', () => {
             const platform = document.getElementById('platformSelect').value;
             Config.setPlatform(platform);
-            const isCustom = Config.getCustomPlatforms().some(p => p.id === platform);
-            if (!isCustom) {
-                // 预设平台：保存 URL 和 Key
-                const baseUrlVal = document.getElementById('apiBaseUrlDisplay').value.trim();
-                if (baseUrlVal) Config.setBaseUrl(baseUrlVal);
-                const key = document.getElementById('apiKeyInput').value.trim();
-                if (key) Config.setApiKey(key);
-            }
+            // 保存当前平台的 URL 和 Key
+            const baseUrlVal = document.getElementById('apiBaseUrlDisplay').value.trim();
+            if (baseUrlVal) Config.setBaseUrl(baseUrlVal);
+            const key = document.getElementById('apiKeyInput').value.trim();
+            if (key) Config.setApiKey(key);
             const uploadMB = parseInt(document.getElementById('uploadSizeInput').value, 10);
             if (!isNaN(uploadMB) && uploadMB >= 5 && uploadMB <= 500) {
                 Config.setUploadSizeMB(uploadMB);
@@ -340,47 +336,19 @@ const App = {
 
         // 首次引导保存
         document.getElementById('onboardingSaveBtn').addEventListener('click', () => {
-            const platformSel = document.getElementById('onboardingPlatformSelect');
-            if (platformSel) {
-                Config.setPlatform(platformSel.value);
-                const hint = document.getElementById('onboardingHint');
-                const preset = Config.getCurrentPlatformConfig();
-                if (hint && preset.hint) hint.textContent = preset.hint;
-                // 自定义平台保存 URL
-                if (platformSel.value === 'custom') {
-                    const obUrl = document.getElementById('onboardingCustomUrl').value.trim();
-                    if (obUrl) Config.setBaseUrl(obUrl);
-                    const std = document.getElementById('onboardingApiStandard')?.value || 'openai';
-                    Config.setCustomApiStandard(std);
-                }
-            }
+            const name = (document.getElementById('onboardingCustomName')?.value || '').trim();
+            const url = (document.getElementById('onboardingCustomUrl')?.value || '').trim();
             const key = document.getElementById('onboardingKeyInput').value.trim();
-            if (!key) {
-                UI.toast('请输入API Key', 'error');
-                return;
-            }
-            Config.setApiKey(key);
+            if (!name) { UI.toast('请输入平台名称', 'error'); return; }
+            if (!url) { UI.toast('请输入 API 地址', 'error'); return; }
+            if (!key) { UI.toast('请输入 API Key', 'error'); return; }
+            // 创建自定义平台
+            Config.addCustomPlatform(name, url, key);
             Config.updateKeyStatus();
             document.getElementById('onboardingModal').classList.add('hidden');
             UI.toast('设置成功，开始创作吧！', 'success');
             this.loadModels();
         });
-
-        // 首次引导平台切换
-        const onboardPlatformSel = document.getElementById('onboardingPlatformSelect');
-        if (onboardPlatformSel) {
-            onboardPlatformSel.addEventListener('change', () => {
-                const hint = document.getElementById('onboardingHint');
-                const preset = PLATFORM_PRESETS[onboardPlatformSel.value];
-                if (hint && preset && preset.hint) hint.textContent = preset.hint;
-                // 自定义平台显示 URL 输入框和 API 标准选择器
-                const customUrlGroup = document.getElementById('onboardingCustomUrlGroup');
-                const stdGroup = document.getElementById('onboardingApiStandardGroup');
-                const showCustom = onboardPlatformSel.value === 'custom';
-                if (customUrlGroup) customUrlGroup.style.display = showCustom ? 'block' : 'none';
-                if (stdGroup) stdGroup.style.display = showCustom ? 'block' : 'none';
-            });
-        }
 
         // Tab 切换
         document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -490,23 +458,21 @@ const App = {
         const platform = document.getElementById('platformSelect').value;
         Config.setPlatform(platform);
         const preset = Config.getCurrentPlatformConfig();
-        const isCustom = Config.getCustomPlatforms().some(p => p.id === platform);
 
-        // 自定义平台：隐藏 Key 和地址输入框（走弹窗管理）
-        // 预设平台：显示 Key 和地址输入框
-        document.getElementById('apiKeyGroup').style.display = isCustom ? 'none' : 'block';
-        document.getElementById('baseUrlGroup').style.display = isCustom ? 'none' : 'block';
+        // 显示 Key 和地址输入框
+        document.getElementById('apiKeyGroup').style.display = 'block';
+        document.getElementById('baseUrlGroup').style.display = 'block';
 
-        if (!isCustom) {
-            const display = document.getElementById('apiBaseUrlDisplay');
-            display.readOnly = false;
-            display.style.opacity = '1';
-            display.style.cursor = 'auto';
-            display.value = Config.getBaseUrl();
-            display.placeholder = preset.baseUrl || '';
-            document.getElementById('baseUrlLabel').textContent = 'API 地址';
-            document.getElementById('apiKeyInput').value = Config.getApiKey();
-        }
+        const display = document.getElementById('apiBaseUrlDisplay');
+        display.readOnly = false;
+        display.style.opacity = '1';
+        display.style.cursor = 'auto';
+        display.value = Config.getBaseUrl();
+        display.placeholder = '';
+        document.getElementById('baseUrlLabel').textContent = 'API 地址';
+        document.getElementById('apiKeyInput').value = Config.getApiKey();
+
+        Config.updateKeyStatus();
     },
 
     /**
@@ -515,18 +481,16 @@ const App = {
     renderPlatformSelect() {
         const select = document.getElementById('platformSelect');
         const current = Config.getPlatform();
-        let html = `
-            <option value="opc">OPC Cloud</option>
-            <option value="neutoken">牛头词元</option>
-            <option value="agnes">Agnes AI</option>
-            <option value="volcengine">火山引擎</option>
-        `;
+        let html = '';
         const customs = Config.getCustomPlatforms();
         customs.forEach(p => {
             html += `<option value="${p.id}">${p.name}</option>`;
         });
+        if (customs.length === 0) {
+            html = '<option value="">— 请先添加一个平台 —</option>';
+        }
         select.innerHTML = html;
-        select.value = current;
+        select.value = current || customs[0]?.id || '';
     },
 
     /**
@@ -540,15 +504,17 @@ const App = {
             return;
         }
         container.innerHTML = '';
+        const currentId = Config.getPlatform();
         customs.forEach(p => {
+            const isCurrent = p.id === currentId;
             const div = document.createElement('div');
-            div.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;';
+            div.className = 'platform-row' + (isCurrent ? ' is-current' : '');
             div.innerHTML = `
-                <span style="flex:1;font-size:13px;font-weight:500;">${p.name}</span>
-                <span style="flex:2;font-size:12px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.baseUrl}</span>
-                <button type="button" style="padding:2px 8px;font-size:12px;border:none;border-radius:4px;background:var(--border);cursor:pointer;color:var(--text-primary);" onclick="App.selectCustomPlatform('${p.id}')">选择</button>
-                <button type="button" style="padding:2px 8px;font-size:12px;border:none;border-radius:4px;background:var(--border);cursor:pointer;color:var(--text-primary);" onclick="App.editCustomPlatform('${p.id}')">编辑</button>
-                <button type="button" style="padding:2px 8px;font-size:12px;border:none;border-radius:4px;background:rgba(220,53,53,0.15);cursor:pointer;color:#dc3535;" onclick="App.deleteCustomPlatform('${p.id}')">删除</button>
+                <span class="platform-row-name">${p.name}</span>
+                <span class="platform-row-url">${p.baseUrl}</span>
+                <button type="button" class="plat-btn plat-btn-select${isCurrent ? ' active' : ''}" onclick="App.selectCustomPlatform('${p.id}')" title="切换为当前平台">选择</button>
+                <button type="button" class="plat-btn plat-btn-edit" onclick="App.editCustomPlatform('${p.id}')" title="编辑这个平台">编辑</button>
+                <button type="button" class="plat-btn plat-btn-delete" onclick="App.deleteCustomPlatform('${p.id}')" title="删除这个平台">删除</button>
             `;
             container.appendChild(div);
         });

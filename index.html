@@ -33,28 +33,24 @@
                 <button class="modal-close" onclick="document.getElementById('settingsModal').classList.add('hidden')">×</button>
             </div>
             <div class="modal-body">
-                <!-- 平台选择 -->
+                <!-- 当前平台编辑 -->
                 <div class="form-group">
-                    <label>API 平台</label>
+                    <label>当前平台</label>
                     <select id="platformSelect" onchange="App.onPlatformChange()">
-                        <option value="opc">OPC Cloud</option>
-                        <option value="neutoken">牛头词元</option>
-                        <option value="agnes">Agnes AI</option>
-                        <option value="volcengine">火山引擎</option>
                     </select>
                 </div>
 
-                <!-- 自定义平台列表 -->
+                <!-- 平台列表 -->
                 <div class="form-group" id="customPlatformList">
                     <div id="customPlatformItems" style="display:flex;flex-direction:column;gap:6px;"></div>
-                    <button type="button" class="btn-secondary" style="margin-top:8px;padding:6px 18px;" onclick="App.openAddPlatformModal()">+ 添加自定义平台</button>
+                    <button type="button" class="btn-secondary" style="margin-top:8px;padding:6px 18px;" onclick="App.openAddPlatformModal()">+ 添加平台</button>
                 </div>
 
                 <!-- API Key -->
                 <div class="form-group" id="apiKeyGroup">
                     <label>API Key</label>
                     <div class="api-key-wrapper">
-                        <input type="password" id="apiKeyInput" placeholder="请输入当前平台的 API Key" autocomplete="off">
+                        <input type="password" id="apiKeyInput" placeholder="请输入 API Key" autocomplete="off">
                         <button type="button" class="eye-toggle" data-target="apiKeyInput" title="显示/隐藏 Key"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
                     </div>
                 </div>
@@ -62,7 +58,7 @@
                 <!-- API 地址 -->
                 <div class="form-group" id="baseUrlGroup">
                     <label id="baseUrlLabel">API 地址</label>
-                    <input type="text" id="apiBaseUrlDisplay" placeholder="选择平台后自动填入，可修改">
+                    <input type="text" id="apiBaseUrlDisplay" placeholder="https://api.example.com/v1">
                 </div>
 
                 <!-- 上传限制 -->
@@ -81,17 +77,17 @@
         </div>
     </div>
 
-    <!-- 添加自定义平台弹窗 -->
+    <!-- 添加平台弹窗 -->
     <div id="addPlatformModal" class="modal hidden">
         <div class="modal-content" style="max-width:440px;">
             <div class="modal-header">
-                <h2>添加自定义平台</h2>
+                <h2>添加平台</h2>
                 <button class="modal-close" onclick="document.getElementById('addPlatformModal').classList.add('hidden')">×</button>
             </div>
             <div class="modal-body">
                 <div class="form-group">
                     <label>平台名称</label>
-                    <input type="text" id="addPlatformName" placeholder="例如：我的 API" style="width:100%;">
+                    <input type="text" id="addPlatformName" placeholder="例如：我的平台" style="width:100%;">
                 </div>
                 <div class="form-group">
                     <label>API 地址</label>
@@ -137,7 +133,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <span class="material-lib-hint">点击素材直接使用 · 上传到 uguu.se 的素材会自动记录</span>
+                <span class="material-lib-hint"></span>
                 <div class="material-footer-actions">
                     <button class="btn-secondary footer-btn" id="materialUploadBtn">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
@@ -150,11 +146,11 @@
         </div>
     </div>
 
-    <!-- 编辑自定义平台弹窗 -->
+    <!-- 编辑平台弹窗 -->
     <div id="editPlatformModal" class="modal hidden">
         <div class="modal-content" style="max-width:440px;">
             <div class="modal-header">
-                <h2>编辑自定义平台</h2>
+                <h2>编辑平台</h2>
                 <button class="modal-close" onclick="document.getElementById('editPlatformModal').classList.add('hidden')">×</button>
             </div>
             <div class="modal-body">
@@ -187,36 +183,22 @@
             </div>
             <div class="modal-body">
                 <div class="form-group">
-                    <label>选择 API 平台</label>
-                    <select id="onboardingPlatformSelect">
-                       <option value="opc">OPC Cloud</option>
-                       <option value="neutoken">牛头词元</option>
-                        <option value="agnes">Agnes AI</option>
-                       <option value="volcengine">火山引擎</option>
-                       <option value="custom">自定义平台</option>
-                   </select>
-               </div>
-               <div class="form-group">
-                   <label>API Key</label>
-                   <div class="api-key-wrapper">
-                       <input type="password" id="onboardingKeyInput" placeholder="请输入所选平台的 API Key" autocomplete="off">
-                       <button type="button" class="eye-toggle" data-target="onboardingKeyInput" title="显示/隐藏 Key"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
-                   </div>
-                    <p class="form-hint" id="onboardingHint">OPC Cloud 平台，填入 API Key 即可开始使用。</p>
+                    <label>添加一个 API 平台</label>
                 </div>
-                <div class="form-group" id="onboardingCustomUrlGroup" style="display:none;">
+                <div class="form-group">
+                    <label>平台名称</label>
+                    <input type="text" id="onboardingCustomName" placeholder="例如：我的平台" style="width:100%;">
+                </div>
+                <div class="form-group">
                     <label>API 地址</label>
-                    <input type="text" id="onboardingCustomUrl" placeholder="例如 https://your-api.com/v1">
-                    <p class="form-hint">选“自定义平台”时填写，认证方式为 Authorization: Bearer {Key}</p>
+                    <input type="text" id="onboardingCustomUrl" placeholder="https://api.example.com/v1" style="width:100%;">
                 </div>
-
-                <div class="form-group" id="onboardingApiStandardGroup" style="display:none;">
-                    <label>API 标准</label>
-                    <select id="onboardingApiStandard">
-                        <option value="openai">OpenAI 标准（Bearer Key）</option>
-                        <option value="anthropic">Anthropic 标准（x-api-key）</option>
-                    </select>
-                    <p class="form-hint">大多数平台使用 OpenAI 标准。</p>
+                <div class="form-group">
+                    <label>API Key</label>
+                    <div class="api-key-wrapper">
+                        <input type="password" id="onboardingKeyInput" placeholder="请输入 API Key" autocomplete="off" style="width:100%;">
+                        <button type="button" class="eye-toggle" data-target="onboardingKeyInput" title="显示/隐藏 Key"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">

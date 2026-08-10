@@ -6,61 +6,10 @@
 // 所有图片/视频生成请求自动追加此提示，禁止水印
 const DEFAULT_PROMPT_SUFFIX = '，图片或视频中不允许出现任何水印、文字标识、LOGO、品牌标记或无关文字。';
 
-// ===== 预设平台配置 =====
+// ===== 平台配置 =====
+// 所有平台均由用户通过"自定义平台"自行添加与管理，本文件不再内置任何预设平台。
 const PLATFORM_PRESETS = {
-    opc: {
-        name: 'OPC Cloud',
-        baseUrl: 'https://openai.zhrccp.com',
-        apiKeyPattern: 'sk-',
-        modelsEndpoint: '/v1/models',
-        chatEndpoint: '/v1/chat/completions',
-        imageEndpoint: '/v1/images/generations',
-        imageEditEndpoint: '/v1/images/edits',
-        videoEndpoint: '/v1/video/generations',
-        videoPollBase: '/v1/video',
-        headerStyle: 'bearer',
-        hint: 'OPC Cloud 平台，填入 API Key 即可使用。'
-    },
-    neutoken: {
-        name: '牛头词元',
-        baseUrl: 'https://neutoken.net/v1',
-        apiKeyPattern: 'sk-',
-        modelsEndpoint: '/models',
-        chatEndpoint: '/chat/completions',
-        imageEndpoint: '/images/generations',
-        imageEditEndpoint: '/images/edits',
-       videoEndpoint: null,
-       videoPollBase: null,
-       headerStyle: 'bearer',
-       hint: '牛头词元平台，OpenAI 兼容接口，填入 API Key 即可使用。'
-   },
-   volcengine: {
-        name: '火山引擎',
-        baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
-        apiKeyPattern: '',
-        modelsEndpoint: null,
-        chatEndpoint: '/chat/completions',
-        imageEndpoint: '/images/generations',
-        imageEditEndpoint: '/images/generations',
-        videoEndpoint: '/contents/generations/tasks',
-        videoPollBase: '/contents/generations/tasks',
-        headerStyle: 'bearer',
-        hint: '火山引擎方舟平台(Ark)，使用豆包 Seedance/Seedream 等模型。API Key 从控制台获取。'
-   },
-    agnes: {
-        name: 'Agnes AI',
-        baseUrl: 'https://apihub.agnes-ai.com',
-        apiKeyPattern: '',
-        modelsEndpoint: '/v1/models',
-        chatEndpoint: '/v1/chat/completions',
-        imageEndpoint: '/v1/images/generations',
-        imageEditEndpoint: null,
-        videoEndpoint: '/v1/videos',
-        videoResultEndpoint: '/agnesapi',
-        headerStyle: 'bearer',
-        hint: 'Agnes AI 平台，一个 API Key 通用图片与视频模型（agnes-image-2.1-flash / agnes-video-v2.0）。'
-    },
-   custom: {
+    custom: {
         name: '自定义平台',
         baseUrl: '',
         apiKeyPattern: '',
@@ -71,13 +20,13 @@ const PLATFORM_PRESETS = {
         videoEndpoint: '/v1/video/generations',
         videoPollBase: '/v1/video',
         headerStyle: 'bearer',
-        hint: 'OpenAI 兼容接口，填入 API 地址和 API Key 即可使用。'
+        hint: '填入 API 地址和 API Key 即可使用。'
     }
 };
 
 const Config = {
     // 默认平台
-    DEFAULT_PLATFORM: 'volcengine',
+    DEFAULT_PLATFORM: 'custom',
 
     // 默认单图上传限制（MB）
     DEFAULT_UPLOAD_SIZE_MB: 50,
@@ -257,24 +206,6 @@ const Config = {
     resetBaseUrl(platform) {
         platform = platform || this.getPlatform();
         localStorage.removeItem(`opc_base_url_${platform}`);
-    },
-
-    // ===== 自定义平台 API 标准 =====
-
-    getCustomApiStandard() {
-        return localStorage.getItem(this.STORAGE_KEYS.CUSTOM_API_STANDARD) || 'openai';
-    },
-
-    setCustomApiStandard(standard) {
-        localStorage.setItem(this.STORAGE_KEYS.CUSTOM_API_STANDARD, standard);
-    },
-
-    getCustomAnthropicVersion() {
-        return localStorage.getItem(this.STORAGE_KEYS.CUSTOM_ANTHROPIC_VERSION) || '2023-06-01';
-    },
-
-    setCustomAnthropicVersion(version) {
-        localStorage.setItem(this.STORAGE_KEYS.CUSTOM_ANTHROPIC_VERSION, version);
     },
 
     // ===== 上传限制 =====
