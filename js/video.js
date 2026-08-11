@@ -790,22 +790,46 @@ const VideoModule = {
             for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
             const blob = new Blob([bytes], { type: mimeType });
 
-            const formData = new FormData();
-            formData.append('files[]', blob, safeName);
+            // 单次上传（带超时控制，45s），失败/超时抛出；每次重新构造 FormData（body 不可复用）
+            async function uploadOnce() {
+                const fd = new FormData();
+                fd.append('files[]', blob, safeName);
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 45000);
+                try {
+                    const r = await fetch('https://uguu.se/upload', {
+                        method: 'POST',
+                        body: fd,
+                        signal: controller.signal
+                    });
+                    if (!r.ok) {
+                        throw new Error(`HTTP ${r.status}`);
+                    }
+                    return r;
+                } finally {
+                    clearTimeout(timeoutId);
+                }
+            }
 
-            // 加超时控制（15s），防止无限等待
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 15000);
-            const resp = await fetch('https://uguu.se/upload', {
-                method: 'POST',
-                body: formData,
-                signal: controller.signal
-            });
-            clearTimeout(timeoutId);
+            // 上传重试：最多 3 次（1+2重试），失败间隔退避，避免超时/网抖导致一次失败
+            let resp = null;
+            let lastErr = null;
+            for (let attempt = 0; attempt < 3; attempt++) {
+                try {
+                    resp = await uploadOnce();
+                    break;
+                } catch (e) {
+                    lastErr = e;
+                    Logger.warn(`[上传托管] 第 ${attempt + 1} 次上传失败(${e.message})，${attempt < 2 ? '重试中...' : '放弃'}`);
+                    if (attempt < 2) {
+                        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+                    }
+                }
+            }
 
-            if (!resp.ok) {
-                Logger.warn(`[上传托管] 服务器返回 ${resp.status}`);
-                return dataUrl; // 降级：仍返回原 DataURL（虽然可能不生效）
+            if (!resp) {
+                Logger.warn(`[上传托管] 上传失败: ${lastErr?.message || '未知错误'}`);
+                return dataUrl; // 降级：仍返回原 DataURL
             }
 
             const result = await resp.json();
