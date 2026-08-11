@@ -519,7 +519,7 @@ const VideoModule = {
                 Logger.warn('用户取消了视频生成');
             } else {
                 Logger.error(`图生视频失败: ${err.message}`);
-                resultArea.innerHTML = this._createI2VErrorCard(err.message);
+                resultArea.innerHTML = this._createI2VErrorCard(this._realPersonZh(err.message));
                 UI.toast(`生成失败: ${err.message}`, 'error');
             }
         } finally {
@@ -529,6 +529,20 @@ const VideoModule = {
             UI.hideCancelBtn();
             this.abortController = null;
         }
+    },
+
+    /**
+     * 火山真人检测错误 → 中文提示
+     * 仅用于界面展示（视频展示区），日志仍保留英文原文
+     * @param {string} msg - 原始错误信息
+     * @returns {string} 中文提示（非真人错误则原样返回）
+     */
+    _realPersonZh(msg) {
+        const s = msg || '';
+        if (/PrivacyInformation|may contain real person/i.test(s)) {
+            return '图片含有真人肖像，受平台限制。请将人物图片上传到素材库引用后再生成';
+        }
+        return msg;
     },
 
     /**

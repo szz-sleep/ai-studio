@@ -362,6 +362,7 @@ const API = {
             body.size = size;
         }
         if (duration) body.duration = duration;
+        if (ratio) body.ratio = ratio;
         if (fps) body.fps = fps;
         if (seed !== undefined && seed !== '') body.seed = seed;
         if (n) body.n = n;
