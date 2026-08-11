@@ -1,6 +1,6 @@
 {
   "name": "ai-studio",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "description": "AI Studio - AI\u521b\u4f5c\u5de5\u574a",
   "main": "main.js",
   "scripts": {
