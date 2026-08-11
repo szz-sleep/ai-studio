@@ -15,6 +15,16 @@ const VideoModule = {
     abortController: null,
 
     /**
+     * 校验是否为有效的火山素材库 assetId
+     * 素材库本地记录中 local_/temp_ 前缀的 id 不是火山 assetId，不能用于 asset:// 引用
+     * @param {string} id
+     * @returns {boolean}
+     */
+    _validAssetId(id) {
+        return !!(id && typeof id === 'string' && !id.startsWith('local_') && !id.startsWith('temp_'));
+    },
+
+    /**
      * 绑定素材库按钮到指定网格
      * @param {string} btnId - 按钮 ID
      * @param {function} getUploader - 获取 uploader 对象的函数
@@ -48,13 +58,17 @@ const VideoModule = {
                 if (isNaN(index)) return;
 
                 if (uploader.setItem) {
+                    // assetId：素材库选的素材带火山 assetId，生成时用 asset://<id> 引用，避免传外部 URL
+                    const validAssetId = VideoModule._validAssetId(item.id) ? item.id : null;
                     uploader.setItem(index, {
                         type: item.type || 'image',
                         base64: null,
                         url: item.url,
+                        assetId: validAssetId,
+                        sourceUrl: item.sourceUrl || item.url,
                         name: item.name || '素材'
                     });
-                    Logger.info(`[素材库] 已使用: ${item.name} (${item.url})`);
+                    Logger.info(`[素材库] 已使用: ${item.name}${validAssetId ? ` (assetId: ${validAssetId})` : ` (${item.url})`}`);
                     UI.toast('已添加到素材区', 'success');
                 }
             }, filterType);
@@ -282,7 +296,15 @@ const VideoModule = {
                     lastFrameUrl = isLocalModel ? (lastItems[0].base64 || lastItems[0].url) : (lastItems[0].url || lastItems[0].base64);
                 }
 
-                // 本地模型：保留 base64；云端/火山：上传托管获取 URL
+                // 素材库选的素材：带有效 assetId → 生成时用 asset://<id> 引用（火山素材库），不 re-upload 外部 URL
+                if (!isLocalModel && VideoModule._validAssetId(firstItems[0].assetId)) {
+                    firstFrameUrl = 'asset://' + firstItems[0].assetId;
+                }
+                if (!isLocalModel && VideoModule._validAssetId(lastItems[0]?.assetId)) {
+                    lastFrameUrl = 'asset://' + lastItems[0].assetId;
+                }
+
+                // 本地模型：保留 base64；云端/火山：上传托管获取 URL（仅无 assetId 时）
                 if (!isLocalModel) {
                     if (firstFrameUrl && firstFrameUrl.startsWith('data:')) {
                         firstFrameUrl = await VideoModule._uploadToTempHost(firstFrameUrl, 'first_frame');
@@ -312,6 +334,9 @@ const VideoModule = {
                 const lastFrame = refItems.find(i => i.role === 'last_frame');
                 firstFrameUrl = firstFrame?.url || firstFrame?.base64 || null;
                 lastFrameUrl = lastFrame?.url || lastFrame?.base64 || null;
+                // 素材库选的素材（带有效 assetId）→ 用 asset://<id> 引用火山素材库，不 re-upload 外部 URL
+                if (VideoModule._validAssetId(firstFrame?.assetId)) firstFrameUrl = 'asset://' + firstFrame.assetId;
+                if (VideoModule._validAssetId(lastFrame?.assetId)) lastFrameUrl = 'asset://' + lastFrame.assetId;
                 // 本地模型：保留 base64；云端/火山：上传托管
                 if (!isLocalModel) {
                     if (firstFrameUrl && firstFrameUrl.startsWith('data:')) {
@@ -329,45 +354,49 @@ const VideoModule = {
                     refAudios = refItems.filter(i => i.type === 'audio' || (!i.type && (i.url || i.base64 || '').startsWith('data:audio/'))).map(i => i.base64 || i.url);
                     Logger.info(`[图生视频] 本地模型素材(base64优先): 图[0]=${(refImages[0]||'').substring(0,40)}...`);
                 } else {
-                    refImages = refItems.filter(i => i.type === 'image' && i.role !== 'first_frame' && i.role !== 'last_frame').map(i => i.url || i.base64);
-                    if (refImages.length > 0) {
-                        const imageItems = refItems.filter(i => i.type === 'image' && i.role !== 'first_frame' && i.role !== 'last_frame');
-                        refImages = [];
-                        for (const item of imageItems) {
-                            const dataUrl = item.url || item.base64;
-                            const httpUrl = await VideoModule._uploadToTempHost(dataUrl, item.name || 'image');
-                            refImages.push(httpUrl);
+                    // 参考图：带 assetId 的用 asset:// 引用火山素材库（跳过 re-upload），否则走原外部 URL 流程
+                    const imageItems = refItems.filter(i => i.type === 'image' && i.role !== 'first_frame' && i.role !== 'last_frame');
+                    refImages = [];
+                    for (const item of imageItems) {
+                        if (VideoModule._validAssetId(item.assetId)) {
+                            refImages.push('asset://' + item.assetId);
+                            Logger.info(`[图生视频] 图片素材用素材库引用: asset://${item.assetId}`);
+                            continue;
                         }
+                        const dataUrl = item.url || item.base64;
+                        const httpUrl = await VideoModule._uploadToTempHost(dataUrl, item.name || 'image');
+                        refImages.push(httpUrl);
                     }
                     refVideos = refItems.filter(i => {
                         if (i.type === 'video') return true;
                         const data = i.url || i.base64 || '';
                         return data.startsWith('data:video/') || /\.(mp4|mov|webm|avi|mkv|m4v)(\?|$)/i.test(data);
-                    }).map(i => i.url || i.base64);
+                    }).map(i => VideoModule._validAssetId(i.assetId) ? 'asset://' + i.assetId : (i.url || i.base64));
                     const audioItems = refItems.filter(i => {
                         if (i.type === 'audio') return true;
                         const data = i.url || i.base64 || '';
                         return data.startsWith('data:audio/') || /\.(mp3|wav|ogg|flac|aac|m4a|wma)(\?|$)/i.test(data);
                     });
-                    refAudios = audioItems.map(i => i.url || i.base64);
+                    refAudios = audioItems.map(i => VideoModule._validAssetId(i.assetId) ? 'asset://' + i.assetId : (i.url || i.base64));
                     if (refAudios.length > 0) {
                         UI.updateLoading('正在上传参考音频...', 0);
-                        const aItems = refItems.filter(i => i.type === 'audio');
-                        refAudios = [];
-                        for (const item of aItems) {
-                            const dataUrl = item.url || item.base64;
-                            const httpUrl = await VideoModule._uploadToTempHost(dataUrl, item.name || 'audio');
-                            refAudios.push(httpUrl);
+                        const aItems = refItems.filter(i => i.type === 'audio' && !VideoModule._validAssetId(i.assetId));
+                        for (let ai = 0; ai < aItems.length; ai++) {
+                            const httpUrl = await VideoModule._uploadToTempHost(aItems[ai].url || aItems[ai].base64, aItems[ai].name || 'audio');
+                            // 替换该位置的 url（asset:// 的保留）
+                            const dataUrl = aItems[ai].url || aItems[ai].base64;
+                            const idx = refAudios.indexOf(dataUrl);
+                            if (idx >= 0) refAudios[idx] = httpUrl;
                         }
                     }
                     if (refVideos.length > 0) {
                         UI.updateLoading('正在上传参考视频...', 0);
-                        const vItems = refItems.filter(i => i.type === 'video');
-                        refVideos = [];
+                        const vItems = refItems.filter(i => i.type === 'video' && !VideoModule._validAssetId(i.assetId));
                         for (const item of vItems) {
+                            const httpUrl = await VideoModule._uploadToTempHost(item.url || item.base64, item.name || 'video');
                             const dataUrl = item.url || item.base64;
-                            const httpUrl = await VideoModule._uploadToTempHost(dataUrl, item.name || 'video');
-                            refVideos.push(httpUrl);
+                            const idx = refVideos.indexOf(dataUrl);
+                            if (idx >= 0) refVideos[idx] = httpUrl;
                         }
                     }
                 }

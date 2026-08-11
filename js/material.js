@@ -121,7 +121,7 @@ const MaterialLib = {
         }
 
         return {
-            id: data.data.assetId,
+            id: data.data.id || data.data.assetId,
             status: data.data.status || 'processing',
             sourceUrl: data.data.sourceUrl || assetUrl,
         };
