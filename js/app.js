@@ -38,6 +38,10 @@ const Logger = {
         const labelMap = { info: 'INFO', warn: 'WARN', error: 'ERROR', success: 'OK', req: '➡' };
         entry.innerHTML = `<span class="log-time">${time}</span><span class="log-level">${labelMap[level] || level}</span><span class="log-msg">${this._escape(msg)}</span>`;
         this._body.appendChild(entry);
+        // 日志最多保留 10 条，超出删除最旧的（避免无限累积导致界面卡顿/内存膨胀）
+        while (this._body.children.length > 10) {
+            this._body.removeChild(this._body.firstChild);
+        }
         this._body.scrollTop = this._body.scrollHeight;
     },
     _escape(s) {

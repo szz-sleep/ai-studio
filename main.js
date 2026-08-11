@@ -103,7 +103,7 @@ const menuTemplate = [
             type: 'info',
             title: '关于 AI Studio',
             message: 'AI Studio - AI创作工坊',
-            detail: '版本 V1.0.15\n湖北生而为一科技有限公司'
+            detail: '版本 V1.0.16\n湖北生而为一科技有限公司'
           });
         }
       }

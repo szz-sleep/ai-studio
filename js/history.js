@@ -21,8 +21,8 @@ const History = {
     add(item) {
         const list = this.getAll();
         list.unshift(item);
-        // 最多保留 50 条
-        if (list.length > 50) list.length = 50;
+        // 最多保留 30 条（超了删最旧的，避免渲染过多卡顿）
+        if (list.length > 30) list.length = 30;
         localStorage.setItem(Config.STORAGE_KEYS.HISTORY, JSON.stringify(list));
         this.render();
     },
@@ -50,7 +50,13 @@ const History = {
      */
     render() {
         const grid = document.getElementById('historyGrid');
-        const list = this.getAll();
+        let list = this.getAll();
+
+        // 渲染前裁剪，确保不超过 30 条（兼容历史存了超过 30 条的旧数据）
+        if (list.length > 30) {
+            list = list.slice(0, 30);
+            localStorage.setItem(Config.STORAGE_KEYS.HISTORY, JSON.stringify(list));
+        }
 
         if (list.length === 0) {
             grid.innerHTML = '<div class="history-empty">暂无记录</div>';
@@ -68,8 +74,9 @@ const History = {
 
             div.title = item.prompt;
             if (item.type === 'video') {
+                // 视频懒加载：preload="metadata" 只加载元数据+首帧画面，不预加载视频本体，界面不卡
                 div.innerHTML = `
-                    <video src="${item.url}" preload="metadata"></video>
+                    <video src="${item.url}" preload="metadata" muted></video>
                     <span class="history-item-tag">${timeStr}</span>
                     <button class="history-item-delete" title="删除">×</button>
                 `;
@@ -78,7 +85,7 @@ const History = {
                 });
             } else {
                 div.innerHTML = `
-                    <img src="${item.url}" alt="${item.prompt}">
+                    <img src="${item.url}" alt="${item.prompt}" loading="lazy">
                     <span class="history-item-tag">${timeStr}</span>
                     <button class="history-item-delete" title="删除">×</button>
                 `;
