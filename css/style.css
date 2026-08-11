@@ -2023,27 +2023,37 @@ select option {
     right: 6px;
     display: flex;
     gap: 4px;
-    opacity: 0;
-    transition: opacity 0.2s;
-}
-.material-item:hover .material-actions {
+    /* 使用按钮常驻可见，不再 hover 才显示 */
     opacity: 1;
 }
 .material-select-btn {
-    padding: 2px 10px;
+    padding: 5px 16px;
     background: var(--accent);
     border: none;
-    border-radius: 6px;
-    color: #fff;
-    font-size: 12px;
+    border-radius: 8px;
+    color: var(--text-on-accent);
+    font-size: 13px;
+    font-weight: 600;
     cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+    transition: all 0.2s;
 }
 .material-select-btn:hover {
     background: var(--accent-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+}
+.material-select-btn:disabled {
+    background: var(--border);
+    color: var(--text-muted);
+    cursor: not-allowed;
+    box-shadow: none;
+    opacity: 1;
+    transform: none;
 }
 .material-delete-btn {
-    width: 24px;
-    height: 24px;
+    width: 26px;
+    height: 26px;
     border-radius: 50%;
     background: rgba(220, 53, 53, 0.85);
     border: none;
@@ -2054,6 +2064,12 @@ select option {
     align-items: center;
     justify-content: center;
     line-height: 1;
+    /* 删除按钮默认隐藏，hover 卡片时显示，避免误删 */
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+.material-item:hover .material-delete-btn {
+    opacity: 1;
 }
 .material-delete-btn:hover {
     background: #dc3535;
