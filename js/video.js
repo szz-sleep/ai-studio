@@ -108,8 +108,8 @@ const VideoModule = {
      * 文生视频
      */
     async generateT2V() {
-        const prompt = (document.getElementById('t2vPrompt').value.trim() + DEFAULT_PROMPT_SUFFIX).trim();
-        if (!prompt || prompt === DEFAULT_PROMPT_SUFFIX.trim()) {
+        const prompt = document.getElementById('t2vPrompt').value.trim();
+        if (!prompt) {
             UI.toast('请输入视频描述', 'error');
             return;
         }
@@ -244,7 +244,7 @@ const VideoModule = {
      */
     async generateI2V() {
         const mode = this.i2vMode;
-        const prompt = (document.getElementById('i2vPrompt').value.trim() + DEFAULT_PROMPT_SUFFIX).trim();
+        const prompt = document.getElementById('i2vPrompt').value.trim();
         const model = document.getElementById('i2vModel').value;
         if (!model) {
             UI.toast('请选择模型', 'error');

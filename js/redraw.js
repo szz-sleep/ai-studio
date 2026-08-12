@@ -70,8 +70,8 @@ const RedrawModule = {
             return;
         }
 
-        const prompt = (document.getElementById('i2iPrompt').value.trim() + DEFAULT_PROMPT_SUFFIX).trim();
-        if (!prompt || prompt === DEFAULT_PROMPT_SUFFIX.trim()) {
+        const prompt = document.getElementById('i2iPrompt').value.trim();
+        if (!prompt) {
             UI.toast('请输入修改描述', 'error');
             return;
         }

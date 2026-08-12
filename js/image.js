@@ -78,8 +78,8 @@ const ImageModule = {
      * 生成图片
      */
     async generate() {
-        const prompt = (document.getElementById('t2iPrompt').value.trim() + DEFAULT_PROMPT_SUFFIX).trim();
-        if (!prompt || prompt === DEFAULT_PROMPT_SUFFIX.trim()) {
+        const prompt = document.getElementById('t2iPrompt').value.trim();
+        if (!prompt) {
             UI.toast('请输入画面描述', 'error');
             return;
         }
