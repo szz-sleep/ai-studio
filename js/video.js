@@ -254,6 +254,7 @@ const VideoModule = {
         const resolution = document.getElementById('i2vResolution')?.value || '720p';
         const durationBtn = document.querySelector('#i2vDuration .ratio-btn.active');
         const duration = parseInt(durationBtn.dataset.duration);
+        const fps = parseInt(document.getElementById('i2vFps')?.value || '30', 10);
 
         const btn = document.getElementById('i2vGenerateBtn');
         const resultArea = document.getElementById('i2vResult');
@@ -316,7 +317,7 @@ const VideoModule = {
 
                 refAudios = null;
 
-                Logger.info(`[图生视频·首尾帧] 模型=${model}, 分辨率=${resolution}, 比例=${ratio}, 时长=${duration}s, 首帧=${!!firstFrameUrl}, 尾帧=${!!lastFrameUrl}${isLocalModel ? ' (本地模型)' : ''}`);
+                Logger.info(`[图生视频·首尾帧] 模型=${model}, 分辨率=${resolution}, 比例=${ratio}, 时长=${duration}s, FPS=${fps}, 首帧=${!!firstFrameUrl}, 尾帧=${!!lastFrameUrl}${isLocalModel ? ' (本地模型)' : ''}`);
                 UI.showLoading('正在创建首尾帧视频生成任务...');
 
             } else {
@@ -406,7 +407,7 @@ const VideoModule = {
                     lastFrameUrl = null;
                 }
 
-                Logger.info(`[图生视频·多模态] 模型=${model}, 分辨率=${resolution}, 比例=${ratio}, 时长=${duration}s`);
+                Logger.info(`[图生视频·多模态] 模型=${model}, 分辨率=${resolution}, 比例=${ratio}, 时长=${duration}s, FPS=${fps}`);
                 Logger.info(`[图生视频] 素材: ${refImages.length}图 ${refVideos.length}视频 ${refAudios?.length || 0}音频 首帧=${!!firstFrameUrl} 尾帧=${!!lastFrameUrl}`);
                 UI.showLoading('正在创建多模态视频生成任务...');
             }
@@ -416,12 +417,12 @@ const VideoModule = {
                 this.abortController?.abort();
             });
 
-            Logger.req(`模型: ${model}, 分辨率=${resolution}, 比例=${ratio}, 时长=${duration}s`);
+            Logger.req(`模型: ${model}, 分辨率=${resolution}, 比例=${ratio}, 时长=${duration}s, FPS=${fps}`);
 
             // 一次调用
             const task = await API.createVideoTask({
                 model, prompt, images: imageList,
-                resolution, ratio, duration, fps: 30,
+                resolution, ratio, duration, fps,
                 seed: undefined,
                 referenceImages: refImages && refImages.length > 0 ? refImages : null,
                 referenceVideos: refVideos && refVideos.length > 0 ? refVideos : null,
@@ -450,8 +451,8 @@ const VideoModule = {
                     Logger.info(`轮询 #${pollCount}: ${status}, ${pct}%`);
                     UI.updateLoading(status, pct);
                 },
-                5000,
-                600000,
+                API.VIDEO_POLL_INTERVAL_MS,
+                API.VIDEO_POLL_TIMEOUT_MS,
                 signal
             );
 
@@ -621,8 +622,8 @@ const VideoModule = {
                     Logger.info(`轮询 #${pollCount}: status=${status}, 进度=${pct}%`);
                     UI.updateLoading(status, pct);
                 },
-                5000,
-                600000,
+                API.VIDEO_POLL_INTERVAL_MS,
+                API.VIDEO_POLL_TIMEOUT_MS,
                 signal
             );
 

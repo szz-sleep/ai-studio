@@ -4,6 +4,10 @@
  */
 
 const API = {
+    // 视频任务可能需要较长时间，统一允许前台轮询最多 30 分钟。
+    VIDEO_POLL_INTERVAL_MS: 5000,
+    VIDEO_POLL_TIMEOUT_MS: 30 * 60 * 1000,
+
     /**
      * 从 models.json 加载模型分类配置
      */
@@ -423,7 +427,7 @@ const API = {
      * @param {number} timeout - 超时(ms)
      * @param {AbortSignal} signal - 取消信号
      */
-    async pollVideoTask(taskId, onProgress, interval = 5000, timeout = 600000, signal) {
+    async pollVideoTask(taskId, onProgress, interval = this.VIDEO_POLL_INTERVAL_MS, timeout = this.VIDEO_POLL_TIMEOUT_MS, signal) {
         const start = Date.now();
         while (true) {
             // 检查是否被取消
@@ -474,7 +478,7 @@ const API = {
 
             // 超时检查
             if (Date.now() - start > timeout) {
-                throw new Error('视频生成超时，请稍后在历史记录中查看');
+                throw new Error('视频生成等待超过30分钟，后台任务可能仍在运行，请稍后通过模型平台查看');
             }
 
             // 等待

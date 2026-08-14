@@ -105,10 +105,6 @@ function initMediaGrid(gridId, fileInputId, tabName, callbacks) {
     async function handleMediaFile(file, index) {
         const limitBytes = Config.getUploadSizeBytes();
         const limitMB = Config.getUploadSizeMB();
-        if (file.size > limitBytes) {
-            UI.toast(`文件不能超过 ${limitMB}MB`, 'error');
-            return;
-        }
         let type;
         if (file.type.startsWith('image/')) type = 'image';
         else if (file.type.startsWith('video/')) type = 'video';
@@ -121,15 +117,40 @@ function initMediaGrid(gridId, fileInputId, tabName, callbacks) {
             else type = 'image';
         }
 
+        // 图片可在客户端自动缩放压缩；视频和音频仍执行原始大小限制。
+        if (type !== 'image' && file.size > limitBytes) {
+            UI.toast(`文件不能超过 ${limitMB}MB`, 'error');
+            return;
+        }
+
         // 自动重命名：图片1/图片2/音频1/音频2/视频1/视频2...
         const typeLabel = type === 'video' ? '视频' : type === 'audio' ? '音频' : '图片';
         const typeCount = items.filter(i => i && i.type === type).length + 1;
         const autoName = `${typeLabel}${typeCount}`;
         Logger.info(`[${tabName}] 读取${typeLabel}: ${file.name} → 重命名为 ${autoName} (${(file.size / 1024 / 1024).toFixed(1)}MB)`);
-        return new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onload = async function(e) {
-                const dataUrl = e.target.result;
+        return new Promise(async (resolve) => {
+            try {
+                let dataUrl;
+                let uploadSize = file.size;
+                let uploadMimeType = file.type;
+                if (type === 'image') {
+                    const prepared = await prepareImageForUpload(file);
+                    dataUrl = prepared.dataUrl;
+                    uploadSize = prepared.size;
+                    uploadMimeType = prepared.mimeType;
+                    if (prepared.compressed) {
+                        Logger.info(`[${tabName}] 大图已自动压缩: ${(file.size / 1024 / 1024).toFixed(1)}MB → ${(uploadSize / 1024 / 1024).toFixed(1)}MB`);
+                        UI.toast(`图片已自动压缩至 ${(uploadSize / 1024 / 1024).toFixed(1)}MB`, 'success');
+                    }
+                } else {
+                    dataUrl = await new Promise((readResolve, readReject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => readResolve(reader.result);
+                        reader.onerror = () => readReject(reader.error || new Error('文件读取失败'));
+                        reader.readAsDataURL(file);
+                    });
+                }
+
                 items[index] = { type, base64: dataUrl, url: null, name: autoName };
                 render();
                 if (callbacks.onItemsChange) callbacks.onItemsChange(getItems());
@@ -152,13 +173,13 @@ function initMediaGrid(gridId, fileInputId, tabName, callbacks) {
                                     'audio/ogg': 'audio', 'audio/mp4': 'audio', 'audio/x-m4a': 'audio',
                                     'video/mp4': 'video', 'video/webm': 'video', 'video/quicktime': 'video'
                             };
-                                const mediaType = typeMap[file.type] || type;
+                                const mediaType = typeMap[uploadMimeType] || type;
                                 MaterialLib.add({
                                     name: autoName,
                                     url: httpUrl,
                                     type: mediaType,
-                                    mimeType: file.type,
-                                    size: file.size
+                                    mimeType: uploadMimeType,
+                                    size: uploadSize
                                 });
                             }
                         }
@@ -166,10 +187,12 @@ function initMediaGrid(gridId, fileInputId, tabName, callbacks) {
                         Logger.warn(`[${tabName}] 自动上传失败: ${e.message}，使用本地数据`);
                     }
                 }
-
                 resolve();
-            };
-            reader.readAsDataURL(file);
+            } catch (e) {
+                Logger.warn(`[${tabName}] 文件处理失败: ${e.message}`);
+                UI.toast(e.message || '文件处理失败', 'error');
+                resolve();
+            }
         });
     }
 
