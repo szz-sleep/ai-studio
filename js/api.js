@@ -365,6 +365,8 @@ const API = {
         } else if (size) {
             body.size = size;
         }
+        // 火山视频模型使用 resolution 字段（如 1080p/720p）；size 留给图片/本地模型
+        if (size) body.resolution = size;
         if (duration) body.duration = duration;
         if (ratio) body.ratio = ratio;
         if (fps) body.fps = fps;
