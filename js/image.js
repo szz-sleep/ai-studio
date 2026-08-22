@@ -193,7 +193,8 @@ const ImageModule = {
                         url: url,
                         prompt: prompt,
                         model: model,
-                        time: Date.now()
+                        time: Date.now(),
+                        autosave: true
                     });
                 });
                 UI.toast(`成功生成 ${imageUrls.length} 张图片！`, 'success');

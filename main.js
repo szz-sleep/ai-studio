@@ -1,5 +1,47 @@
-const { app, BrowserWindow, Menu, shell } = require('electron');
+const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron');
 const path = require('path');
+const fs = require('fs');
+const fsp = require('fs/promises');
+const https = require('https');
+const http = require('http');
+
+/**
+ * 下载远程文件到本地硬盘
+ * @param {string} url - 远程资源地址（http/https 或 blob:）
+ * @returns {Promise<Buffer>}
+ */
+function downloadToBuffer(url) {
+  return new Promise((resolve, reject) => {
+    // blob: 链接无法在 Node 中直接拉取，交给渲染进程处理
+    if (!/^https?:\/\//i.test(url)) {
+      return reject(new Error('非 http(s) 地址，无法在本地保存'));
+    }
+    const lib = url.startsWith('https') ? https : http;
+    const req = lib.get(url, { headers: { 'Accept': '*/*' } }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        // 跟随重定向
+        return downloadToBuffer(res.headers.location).then(resolve, reject);
+      }
+      if (res.statusCode !== 200) {
+        return reject(new Error('HTTP ' + res.statusCode));
+      }
+      const ct = (res.headers['content-type'] || '').toLowerCase();
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => resolve({ buf: Buffer.concat(chunks), contentType: ct }));
+    });
+    req.on('error', reject);
+    req.setTimeout(30000, () => { req.destroy(new Error('下载超时')); });
+  });
+}
+
+// 保存目录：~/Documents/AI Studio/history/{视频|图片}
+function getHistoryDir(folder) {
+  const base = path.join(app.getPath('documents'), 'AI Studio', 'history');
+  const dir = path.join(base, folder || '默认');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
 
 // 单实例锁 — 防止多开
 const gotTheLock = app.requestSingleInstanceLock();
@@ -112,6 +154,39 @@ const menuTemplate = [
 ];
 
 app.whenReady().then(() => {
+  // 本地持久化：把远程视频/图片保存到本地 history 目录，返回本地 file:// 路径
+  ipcMain.handle('history:save', async (event, { url, folder, filename }) => {
+    try {
+      const safeFolder = String(folder || '默认').replace(/[\\/:*?"<>|]/g, '_');
+      const dir = getHistoryDir(safeFolder);
+      const dl = await downloadToBuffer(url);
+      // 根据内容类型推断扩展名，fallback 到请求时的扩展名
+      const ct = dl.contentType || '';
+      let ext = '';
+      if (ct.includes('mp4')) ext = '.mp4';
+      else if (ct.includes('webm')) ext = '.webm';
+      else if (ct.includes('quicktime') || ct.includes('mov')) ext = '.mov';
+      else if (ct.includes('png')) ext = '.png';
+      else if (ct.includes('jpeg') || ct.includes('jpg')) ext = '.jpg';
+      else if (ct.includes('webp')) ext = '.webp';
+      else if (ct.includes('gif')) ext = '.gif';
+      else {
+        const m = String(filename || '').match(/\.(\w+)$/);
+        ext = m ? '.' + m[1] : '';
+      }
+      const safeName = String(filename || Date.now())
+        .replace(/[\\/:*?"<>|]/g, '_')
+        .replace(/\.[^.]+$/, '')
+        .slice(-60) + ext;
+      const localPath = path.join(dir, safeName);
+      await fsp.writeFile(localPath, dl.buf);
+      return { ok: true, path: localPath, fileUrl: 'file://' + localPath };
+    } catch (err) {
+      console.error('[history:save] 保存失败:', err.message);
+      return { ok: false, error: err.message };
+    }
+  });
+
   const menu = Menu.buildFromTemplate(menuTemplate);
   Menu.setApplicationMenu(menu);
   createWindow();
