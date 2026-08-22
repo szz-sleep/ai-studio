@@ -375,6 +375,22 @@ body {
     padding: 20px 24px; border-bottom: 1px solid var(--border);
 }
 .modal-header h2 { font-size: 18px; color: var(--text-primary); }
+
+/* 素材库标题栏的同步按钮 */
+.modal-header h2 .material-sync-btn {
+    margin-left: 12px;
+    padding: 3px 10px;
+    font-size: 12px;
+    vertical-align: 2px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-surface-1);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.modal-header h2 .material-sync-btn:hover { border-color: var(--accent); color: var(--accent); }
+.modal-header h2 .material-sync-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 .modal-close {
     background: none; border: none; color: var(--text-muted);
     font-size: 24px; cursor: pointer;
@@ -665,6 +681,65 @@ select.select-input option { background: var(--bg-surface); }
     justify-content: center;
     position: absolute;
     inset: 0;
+}
+
+/* 上传进度 / 失败反馈遮罩（叠加在格子上） */
+.upload-grid-cell .cell-upload-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    background: var(--bg-modal-overlay);
+    z-index: 5;
+    padding: 6px;
+    pointer-events: auto;
+}
+.upload-grid-cell .cell-upload-bar {
+    width: 80%;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--border);
+    overflow: hidden;
+}
+.upload-grid-cell .cell-upload-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 3px;
+    transition: width 0.2s;
+}
+.upload-grid-cell .cell-upload-text {
+    font-size: 11px;
+    color: var(--text-primary);
+}
+.upload-grid-cell.cell-upload-error {
+    background: var(--bg-modal-overlay);
+}
+.upload-grid-cell .cell-upload-error-text {
+    font-size: 11px;
+    color: var(--red);
+    text-align: center;
+    line-height: 1.3;
+    word-break: break-word;
+    max-height: 60%;
+    overflow: hidden;
+}
+.upload-grid-cell .cell-upload-retry {
+    margin-top: 2px;
+    font-size: 11px;
+    padding: 3px 10px;
+    border: 1px solid var(--accent);
+    border-radius: 5px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.upload-grid-cell .cell-upload-retry:hover {
+    background: var(--accent);
+    color: var(--text-on-accent);
 }
 
 /* 右键上下文菜单 */

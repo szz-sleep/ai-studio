@@ -186,8 +186,9 @@ const VideoModule = {
             maxSlots: 1,
             onItemsChange: (items) => {
                 Logger.info(`[图生视频] 首帧: ${items.length} 张`);
+                this._syncI2vGenerateBtn();
             },
-            onUpload: (dataUrl, fileName) => this._uploadToTempHost(dataUrl, fileName)
+            onUploadFile: (dataUrl, fileName, onProgress) => this._uploadWithProgress(dataUrl, fileName, onProgress)
         });
 
         // 初始化尾帧上传（单图）
@@ -195,8 +196,9 @@ const VideoModule = {
             maxSlots: 1,
             onItemsChange: (items) => {
                 Logger.info(`[图生视频] 尾帧: ${items.length} 张`);
+                this._syncI2vGenerateBtn();
             },
-            onUpload: (dataUrl, fileName) => this._uploadToTempHost(dataUrl, fileName)
+            onUploadFile: (dataUrl, fileName, onProgress) => this._uploadWithProgress(dataUrl, fileName, onProgress)
         });
 
         // 首尾帧模式下的音频上传按钮（实时上传到 uguu.se 并保存到素材库）
@@ -204,10 +206,11 @@ const VideoModule = {
         this.i2vUploader = initMediaGrid('i2vUploadGrid', 'i2vFileInput', '图生视频', {
             onItemsChange: (items) => {
                 Logger.info(`[图生视频] 当前 ${items.length} 个素材`);
+                this._syncI2vGenerateBtn();
             },
             // 选文件后立即上传到 uguu.se
-            onUpload: async (dataUrl, fileName) => {
-                return await this._uploadToTempHost(dataUrl, fileName);
+            onUploadFile: async (dataUrl, fileName, onProgress) => {
+                return await uploadMediaToHost(dataUrl, fileName, onProgress);
             }
         });
 
@@ -240,6 +243,30 @@ const VideoModule = {
     },
 
     /**
+     * 同步「生成视频」按钮的可用状态：
+     * 只要有任何素材处于上传中/失败，按钮就禁用并提示，全部就绪才恢复。
+     */
+    _syncI2vGenerateBtn() {
+        const btn = document.getElementById('i2vGenerateBtn');
+        if (!btn) return;
+        const uploaders = [this.i2vUploader, this.firstFrameUploader, this.lastFrameUploader];
+        let uploading = false, failed = false;
+        for (const uploader of uploaders) {
+            if (!uploader || typeof uploader.checkUnready !== 'function') continue;
+            const unready = uploader.checkUnready();
+            if (unready.hasUploading) uploading = true;
+            if (unready.hasFailed) failed = true;
+        }
+        if (uploading || failed) {
+            btn.disabled = true;
+            btn.title = uploading ? '有素材上传中，请稍候' : '有素材上传失败，请重试或删除';
+        } else {
+            btn.disabled = false;
+            btn.title = '';
+        }
+    },
+
+    /**
      * 图生视频
      */
     async generateI2V() {
@@ -249,6 +276,27 @@ const VideoModule = {
         if (!model) {
             UI.toast('请选择模型', 'error');
             return;
+        }
+
+        // —— 上传状态检测：素材没上传完成（uploading）或失败（failed）禁止生成 ——
+        const uploaders = [
+            ['多模态参考', this.i2vUploader],
+            ['首帧', this.firstFrameUploader],
+            ['尾帧', this.lastFrameUploader]
+        ];
+        for (const [label, uploader] of uploaders) {
+            if (!uploader || typeof uploader.checkUnready !== 'function') continue;
+            const unready = uploader.checkUnready();
+            if (unready.hasUploading) {
+                UI.toast(`「${label}」还有素材在上传中，请等待上传完成后再生成`, 'warn', 5000);
+                Logger.warn(`[图生视频] 生成被拦截：${label} 有素材上传中: ${unready.uploadingNames.join(', ')}`);
+                return;
+            }
+            if (unready.hasFailed) {
+                UI.toast(`「${label}」有素材上传失败，请重试或删除后再生成`, 'error', 5000);
+                Logger.warn(`[图生视频] 生成被拦截：${label} 有素材上传失败: ${unready.failedNames.join(', ')}`);
+                return;
+            }
         }
 
         const resolution = document.getElementById('i2vResolution')?.value || '720p';
@@ -755,6 +803,14 @@ const VideoModule = {
             img.onerror = () => resolve(b64);
             img.src = 'data:' + mime + ';base64,' + b64;
         });
+    },
+
+    /**
+     * 带进度回调的上传（供九宫格实时显示进度）。
+     * 委托给共享的 uploadMediaToHost（XHR 实现，可区分被拒/网络错误）。
+     */
+    async _uploadWithProgress(dataUrl, filename, onProgress) {
+        return await uploadMediaToHost(dataUrl, filename, onProgress);
     },
 
     /**

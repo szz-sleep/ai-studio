@@ -156,6 +156,138 @@ const MaterialLib = {
     },
 
     /**
+     * 调 MaaS 列出当前用户的全部素材（火山素材库列表）。
+     * @returns {Promise<Array>} [{ id(volcAssetId), name, type, url, status, errorMessage, createdAt }]
+     */
+    async _maasListAssets() {
+        const baseUrl = this._getMaaSUrl();
+        const apiKey = this._getApiKey();
+        if (!baseUrl || !apiKey) throw new Error('未配置平台地址或 API Key');
+
+        const resp = await fetch(`${baseUrl}/api/v1/assets`, {
+            headers: { 'Authorization': `Bearer ${apiKey}` },
+        });
+
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({ message: `HTTP ${resp.status}` }));
+            throw new Error(err?.error?.message || `同步失败 (${resp.status})`);
+        }
+
+        const data = await resp.json();
+        if (!data?.success) {
+            throw new Error(data?.error?.message || '同步返回异常');
+        }
+
+        // 规范化字段 → AI Studio 本地结构
+        return (data.data || []).map(a => ({
+            id: a.id,
+            name: a.name || '',
+            type: (a.type || '').toLowerCase(), // image/audio/video
+            url: a.url || '',
+            sourceUrl: a.url || '',
+            status: a.status || 'processing',
+            errorMessage: a.errorMessage || '',
+            mimeType: this._guessMime(a.type, a.name),
+            time: a.createdAt ? new Date(a.createdAt).getTime() : Date.now(),
+        })).filter(a => !!a.id);
+    },
+
+    /** 根据素材类型/文件名推断 mimeType（火山列表不返回 mimeType） */
+    _guessMime(type, name) {
+        const t = (type || '').toLowerCase();
+        if (t === 'image') return 'image/jpeg';
+        if (t === 'audio') return 'audio/mpeg';
+        if (t === 'video') return 'video/mp4';
+        const n = (name || '').toLowerCase();
+        if (n.endsWith('.png')) return 'image/png';
+        if (n.endsWith('.webp')) return 'image/webp';
+        if (n.endsWith('.gif')) return 'image/gif';
+        if (n.endsWith('.wav')) return 'audio/wav';
+        if (n.endsWith('.ogg')) return 'audio/ogg';
+        if (n.endsWith('.m4a')) return 'audio/mp4';
+        if (n.endsWith('.webm')) return 'video/webm';
+        if (n.endsWith('.mov')) return 'video/quicktime';
+        return '';
+    },
+
+    /**
+     * 从火山素材库同步（以火山为权威源）。
+     * 拉取当前 API Key 对应用户的全部火山素材，与本地合并：
+     *   - 火山有、本地无 → 新增
+     *   - 火山有、本地有(同 volcAssetId) → 用火山最新状态覆盖本地
+     *   - 本地有、火山无（且非 temp_/local_ 虚拟本地记录）→ 从本地移除
+     * 保留本地 temp_（上传中/未同步）与 local_（纯本地）记录不删。
+     * @returns {Promise<{added:number,updated:number,removed:number}>}
+     */
+    async _syncFromMaaS() {
+        let remote;
+        try {
+            remote = await this._maasListAssets();
+        } catch (e) {
+            throw new Error(e?.message || '同步失败，请检查平台连接');
+        }
+
+        const local = this.getAll();
+        const localById = new Map(local.map(i => [i.id, i]));
+        const remoteIds = new Set(remote.map(r => r.id));
+
+        let added = 0, updated = 0;
+        // 1) 新增/更新：以火山为权威源覆盖或追加
+        const merged = [];
+        for (const r of remote) {
+            const exist = localById.get(r.id);
+            if (exist) {
+                updated++;
+                // 覆盖为火山态，但保留本地约定的 mimeType 回退（若火山未提供）
+                merged.push({ ...exist, ...r });
+            } else {
+                added++;
+                merged.push(r);
+            }
+        }
+
+        // 2) 删除：本地有、火山没有，且不是 temp_/local_ 虚拟记录
+        let removed = 0;
+        for (const item of local) {
+            if (remoteIds.has(item.id)) continue;
+            const isVirtual = item.id && (item.id.startsWith('temp_') || item.id.startsWith('local_'));
+            if (isVirtual) {
+                merged.push(item); // 保留本地未同步/纯本地记录
+            } else {
+                removed++; // 火山已无此素材，以火山为准删除
+            }
+        }
+
+        // 按时间倒序（同 _upsert unshift 语义）
+        merged.sort((a, b) => (b.time || 0) - (a.time || 0));
+        this._save(merged);
+
+        return { added, updated, removed };
+    },
+
+    /**
+     * 启动时自动同步一次（静默失败，不阻塞、不打扰）。
+     * 只在当前页面开一次，防重复触发。
+     */
+    _autoSync() {
+        if (this._autoSyncDone) return;
+        this._autoSyncDone = true;
+
+        // 延迟到界面稳定后再静默同步
+        setTimeout(async () => {
+            try {
+                await this._syncFromMaaS();
+                // 同步后若素材库弹窗已打开则刷新
+                const modal = document.getElementById('materialLibModal');
+                if (modal && !modal.classList.contains('hidden')) this._render(modal);
+            } catch (e) {
+                // 静默失败：连不上就保留本地现有数据，不打扰用户
+                console.warn('[素材库] 启动自动同步失败(忽略):', e?.message);
+            }
+        }, 1500);
+    },
+
+    /**
      * 调 MaaS 删除素材
      * @param {string} assetId
      */
@@ -430,30 +562,23 @@ const MaterialLib = {
     async uploadFile(file) {
         console.log(`[素材库] 正在上传: ${file.name}`);
 
-        // Step 1: 上传到 uguu.se 获取公网 URL
-        const formData = new FormData();
-        formData.append('files[]', file, file.name);
-
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-        const resp = await fetch('https://uguu.se/upload', {
-            method: 'POST',
-            body: formData,
-            signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-
-        if (!resp.ok) {
-            throw new Error(`上传失败 (${resp.status})`);
+        // Step 1: 上传到 uguu.se 获取公网 URL（XHR + 实时进度 + 180s超时 + 自动重试）
+        let httpUrl;
+        try {
+            httpUrl = await uploadMediaToHost(file, file.name, (pct) => {
+                if (typeof UI !== 'undefined') {
+                    UI.updateLoading(`正在上传 ${file.name} ${pct}%...`, pct);
+                }
+            });
+        } catch (e) {
+            const kind = e && e.kind ? e.kind : 'rejected';
+            const msg = e && e.message ? e.message : '上传失败';
+            const prefix = kind === 'network' ? '网络异常' : '上传被拒绝';
+            throw new Error(`${prefix}：${msg}`);
         }
-
-        const result = await resp.json();
-        if (!result.success || !result.files || !result.files[0]) {
-            throw new Error('上传失败: ' + JSON.stringify(result));
+        if (typeof UI !== 'undefined') {
+            UI.updateLoading(`正在同步到素材库...`, 100);
         }
-
-        const httpUrl = result.files[0].url;
         console.log(`[素材库] uguu.se 上传成功: ${httpUrl}`);
 
         // 确定类型
@@ -566,6 +691,27 @@ const MaterialLib = {
             });
         });
 
+        // 同步按钮：手动从火山素材库拉取合并
+        document.getElementById('materialSyncBtn')?.addEventListener('click', async () => {
+            const btn = document.getElementById('materialSyncBtn');
+            const old = btn ? btn.innerHTML : '';
+            if (btn) { btn.disabled = true; btn.innerHTML = '同步中...'; }
+            try {
+                const res = await this._syncFromMaaS();
+                this._render(modal);
+                if (typeof UI !== 'undefined') {
+                    UI.toast(`同步完成：新增 ${res.added} / 更新 ${res.updated} / 移除 ${res.removed}`, 'success');
+                }
+            } catch (e) {
+                if (typeof UI !== 'undefined') UI.toast(e?.message || '同步失败', 'error');
+            } finally {
+                if (btn) { btn.disabled = false; btn.innerHTML = old; }
+            }
+        });
+
+        // 启动时自动同步一次（静默失败，不阻塞界面）
+        this._autoSync();
+
         // 清空按钮
         document.getElementById('materialClearBtn')?.addEventListener('click', async () => {
             if (await UI.confirm('确定清空所有素材记录吗？\n（将同步删除火山素材库中的所有素材）', { danger: true })) {
@@ -612,10 +758,14 @@ const MaterialLib = {
 
                         modal.classList.remove('hidden');
 
+                        // 打开全屏上传进度层
+                        if (typeof UI !== 'undefined') {
+                            UI.showLoading('正在上传素材...');
+                        }
+
                         let hasError = false;
                         for (const file of files) {
                             try {
-                                if (typeof UI !== 'undefined') UI.toast(`正在上传: ${file.name}`, 'info');
                                 await this.uploadFile(file);
                                 console.log(`[素材库] 上传完成: ${file.name}`);
                             } catch (e) {
@@ -624,6 +774,9 @@ const MaterialLib = {
                                 hasError = true;
                             }
                         }
+
+                        // 关闭全屏上传进度层
+                        if (typeof UI !== 'undefined') UI.hideLoading();
 
                         if (typeof UI !== 'undefined') {
                             UI.toast(hasError ? '部分素材上传失败，请检查平台配置' : '上传完成，素材已同步至火山素材库', 'success');

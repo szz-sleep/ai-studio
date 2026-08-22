@@ -1,6 +1,7 @@
-node_modules/
 dist/
+node_modules/
 .DS_Store
 *.bak
 *.log
 .backup-*
+history/

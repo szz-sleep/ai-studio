@@ -14,7 +14,7 @@ const Logger = {
         this._body = document.getElementById('logBody');
     },
     /** 界面日志上限：普通日志最多保留这么多条 */
-    _MAX_VISIBLE: 10,
+    _MAX_VISIBLE: 50,
     _log(level, msg) {
         if (!this._body) this._init();
         const t = new Date();

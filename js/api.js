@@ -5,7 +5,7 @@
 
 const API = {
     // 视频任务可能需要较长时间，统一允许前台轮询最多 30 分钟。
-    VIDEO_POLL_INTERVAL_MS: 5000,
+    VIDEO_POLL_INTERVAL_MS: 15000,
     VIDEO_POLL_TIMEOUT_MS: 30 * 60 * 1000,
 
     /**

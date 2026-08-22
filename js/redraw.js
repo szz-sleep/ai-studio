@@ -78,10 +78,12 @@ const RedrawModule = {
                 } else {
                     Logger.info(`[图生图] 当前 ${items.length} 张图片`);
                 }
+                this._syncGenerateBtn();
             },
             // 选文件后自动上传到 uguu.se 拿公网 URL，避免请求体过大(413)
-            onUpload: async (dataUrl, fileName) => {
-                return await RedrawModule._uploadToTempHost(dataUrl, fileName);
+            // 使用共享的 XHR 进度上传，让格子实时显示进度与失败原因
+            onUploadFile: async (dataUrl, fileName, onProgress) => {
+                return await uploadMediaToHost(dataUrl, fileName, onProgress);
             }
         });
 
@@ -197,6 +199,27 @@ const RedrawModule = {
     },
 
     /**
+     * 同步「生成」按钮可用状态：有图片上传中/失败时禁用，全部就绪恢复。
+     */
+    _syncGenerateBtn() {
+        const btn = document.getElementById('i2iGenerateBtn');
+        if (!btn) return;
+        let uploading = false, failed = false;
+        if (this.uploader && typeof this.uploader.checkUnready === 'function') {
+            const unready = this.uploader.checkUnready();
+            uploading = unready.hasUploading;
+            failed = unready.hasFailed;
+        }
+        if (uploading || failed) {
+            btn.disabled = true;
+            btn.title = uploading ? '有图片上传中，请稍候' : '有图片上传失败，请重试或删除';
+        } else {
+            btn.disabled = false;
+            btn.title = '';
+        }
+    },
+
+    /**
      * 生成图生图 - 所有图片+提示词一次发给模型（多图融合）
      */
     async generate() {
@@ -204,6 +227,21 @@ const RedrawModule = {
         if (images.length === 0) {
             UI.toast('请先上传参考图片', 'error');
             return;
+        }
+
+        // —— 上传状态检测：图片没上传完成（uploading）或失败（failed）禁止生成 ——
+        if (typeof this.uploader.checkUnready === 'function') {
+            const unready = this.uploader.checkUnready();
+            if (unready.hasUploading) {
+                UI.toast('还有图片在上传中，请等待上传完成后再生成', 'warn', 5000);
+                Logger.warn(`[图生图] 生成被拦截：图片上传中: ${unready.uploadingNames.join(', ')}`);
+                return;
+            }
+            if (unready.hasFailed) {
+                UI.toast('有图片上传失败，请重试或删除后再生成', 'error', 5000);
+                Logger.warn(`[图生图] 生成被拦截：图片上传失败: ${unready.failedNames.join(', ')}`);
+                return;
+            }
         }
 
         const prompt = document.getElementById('i2iPrompt').value.trim();
