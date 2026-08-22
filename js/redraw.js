@@ -17,17 +17,76 @@ const RedrawModule = {
     /**
      * 初始化图生图面板
      */
+    /**
+     * 校验是否为有效的火山素材库 assetId（local_/temp_ 前缀不是火山 assetId）
+     */
+    _validAssetId(id) {
+        return !!(id && typeof id === 'string' && !id.startsWith('local_') && !id.startsWith('temp_'));
+    },
+
+    /**
+     * 绑定素材库按钮到图生图九宫格（复用 video 的多模态模式）
+     */
+    _bindMaterialLibBtn() {
+        const btn = document.getElementById('i2iOpenMaterialLibBtn');
+        if (!btn || typeof MaterialLib === 'undefined') return;
+        btn.addEventListener('click', () => {
+            MaterialLib.openPicker((item) => {
+                const uploader = this.uploader;
+                if (!uploader) return;
+                const items = uploader.getItems?.() || [];
+                const maxSlots = uploader.maxSlots || 9;
+                if (items.length >= maxSlots) {
+                    UI.toast(`最多${maxSlots}个素材，已满`, 'error');
+                    return;
+                }
+                const grid = uploader.gridElement;
+                if (!grid) return;
+                const emptyCell = grid.querySelector('.upload-grid-cell.empty');
+                if (!emptyCell) {
+                    UI.toast(`最多${maxSlots}个素材，已满`, 'error');
+                    return;
+                }
+                const index = parseInt(emptyCell.dataset.index);
+                if (isNaN(index)) return;
+                if (uploader.setItem) {
+                    const validAssetId = this._validAssetId(item.id) ? item.id : null;
+                    uploader.setItem(index, {
+                        type: item.type || 'image',
+                        base64: null,
+                        url: item.url,
+                        assetId: validAssetId,
+                        sourceUrl: item.sourceUrl || item.url,
+                        name: item.name || '素材'
+                    });
+                    Logger.info(`[图生图] 素材库: ${item.name}${validAssetId ? ` (assetId: ${validAssetId})` : ` (${item.url})`}`);
+                    UI.toast('已添加到素材区', 'success');
+                }
+            }, 'image');
+        });
+    },
+
+    /**
+     * 初始化图生图面板
+     */
     init() {
-        // 初始化9宫格上传
-        this.uploader = initUploadGrid('i2iUploadGrid', 'i2iFileInput', '图生图', {
-            onImagesChange: (images) => {
-                if (images.length === 0) {
+        // 初始化9宫格上传（复用 mediagrid：图片自动托管到公网，支持 assetId 素材库引用）
+        this.uploader = initMediaGrid('i2iUploadGrid', 'i2iFileInput', '图生图', {
+            onItemsChange: (items) => {
+                if (items.length === 0) {
                     Logger.info('[图生图] 已无图片');
                 } else {
-                    Logger.info(`[图生图] 当前 ${images.length} 张图片`);
+                    Logger.info(`[图生图] 当前 ${items.length} 张图片`);
                 }
+            },
+            // 选文件后自动上传到 uguu.se 拿公网 URL，避免请求体过大(413)
+            onUpload: async (dataUrl, fileName) => {
+                return await RedrawModule._uploadToTempHost(dataUrl, fileName);
             }
         });
+
+        // 素材库按钮
+        this._bindMaterialLibBtn();
 
         // 比例按钮
         const ratioBtns = document.querySelectorAll('#i2iRatio .ratio-btn');
@@ -40,6 +99,83 @@ const RedrawModule = {
 
         // 生成按钮
         document.getElementById('i2iGenerateBtn').addEventListener('click', () => this.generate());
+    },
+
+    /**
+     * 上传 base64 DataURL 到 uguu.se 获取临时公网 URL（与 video 模块一致）
+     * @param {string} dataUrl - data:image/jpeg;base64,...
+     * @param {string} filename
+     * @returns {Promise<string>} 公网 URL，失败降级返回原 dataUrl
+     */
+    async _uploadToTempHost(dataUrl, filename) {
+        if (!dataUrl || dataUrl.startsWith('http')) return dataUrl;
+        const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+        if (!match) return dataUrl;
+
+        const mimeType = match[1];
+        const base64Data = match[2];
+        const extMap = {
+            'image/jpeg': '.jpg', 'image/jpg': '.jpg', 'image/png': '.png',
+            'image/webp': '.webp', 'image/gif': '.gif', 'image/bmp': '.bmp'
+        };
+        const ext = extMap[mimeType] || '.' + (mimeType.split('/')[1] || 'bin');
+        const safeName = (filename || 'image').replace(/[^a-zA-Z0-9._-]/g, '_') + ext;
+
+        try {
+            Logger.info(`[图生图] 正在上传 ${safeName} 到临时托管...`);
+            const binaryStr = atob(base64Data);
+            const bytes = new Uint8Array(binaryStr.length);
+            for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+            const blob = new Blob([bytes], { type: mimeType });
+
+            async function uploadOnce() {
+                const fd = new FormData();
+                fd.append('files[]', blob, safeName);
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 45000);
+                try {
+                    const r = await fetch('https://uguu.se/upload', {
+                        method: 'POST',
+                        body: fd,
+                        signal: controller.signal
+                    });
+                    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                    return r;
+                } finally {
+                    clearTimeout(timeoutId);
+                }
+            }
+
+            let resp = null;
+            let lastErr = null;
+            for (let attempt = 0; attempt < 3; attempt++) {
+                try {
+                    resp = await uploadOnce();
+                    break;
+                } catch (e) {
+                    lastErr = e;
+                    Logger.warn(`[图生图] 上传第 ${attempt + 1} 次失败(${e.message})，${attempt < 2 ? '重试中...' : '放弃'}`);
+                    if (attempt < 2) await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+                }
+            }
+
+            if (!resp) {
+                Logger.warn(`[图生图] 托管上传失败: ${lastErr?.message || '未知'}`);
+                return dataUrl;
+            }
+
+            const result = await resp.json();
+            if (result.success && result.files && result.files[0] && result.files[0].url) {
+                const httpUrl = result.files[0].url;
+                Logger.info(`[图生图] 托管成功: ${httpUrl}`);
+                return httpUrl;
+            }
+            Logger.warn('[图生图] 托管返回异常，降级使用原 base64');
+            throw new Error('素材托��上传异常（图生图需要公网图片地址），请稍后重试');
+        } catch (e) {
+            Logger.warn(`[图生图] 托管上传异常: ${e.message}`);
+            throw new Error(`图片无法上传到公网托管，火山引擎不支持 base64 图片。请检查网络后重试`);
+        }
     },
 
     /**
@@ -107,48 +243,31 @@ const RedrawModule = {
         resultArea.innerHTML = '';
 
        try {
-           // 收集所有图片（支持 base64 和 URL 两种方式）
-           // 同时自动放大小图，确保满足 API 最低 3686400 像素要求（约 1920x1920）
-           const MIN_PIXELS = 3686400;
+           // 收集所有参考图：素材库选中的用 asset://<id> 引用（火山素材库，免上传）；普通上传的走已托管的公网 URL
            const imageList = [];
-           for (const img of images) {
-               if (img.base64) {
-                   // 本地文件：base64 方式
-                   let b64 = img.base64;
-                   const commaIdx = b64.indexOf(',');
-                   if (commaIdx >= 0) b64 = b64.substring(commaIdx + 1);
-                   const upscaled = await this._ensureMinSize(b64, MIN_PIXELS);
-                   imageList.push(upscaled);
-               } else if (img.url) {
-                   // 素材库选择：URL 方式，直接传 base64（先下载再转）
-                   try {
-                       const resp = await fetch(img.url);
-                       const blob = await resp.blob();
-                       const b64 = await new Promise((resolve) => {
-                           const r = new FileReader();
-                           r.onload = (e) => {
-                               let data = e.target.result;
-                               const idx = data.indexOf(',');
-                               resolve(idx >= 0 ? data.substring(idx + 1) : data);
-                           };
-                           r.readAsDataURL(blob);
-                       });
-                       const upscaled = await this._ensureMinSize(b64, MIN_PIXELS);
-                       imageList.push(upscaled);
-                   } catch (e) {
-                       Logger.warn(`[图生图] 下载 URL 图片失败: ${img.url}`, e);
-                       UI.toast(`图片 ${img.name} 下载失败，请重试`, 'error');
-                       throw e;
-                   }
+           const items = this.uploader.getItems ? this.uploader.getItems() : this.uploader.getImages();
+           for (const img of items) {
+               if (img.type && img.type !== 'image') continue;
+               // 素材库选中的：带火山 assetId → asset:// 引用
+               if (this._validAssetId(img.assetId)) {
+                   imageList.push('asset://' + img.assetId);
+                   Logger.info(`[图生图] 素材库引用: asset://${img.assetId}`);
+                   continue;
                }
+               // 普通上传：mediagrid 已自动托管，/或直接取 url
+               const url = img.url || img.base64 || '';
+               if (!url) {
+                   UI.toast('存在无效图片，请移除后重试', 'error');
+                   Logger.warn('[图生图] 发现无 url 且无 base64 的图片项');
+                   throw new Error('无效图片');
+               }
+               imageList.push(url.startsWith('data:') ? await this._uploadToTempHost(url, img.name || 'image') : url);
+               Logger.info(`[图生图] 参考图: ${img.name || 'image'} -> ${url.startsWith('data:') ? '(已托管)' : url.substring(0, 80)}`);
            }
-           const totalMB = imageList.reduce((s, b) => s + b.length, 0) / 1024 / 1024;
 
-           Logger.req(`[图生图] 发送 ${imageList.length} 张图片 + 提示词, 总计 ~${totalMB.toFixed(1)}MB base64`);
-           // 详细日志: 每张图片的前 50 字符
-           imageList.forEach((b64, i) => {
-               Logger.info(`[图生图] 图片${i + 1}: ${b64.substring(0, 50)}... (长度:${b64.length})`);
-           });
+           Logger.req(`[图生图] 发送 ${imageList.length} 张参考图 + 提示词`);
+           imageList.forEach((u, i) => Logger.info(`[图生图] 图${i + 1}: ${u.substring(0, 90)}`));
+
            const selRatio = document.querySelector('#i2iRatio .ratio-btn.active')?.dataset.ratio || '16:9';
            const resolution = this.getSelectedResolution();
            const result = await API.generateImageEdit({
@@ -194,7 +313,8 @@ const RedrawModule = {
                         url,
                         prompt: `[图生图] ${prompt.substring(0, 150)}`,
                         model,
-                        time: Date.now()
+                        time: Date.now(),
+                        autosave: true
                     });
 
                     UI.toast('图生图成功！', 'success');
@@ -235,88 +355,9 @@ const RedrawModule = {
     },
 
     /**
-     * 确保图片满足最小像素要求，不够则等比放大
-     * @param {string} b64 - 纯 base64 字符串
-     * @param {number} minPixels - 最小像素数
-     * @returns {Promise<string>} 放大后的纯 base64 字符串
+     * 创建错误卡片
      */
-    async _ensureMinSize(b64, minPixels) {
-        return new Promise((resolve) => {
-            // 检测原始格式
-            let mime = 'image/png';
-            if (b64.startsWith('/9j/')) mime = 'image/jpeg';
-            else if (b64.startsWith('UklGR')) mime = 'image/webp';
-
-            const img = new Image();
-            img.onload = () => {
-                const pixels = img.width * img.height;
-                let targetW = img.width;
-                let targetH = img.height;
-                let needResize = false;
-
-                // 太小则放大
-                if (pixels < minPixels) {
-                    const scale = Math.sqrt(minPixels / pixels);
-                    targetW = Math.ceil(img.width * scale);
-                    targetH = Math.ceil(img.height * scale);
-                    needResize = true;
-                    Logger.info(`[图生图] 图片 ${img.width}x${img.height} 太小，放大到 ${targetW}x${targetH}`);
-                }
-                // 太大则压缩（限制最长边不超过 2400，控制 base64 体积）
-                const maxEdge = 2400;
-                if (targetW > maxEdge || targetH > maxEdge) {
-                    const scale = maxEdge / Math.max(targetW, targetH);
-                    targetW = Math.ceil(targetW * scale);
-                    targetH = Math.ceil(targetH * scale);
-                    needResize = true;
-                    Logger.info(`[图生图] 图片压缩到 ${targetW}x${targetH}`);
-                }
-
-                if (!needResize) {
-                    // 不需要缩放，但如果是 PNG 且较大，转 JPEG 压缩
-                    if (mime === 'image/png' && b64.length > 500000) {
-                        const canvas = document.createElement('canvas');
-                        canvas.width = img.width;
-                        canvas.height = img.height;
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(img, 0, 0);
-                        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-                        const newB64 = dataUrl.substring(dataUrl.indexOf(',') + 1);
-                        Logger.info(`[图生图] PNG→JPEG 压缩: ${b64.length} → ${newB64.length}`);
-                        resolve(newB64);
-                        return;
-                    }
-                    Logger.info(`[图生图] 图片 ${img.width}x${img.height} 无需调整`);
-                    resolve(b64);
-                    return;
-                }
-
-                // 缩放/压缩
-                const canvas = document.createElement('canvas');
-                canvas.width = targetW;
-                canvas.height = targetH;
-                const ctx = canvas.getContext('2d');
-                ctx.imageSmoothingEnabled = true;
-                ctx.imageSmoothingQuality = 'high';
-                ctx.drawImage(img, 0, 0, targetW, targetH);
-                // 统一输出 JPEG 压缩
-                const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-                const newB64 = dataUrl.substring(dataUrl.indexOf(',') + 1);
-                Logger.info(`[图生图] 压缩后 base64 长度: ${newB64.length}`);
-                resolve(newB64);
-            };
-            img.onerror = () => {
-                Logger.warn('[图生图] 无法解析图片，直接发送原始 base64');
-                resolve(b64);
-            };
-           img.src = 'data:' + mime + ';base64,' + b64;
-       });
-   },
-
-   /**
-    * 创建错误卡片
-    */
-   _createErrorCard(message) {
+    _createErrorCard(message) {
         return `
             <div class="result-item result-item-error" style="border:1px solid var(--accent-border);background:var(--accent-soft);">
                 <div style="text-align:center;padding:20px;color:var(--red);">

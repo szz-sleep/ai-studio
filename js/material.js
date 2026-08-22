@@ -282,7 +282,12 @@ const MaterialLib = {
         if (!grid) return;
         const onSelect = this._pendingCallback;
         const filterType = this._pendingFilter;
-        const list = this.getByType(filterType);
+        let list = this.getByType(filterType);
+
+        // 防卡顿：素材超过 60 个时只渲染前 60 个，其余提示（避免一次性渲染上千 DOM 卡死）
+        const MAX_RENDER = 60;
+        const hiddenCount = list.length > MAX_RENDER ? list.length - MAX_RENDER : 0;
+        if (hiddenCount > 0) list = list.slice(0, MAX_RENDER);
 
         // 更新筛选按钮高亮
         document.querySelectorAll('.material-filter-btn').forEach(btn => {
@@ -392,9 +397,9 @@ const MaterialLib = {
             delBtn.className = 'material-delete-btn';
             delBtn.innerHTML = '×';
             delBtn.title = '删除';
-            delBtn.addEventListener('click', (e) => {
+            delBtn.addEventListener('click', async (e) => {
                 e.stopPropagation();
-                if (confirm('确定删除此素材吗？\n（将同步删除火山素材库中的素材）')) {
+                if (await UI.confirm('确定删除此素材吗？\n（将同步删除火山素材库中的素材）', { danger: true })) {
                     this.remove(item.id);
                     this._maasDeleteAsset(item.id); // 异步删除，不阻塞
                     this._render(modal);
@@ -405,6 +410,16 @@ const MaterialLib = {
 
             grid.appendChild(div);
         });
+
+        // 有更多素材未显示时，给出提示
+        if (hiddenCount > 0) {
+            const more = document.createElement('div');
+            more.className = 'material-empty';
+            more.style.padding = '12px';
+            more.style.fontSize = '12px';
+            more.textContent = `仅显示前 ${MAX_RENDER} 个素材（共 ${hiddenCount + MAX_RENDER} 个）。建议整理删除不用的素材，避免素材库过大`;
+            grid.appendChild(more);
+        }
     },
 
     /**
@@ -552,8 +567,8 @@ const MaterialLib = {
         });
 
         // 清空按钮
-        document.getElementById('materialClearBtn')?.addEventListener('click', () => {
-            if (confirm('确定清空所有素材记录吗？\n（将同步删除火山素材库中的所有素材）')) {
+        document.getElementById('materialClearBtn')?.addEventListener('click', async () => {
+            if (await UI.confirm('确定清空所有素材记录吗？\n（将同步删除火山素材库中的所有素材）', { danger: true })) {
                 // 异步删除火山侧素材
                 const all = this.getAll();
                 all.forEach(item => {

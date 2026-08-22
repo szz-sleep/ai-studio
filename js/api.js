@@ -51,7 +51,20 @@ const API = {
             Logger.info(`[API] 模型配置加载成功，共 ${this._modelConfig.rules.length} 条规则`);
         } catch (e) {
             Logger.warn(`[API] 模型配置文件加载失败，使用默认规则: ${e.message}`);
-            this._modelConfig = null;
+            // 兜底默认规则：models.json 缺失时也能正确分类常见模型，保证本地/云端识别不失效
+            this._modelConfig = {
+                rules: [
+                    { match: 'seedream', type: 'image', label: 'Seedream', tags: [], local: false },
+                    { match: 'seedance', type: 'video', label: 'Seedance', tags: [], local: false },
+                    { match: 'doubao', type: 'text', label: '豆包', tags: [], local: false },
+                    { match: 'deepseek', type: 'text', label: 'DeepSeek', tags: [], local: false },
+                    { match: 'gpt', type: 'text', label: 'GPT', tags: [], local: false },
+                    { match: 'claude', type: 'text', label: 'Claude', tags: [], local: false },
+                    { match: 'llama', type: 'text', label: 'Llama', tags: [], local: false },
+                    { match: 'qwen', type: 'text', label: '通义千问', tags: [], local: false },
+                    { match: 'video', type: 'video', label: '视频模型', tags: [], local: false }
+                ]
+            };
         }
     },
 
@@ -240,18 +253,11 @@ const API = {
         const body = { prompt, model, n: 1 };
         if (size) body.size = size;
 
+        // images 数组直接透传：普通上传为公网 URL，素材库选中为 asset://<id> 引用
+        // 不再在浏览器端 base64 拼接，避免请求体过大导致 413；后端构造 content 数组 + image_url 透传火山
         if (Array.isArray(images) && images.length > 0) {
-            if (images.length === 1) {
-                // 单图：image 字段需要带 data URI 前缀
-                body.image = 'data:image/jpeg;base64,' + images[0];
-                Logger.info('[API] 图生图: 1 张图 + 提示词, 模型=' + model + ', 尺寸=' + (size || 'auto'));
-            } else {
-                // 多图：拼成一张合成图，用 image 字段发送
-                Logger.info('[API] 图生图: ' + images.length + ' 张图，正在拼接...');
-                const merged = await this._stitchImages(images);
-                body.image = 'data:image/jpeg;base64,' + merged;
-                Logger.info('[API] 图生图: 拼接完成, 模型=' + model + ', 尺寸=' + (size || 'auto'));
-            }
+            body.images = images;
+            Logger.info('[API] 图生图: ' + images.length + ' 张参考图, 模型=' + model + ', 尺寸=' + (size || 'auto'));
         }
 
         const controller = new AbortController();
@@ -282,57 +288,6 @@ const API = {
     },
 
     /**
-     * 将多张 base64 图片拼接成一张（横向排列）
-     * @param {string[]} images - 纯 base64 数组
-     * @returns {Promise<string>} 拼接后的纯 base64
-     */
-    _stitchImages(images) {
-        return new Promise((resolve, reject) => {
-            const imgs = [];
-            let loaded = 0;
-            images.forEach((b64, i) => {
-                const img = new Image();
-                img.onload = () => {
-                    imgs[i] = img;
-                    loaded++;
-                    if (loaded === images.length) {
-                        try {
-                            // 计算合成图尺寸：横向排列
-                            const totalW = imgs.reduce((s, im) => s + im.width, 0);
-                            const maxH = Math.max(...imgs.map(im => im.height));
-                            const canvas = document.createElement('canvas');
-                            canvas.width = totalW;
-                            canvas.height = maxH;
-                            const ctx = canvas.getContext('2d');
-                            // 白色背景
-                            ctx.fillStyle = '#ffffff';
-                            ctx.fillRect(0, 0, totalW, maxH);
-                            // 依次绘制每张图
-                            let x = 0;
-                            imgs.forEach(im => {
-                                ctx.drawImage(im, x, 0);
-                                x += im.width;
-                            });
-                            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-                            const result = dataUrl.substring(dataUrl.indexOf(',') + 1);
-                            Logger.info('[API] 拼接完成: ' + totalW + 'x' + maxH + ', base64长度:' + result.length);
-                            resolve(result);
-                        } catch (e) {
-                            reject(e);
-                        }
-                    }
-                };
-                img.onerror = () => reject(new Error('图片加载失败'));
-                // 检测格式
-                let mime = 'image/png';
-                if (b64.startsWith('/9j/')) mime = 'image/jpeg';
-                else if (b64.startsWith('UklGR')) mime = 'image/webp';
-                img.src = 'data:' + mime + ';base64,' + b64;
-            });
-        });
-    },
-
-    /**
      * 创建视频生成任务
      * POST /v1/video/generations
      * @param {object} opts
@@ -345,14 +300,9 @@ const API = {
            prompt: prompt || ''
        };
        if (images && images.length > 0) {
-           if (images.length === 1) {
-               // 单图：image 字段带 data URI 前缀
-               body.image = 'data:image/jpeg;base64,' + images[0];
-            } else {
-                // 多图：拼成一张合成图
-                const merged = await this._stitchImages(images);
-                body.image = 'data:image/jpeg;base64,' + merged;
-            }
+           // 多图：直接传 images 数组（纯 base64），不再拼接成一张大图
+           // 拼接会产生超大请求体（413/超时），且丢失多图独立性
+           body.images = images;
         } else if (image) {
             body.image = image;
         }
@@ -457,6 +407,18 @@ const API = {
             const failStatuses = ['failed', 'error', 'fail', 'cancelled', 'canceled'];
             if (failStatuses.includes(status)) {
                 throw new Error(taskData.error?.message || taskData.error || task.error?.message || `视频生成失败 (status: ${rawStatus})`);
+            }
+
+            // 未知/异常状态：连续 6 次（约 30 秒）未返回已知状态，判定异常，避免用户干等 30 分钟
+            const knownStatuses = doneStatuses.concat(failStatuses, ['queued', 'pending', 'processing', 'running', 'in_progress', 'submitted', 'created']);
+            if (!knownStatuses.includes(status)) {
+                this._unknownStatusCount = (this._unknownStatusCount || 0) + 1;
+                if (this._unknownStatusCount >= 6) {
+                    this._unknownStatusCount = 0;
+                    throw new Error(`任务状态异常（无法识别状态 "${rawStatus}"），任务ID ${taskId} 可能仍在平台后台运行，请到模型平台查看详情`);
+                }
+            } else {
+                this._unknownStatusCount = 0;
             }
 
             // 更新进度（优先使用 API 返回的真实进度）

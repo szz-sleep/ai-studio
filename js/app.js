@@ -13,12 +13,14 @@ const Logger = {
         this._el = document.getElementById('logPanel');
         this._body = document.getElementById('logBody');
     },
+    /** 界面日志上限：普通日志最多保留这么多条 */
+    _MAX_VISIBLE: 10,
     _log(level, msg) {
         if (!this._body) this._init();
         const t = new Date();
         const time = t.toLocaleTimeString('zh-CN', { hour12: false });
 
-        // 控制台输出
+        // 控制台完整输出（生产排查靠这里，不受界面 10 条限制）
         const prefix = `[${time}]`;
         switch (level) {
             case 'error': console.error(prefix, msg); break;
@@ -38,11 +40,24 @@ const Logger = {
         const labelMap = { info: 'INFO', warn: 'WARN', error: 'ERROR', success: 'OK', req: '➡' };
         entry.innerHTML = `<span class="log-time">${time}</span><span class="log-level">${labelMap[level] || level}</span><span class="log-msg">${this._escape(msg)}</span>`;
         this._body.appendChild(entry);
-        // 日志最多保留 10 条，超出删除最旧的（避免无限累积导致界面卡顿/内存膨胀）
-        while (this._body.children.length > 10) {
-            this._body.removeChild(this._body.firstChild);
+        // 普通日志限 10 条；错误日志完整保留（错误最重要，不能因滚动被清掉）
+        if (level !== 'error' && level !== 'warn') {
+            while (this._body.children.length > this._MAX_VISIBLE) {
+                this._body.removeChild(this._body.firstChild);
+            }
+        } else {
+            // 错误/警告也控制上限，避免无限累积，但给更大空间（100 条）
+            while (this._body.children.length > 100) {
+                this._body.removeChild(this._body.firstChild);
+            }
         }
         this._body.scrollTop = this._body.scrollHeight;
+    },
+    /** 导出全部界面日志文本（排查用） */
+    exportText() {
+        if (!this._body) this._init();
+        if (!this._body) return '';
+        return Array.from(this._body.querySelectorAll('.log-entry')).map(el => el.textContent).join('\n');
     },
     _escape(s) {
         const div = document.createElement('div');
@@ -241,6 +256,55 @@ const UI = {
         const btn = document.getElementById('cancelBtn');
         btn.classList.add('hidden');
         btn.onclick = null;
+    },
+
+    /**
+     * 通用确认弹窗（异步，返回 Promise<boolean>）
+     * 替代原生 confirm()，界面风格统一且不阻塞
+     * @param {string} message - 提示文案（支持 \n 换行）
+     * @param {object} [opts] - { okText, cancelText, danger }
+     * @returns {Promise<boolean>} true=用户点击确定，false=取消
+     */
+    confirm(message, opts = {}) {
+        return new Promise((resolve) => {
+            const modal = document.getElementById('confirmModal');
+            const textEl = document.getElementById('confirmText');
+            const okBtn = document.getElementById('confirmOkBtn');
+            const cancelBtn = document.getElementById('confirmCancelBtn');
+            if (!modal || !textEl || !okBtn || !cancelBtn) {
+                // 弹窗元素缺失时回退到原生 confirm，保证功能可用
+                resolve(window.confirm(message));
+                return;
+            }
+
+            textEl.textContent = message || '确定要继续吗？';
+            okBtn.textContent = opts.okText || '确定';
+            cancelBtn.textContent = opts.cancelText || '取消';
+            // 危险操作：确定按钮用红色；常规操作：用 .btn-primary 默认 accent 色
+            if (opts.danger) {
+                okBtn.style.background = 'var(--red)';
+                okBtn.style.borderColor = 'var(--red)';
+                okBtn.style.color = '#fff';
+            } else {
+                okBtn.style.background = '';
+                okBtn.style.borderColor = '';
+                okBtn.style.color = '';
+            }
+
+            const done = (val) => {
+                modal.classList.add('hidden');
+                okBtn.onclick = null;
+                cancelBtn.onclick = null;
+                resolve(val);
+            };
+
+            okBtn.onclick = () => done(true);
+            cancelBtn.onclick = () => done(false);
+            // 点击遮罩 = 取消
+            modal.onclick = (e) => { if (e.target === modal) done(false); };
+
+            modal.classList.remove('hidden');
+        });
     }
 };
 
@@ -286,8 +350,8 @@ const App = {
         }
 
         // 清除当前平台 Key
-        document.getElementById('clearApiKeyBtn').addEventListener('click', () => {
-            if (!confirm('确定要清除当前平台的 API Key 吗？')) return;
+        document.getElementById('clearApiKeyBtn').addEventListener('click', async () => {
+            if (!(await UI.confirm('确定要清除当前平台的 API Key 吗？'))) return;
             Config.clearApiKey();
             Config.updateKeyStatus();
             document.getElementById('apiKeyInput').value = '';
@@ -295,8 +359,8 @@ const App = {
         });
 
         // 恢复默认设置
-        document.getElementById('resetDefaultsBtn').addEventListener('click', () => {
-            if (!confirm('确定要恢复所有设置到默认值吗？\n这会清除：所有平台的 API Key、上传大小限制。\n\n历史记录不受影响。')) return;
+        document.getElementById('resetDefaultsBtn').addEventListener('click', async () => {
+            if (!(await UI.confirm('确定要恢复所有设置到默认值吗？\n这会清除：所有平台的 API Key、上传大小限制。\n\n历史记录不受影响。'))) return;
             Config.resetToDefaults();
             document.getElementById('platformSelect').value = Config.DEFAULT_PLATFORM;
             document.getElementById('apiKeyInput').value = '';
@@ -394,8 +458,8 @@ const App = {
                 }
             });
         });
-        document.getElementById('clearHistoryBtn').addEventListener('click', () => {
-            if (confirm('确定清空所有历史记录吗？')) {
+        document.getElementById('clearHistoryBtn').addEventListener('click', async () => {
+            if (await UI.confirm('确定清空所有历史记录吗？', { danger: true })) {
                 History.clear();
                 UI.toast('历史记录已清空', 'success');
             }
@@ -597,10 +661,10 @@ const App = {
     /**
      * 删除自定义平台
      */
-    deleteCustomPlatform(id) {
+    async deleteCustomPlatform(id) {
         const p = Config.getCustomPlatforms().find(x => x.id === id);
         if (!p) return;
-        if (!confirm(`确定删除平台「${p.name}」吗？`)) return;
+        if (!(await UI.confirm(`确定删除平台「${p.name}」吗？`, { danger: true }))) return;
         Config.removeCustomPlatform(id);
         App.renderPlatformSelect();
         App.renderCustomPlatforms();

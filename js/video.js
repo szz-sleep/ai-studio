@@ -506,7 +506,8 @@ const VideoModule = {
                     url: videoUrl,
                     prompt: `[多图融合] ${prompt}`,
                     model,
-                    time: Date.now()
+                    time: Date.now(),
+                    autosave: true
                 });
 
                 UI.toast('视频生成成功！', 'success');
@@ -676,7 +677,8 @@ const VideoModule = {
                     url: videoUrl,
                     prompt: prompt || '(图生视频)',
                     model: model,
-                    time: Date.now()
+                    time: Date.now(),
+                    autosave: true
                 });
 
                 UI.toast('视频生成成功！', 'success');
@@ -838,37 +840,18 @@ const VideoModule = {
                 const httpUrl = result.files[0].url;
                 Logger.info(`[上传托管] 成功! URL: ${httpUrl}`);
 
-                // 保存到素材库
-                try {
-                    const typeMap = {
-                        'audio/mpeg': 'audio', 'audio/mp3': 'audio', 'audio/wav': 'audio',
-                        'audio/ogg': 'audio', 'audio/mp4': 'audio', 'audio/x-m4a': 'audio',
-                        'video/mp4': 'video', 'video/webm': 'video', 'video/quicktime': 'video',
-                        'image/png': 'image', 'image/jpeg': 'image', 'image/webp': 'image',
-                        'image/gif': 'image'
-                    };
-                    const mediaType = typeMap[mimeType] || 'unknown';
-                    const blobSize = blob.size;
-                    MaterialLib.add({
-                        name: safeName,
-                        url: httpUrl,
-                        type: mediaType,
-                        mimeType: mimeType,
-                        size: blobSize
-                    });
-                    Logger.info(`[素材库] 已保存: ${safeName} (${mediaType})`);
-                } catch (e) {
-                    Logger.warn(`[素材库] 保存失败: ${e.message}`);
-                }
+                // 说明：九宫格上传素材仅用于本次生成，不再自动加入素材库
+                // （素材库只供火山素材引用，需用户主动保存才会入库）
 
                 return httpUrl;
             }
 
             Logger.warn(`[上传托管] 上传失败: ${JSON.stringify(result)}`);
-            return dataUrl;
+            throw new Error('素材托管上传失败（临时图床服务未返回地址），请稍后重试');
         } catch (e) {
             Logger.error(`[上传托管] 异常: ${e.message}`);
-            return dataUrl; // 降级
+            // 上传托管失败会导致火山无法解析素材（火山只接受公网 HTTP URL），必须明确报错而不是静默降级
+            throw new Error('素材无法上传到公网托管，火山引擎不支持 base64 素材。请检查网络后重试');
         }
     },
 

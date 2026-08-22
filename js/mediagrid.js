@@ -164,24 +164,8 @@ function initMediaGrid(gridId, fileInputId, tabName, callbacks) {
                             // 保留 base64 供本地/自部署模型使用（不释放内存）
                             render();
 
-                            // 保存到素材库
-                            if (typeof MaterialLib !== 'undefined') {
-                                const typeMap = {
-                                    'image/png': 'image', 'image/jpeg': 'image', 'image/webp': 'image',
-                                    'image/gif': 'image', 'image/bmp': 'image',
-                                    'audio/mpeg': 'audio', 'audio/mp3': 'audio', 'audio/wav': 'audio',
-                                    'audio/ogg': 'audio', 'audio/mp4': 'audio', 'audio/x-m4a': 'audio',
-                                    'video/mp4': 'video', 'video/webm': 'video', 'video/quicktime': 'video'
-                            };
-                                const mediaType = typeMap[uploadMimeType] || type;
-                                MaterialLib.add({
-                                    name: autoName,
-                                    url: httpUrl,
-                                    type: mediaType,
-                                    mimeType: uploadMimeType,
-                                    size: uploadSize
-                                });
-                            }
+                            // 说明：九宫格上传的素材仅用于本次生成，不再自动加入素材库
+                            // （素材库只供火山素材引用，需用户主动保存才会入库）
                         }
                     } catch (e) {
                         Logger.warn(`[${tabName}] 自动上传失败: ${e.message}，使用本地数据`);

@@ -598,9 +598,9 @@ const StoryModule = {
         UI.toast('已下载', 'success');
     },
 
-    clear() {
+    async clear() {
         if (this._messages.length === 0) return;
-        if (!confirm('确定要清空所有对话内容吗？')) return;
+        if (!(await UI.confirm('确定要清空所有对话内容吗？'))) return;
         this._messages = [];
         this._renderAllMessages();
         // 恢复初始状态
@@ -757,10 +757,10 @@ const StoryModule = {
         UI.toast('已置顶', 'success');
     },
 
-    _deleteRecord(id) {
+    async _deleteRecord(id) {
         const rec = this._records.find(r => r.id === id);
         if (!rec) return;
-        if (!confirm(`确定要删除「${rec.title}」吗？`)) return;
+        if (!(await UI.confirm(`确定要删除「${rec.title}」吗？`, { danger: true }))) return;
         const wasCurrent = this._currentRecordId === id;
         this._records = this._records.filter(r => r.id !== id);
         if (wasCurrent) {

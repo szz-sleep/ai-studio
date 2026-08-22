@@ -392,10 +392,14 @@
                     <div class="form-group">
                         <div class="material-header">
                             <label>上传参考图片（最多9张）</label>
+                            <button type="button" class="btn-material-lib" id="i2iOpenMaterialLibBtn" title="素材库">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                                素材库
+                            </button>
                         </div>
                         <div class="upload-grid" id="i2iUploadGrid"></div>
                         <input type="file" id="i2iFileInput" accept="image/*" hidden multiple>
-                        <p class="upload-hint" style="margin-top:6px;color:#777;font-size:12px;">点击空位上传，悬停可删除 · 支持 JPG/PNG/WebP，自动命名图片1、图片2…</p>
+                        <p class="upload-hint" style="margin-top:6px;color:#777;font-size:12px;">点击空位上传自动托管到公网，悬停可删除 · 图片上传后自动同步到素材库，真人图片走素材库审核</p>
                     </div>
                     <div class="form-group">
                         <label>描述修改内容</label>
@@ -666,6 +670,19 @@
         </div>
         <div id="logBody" class="log-body">
             <div class="log-empty">暂无日志，开始操作后将自动记录</div>
+        </div>
+    </div>
+
+    <!-- 通用确认弹窗（替代原生 confirm） -->
+    <div id="confirmModal" class="modal hidden">
+        <div class="modal-content" style="max-width:400px;">
+            <div class="modal-body" style="padding-top:24px;">
+                <div id="confirmText" style="font-size:14px;color:var(--text-primary);line-height:1.6;white-space:pre-line;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary footer-btn" id="confirmCancelBtn">取消</button>
+                <button type="button" class="btn-primary footer-btn" id="confirmOkBtn">确定</button>
+            </div>
         </div>
     </div>
 
