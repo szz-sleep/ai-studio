@@ -258,6 +258,9 @@ const UI = {
         btn.onclick = null;
     },
 
+    /** 当前打开的确认弹窗 resolve（防止连续调用时旧 Promise 悬挂） */
+    _confirmResolve: null,
+
     /**
      * 通用确认弹窗（异步，返回 Promise<boolean>）
      * 替代原生 confirm()，界面风格统一且不阻塞
@@ -266,6 +269,13 @@ const UI = {
      * @returns {Promise<boolean>} true=用户点击确定，false=取消
      */
     confirm(message, opts = {}) {
+        // 若已有弹窗打开，先关闭旧的（resolve false），避免 Promise 悬挂/事件覆盖
+        if (this._confirmResolve) {
+            this._confirmResolve(false);
+            this._confirmResolve = null;
+            const oldModal = document.getElementById('confirmModal');
+            if (oldModal) oldModal.classList.add('hidden');
+        }
         return new Promise((resolve) => {
             const modal = document.getElementById('confirmModal');
             const textEl = document.getElementById('confirmText');
@@ -277,6 +287,7 @@ const UI = {
                 return;
             }
 
+            this._confirmResolve = resolve;
             textEl.textContent = message || '确定要继续吗？';
             okBtn.textContent = opts.okText || '确定';
             cancelBtn.textContent = opts.cancelText || '取消';
@@ -292,6 +303,7 @@ const UI = {
             }
 
             const done = (val) => {
+                this._confirmResolve = null;
                 modal.classList.add('hidden');
                 okBtn.onclick = null;
                 cancelBtn.onclick = null;

@@ -43,6 +43,54 @@ function getHistoryDir(folder) {
   return dir;
 }
 
+// 历史目录磁盘配额（MB）：超过后自动删除最旧文件，防止长期使用写爆磁盘
+const HISTORY_MAX_MB = 500;
+
+/**
+ * 统计目录下所有文件总大小（MB）
+ */
+async function dirTotalMB(dir) {
+  let total = 0;
+  try {
+    const files = await fsp.readdir(dir);
+    for (const f of files) {
+      try {
+        const st = await fsp.stat(path.join(dir, f));
+        if (st.isFile()) total += st.size;
+      } catch { /* 忽略单个文件读取失败 */ }
+    }
+  } catch { /* 目录不存在时按 0 处理 */ }
+  return total / 1024 / 1024;
+}
+
+/**
+ * 目录空间不足时删除最旧的文件，直到总量低于上限（至少保留一个）
+ */
+async function enforceHistoryQuota(dir) {
+  let total = await dirTotalMB(dir);
+  if (total <= HISTORY_MAX_MB) return;
+  try {
+    const files = (await fsp.readdir(dir))
+      .map(f => ({ f, p: path.join(dir, f) }))
+      .filter(entry => fs.statSync(entry.p).isFile());
+    // 按修改时间升序（最旧在前）
+    files.sort((a, b) => fs.statSync(a.p).mtimeMs - fs.statSync(b.p).mtimeMs);
+    while (total > HISTORY_MAX_MB && files.length > 1) {
+      const oldest = files.shift();
+      try {
+        const sz = fs.statSync(oldest.p).size / 1024 / 1024;
+        await fsp.unlink(oldest.p);
+        total -= sz;
+        console.log(`[history:save] 磁盘配额：删除最旧文件 ${oldest.f} (${sz.toFixed(1)}MB)`);
+      } catch (e) {
+        console.warn(`[history:save] 删除失败 ${oldest.f}:`, e.message);
+      }
+    }
+  } catch (e) {
+    console.warn('[history:save] 配额清理异常:', e.message);
+  }
+}
+
 // 单实例锁 — 防止多开
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
@@ -180,6 +228,8 @@ app.whenReady().then(() => {
         .slice(-60) + ext;
       const localPath = path.join(dir, safeName);
       await fsp.writeFile(localPath, dl.buf);
+      // 写入后执行磁盘配额清理（超 500MB 删最旧文件）
+      await enforceHistoryQuota(dir);
       return { ok: true, path: localPath, fileUrl: 'file://' + localPath };
     } catch (err) {
       console.error('[history:save] 保存失败:', err.message);

@@ -21,11 +21,11 @@ const History = {
      *   - autosave=true 时自动把远程资源下载保存到本地 history 目录，url 替换为本地 file:// 路径
      */
     async add(item) {
-        // 磁盘配额控制：历史自动下载本地文件有上限，防止写爆磁盘
-        // 单文件超过 200MB 不入库（视频可能很大）
+        // 磁盘配额：
+        // 1. 单文件 >200MB 不入库（视频可能很大，HEAD 预检）
+        // 2. 历史目录总量 >500MB 时由主进程自动删除最旧文件（main.js enforceHistoryQuota）
+        // 3. localStorage 条目 >4MB 时裁剪最旧记录
         const MAX_FILE_MB = 200;
-        // 历史总占用上限（MB）
-        const MAX_HISTORY_MB = 500;
 
         let url = item.url;
         // 自动保存到本地（仅 Electron 桌面环境）

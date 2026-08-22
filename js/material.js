@@ -282,24 +282,24 @@ const MaterialLib = {
         if (!grid) return;
         const onSelect = this._pendingCallback;
         const filterType = this._pendingFilter;
-        let list = this.getByType(filterType);
+        const allList = this.getByType(filterType);
 
         // 防卡顿：素材超过 60 个时只渲染前 60 个，其余提示（避免一次性渲染上千 DOM 卡死）
         const MAX_RENDER = 60;
-        const hiddenCount = list.length > MAX_RENDER ? list.length - MAX_RENDER : 0;
-        if (hiddenCount > 0) list = list.slice(0, MAX_RENDER);
+        const hiddenCount = allList.length > MAX_RENDER ? allList.length - MAX_RENDER : 0;
+        const list = hiddenCount > 0 ? allList.slice(0, MAX_RENDER) : allList;
 
         // 更新筛选按钮高亮
         document.querySelectorAll('.material-filter-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.filter === filterType);
         });
 
-        // 更新计数
+        // 更新计数（用完整列表，避免截断后显示不准）
         const countEl = document.getElementById('materialCount');
         if (countEl) {
-            const activeCount = list.filter(i => i.status === 'active').length;
-            const processingCount = list.filter(i => i.status !== 'active').length;
-            let countText = `共 ${list.length} 个素材`;
+            const activeCount = allList.filter(i => i.status === 'active').length;
+            const processingCount = allList.filter(i => i.status !== 'active').length;
+            let countText = `共 ${allList.length} 个素材`;
             if (processingCount > 0) countText += `（${activeCount} 可用，${processingCount} 审核中）`;
             countEl.textContent = countText;
         }
