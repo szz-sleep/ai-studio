@@ -1,0 +1,149 @@
+name: Build and publish installers
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要构建并发布的标签，例如 v1.0.18"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build-windows:
+    name: Build Windows installer
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Verify package version
+        shell: bash
+        run: |
+          node -e "const actual = 'v' + require('./package.json').version; if (actual !== process.env.RELEASE_TAG) { console.error('标签 ' + process.env.RELEASE_TAG + ' 与 package.json ' + actual + ' 不一致'); process.exit(1); }"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Windows installer
+        run: npm run build:win
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-installer
+          path: dist/*.exe
+          if-no-files-found: error
+          compression-level: 0
+
+  build-macos:
+    name: Build macOS ${{ matrix.arch }} installer
+    runs-on: macos-15-intel
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - x64
+          - arm64
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Verify package version
+        run: |
+          node -e "const actual = 'v' + require('./package.json').version; if (actual !== process.env.RELEASE_TAG) { console.error('标签 ' + process.env.RELEASE_TAG + ' 与 package.json ' + actual + ' 不一致'); process.exit(1); }"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build macOS installer
+        run: npx electron-builder --mac --${{ matrix.arch }} --publish=never
+
+      - name: Upload macOS installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-installer-${{ matrix.arch }}
+          path: dist/*.dmg
+          if-no-files-found: error
+          compression-level: 0
+
+  publish-release:
+    name: Publish GitHub Release
+    needs:
+      - build-windows
+      - build-macos
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+    steps:
+      - name: Download installers
+        uses: actions/download-artifact@v8
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create checksums
+        run: |
+          cd release-assets
+          sha256sum * > SHA256SUMS.txt
+
+      - name: Create release from tag
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v3
+        with:
+          name: AI Studio ${{ env.RELEASE_TAG }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: release-assets/*
+          fail_on_unmatched_files: true
+          overwrite_files: true
+          generate_release_notes: true
+          make_latest: true
+
+      - name: Add installers to an existing release
+        if: github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: release-assets/*
+          fail_on_unmatched_files: true
+          overwrite_files: true
+          make_latest: true
