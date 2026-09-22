@@ -44,3 +44,21 @@ test('rejects invalid two-stage sampling split', () => {
     assert.equal(result.valid, false);
     assert.match(result.errors[0], /低分辨率步数/);
 });
+
+test('normalises segment assets for the worker contract', () => {
+    const plan = buildPlan({
+        global_prompt: '测试',
+        segments: [{
+            start: 0,
+            end: 7,
+            assets: [
+                { id: 'portrait', type: 'image', uri: 'asset://portrait', role: 'character' },
+                { id: 'voice', type: 'audio', uri: 'https://example.test/voice.wav' }
+            ]
+        }]
+    });
+    assert.deepEqual(plan.segments[0].assets[0], {
+        id: 'portrait', type: 'image', uri: 'asset://portrait', role: 'character'
+    });
+    assert.equal(plan.segments[0].assets[1].role, 'reference');
+});

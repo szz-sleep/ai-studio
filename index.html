@@ -570,6 +570,13 @@
                 <aside class="timeline-preview-panel">
                     <div class="timeline-preview-header"><strong>任务预览</strong><span id="timelinePlanStatus">等待编辑</span></div>
                     <pre id="timelineJsonPreview">点击“预览任务 JSON”查看标准化请求。</pre>
+                    <section id="timelineTaskPanel" class="timeline-task-panel hidden" aria-live="polite">
+                        <div class="timeline-task-title"><strong>生成进度</strong><span id="timelineTaskStatus">等待中</span></div>
+                        <div class="timeline-progress"><div id="timelineProgressFill"></div></div>
+                        <div id="timelineProgressText" class="timeline-progress-text">0%</div>
+                        <div id="timelineSegmentProgress" class="timeline-segment-progress"></div>
+                        <button type="button" id="timelineCancelTaskBtn" class="btn-secondary timeline-cancel-task">取消任务</button>
+                    </section>
                 </aside>
             </div>
         </section>

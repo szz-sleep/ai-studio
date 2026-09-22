@@ -94,6 +94,16 @@ MaaS 写入队列时传计划对象和已签名素材 URI。Worker 每完成一�
 
 latent tensor 不应经 MaaS HTTP JSON 往返；它应停留在 Worker 显存/内存，或以受控检查点写入本地高速盘/对象存储。
 
+### 素材 URI 约定
+
+- 已同步到 MaaS 素材库的素材使用 `asset://{assetId}`，由 MaaS 在入队前解析为 Worker 可读取的签名 URI。
+- 仅存在于本地素材记录中的文件使用 HTTPS URL；正式部署不应向 Worker 发送 `file://` 路径。
+- 每段首版限制 9 张参考图片和 3 个参考音频，MaaS 与 Worker 都必须再次校验，不能只依赖前端。
+
+### 进度阶段
+
+Worker 建议上报 `preparing`、`low_resolution_sampling`、`high_resolution_sampling`、`assembling` 四种 phase。MaaS 应同时保留总体 `progress`、`current_segment` 和逐段进度，供 AI Studio 恢复页面后的任务追踪使用。
+
 ## 首版范围
 
 首版建议只实现 2–4 段、单任务单 GPU、固定共享 seed、逐段检查点和最终拼接。素材编辑、选择性重跑、断点跨机器恢复与多 GPU pipeline 放到后续版本。
