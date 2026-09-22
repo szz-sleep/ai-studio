@@ -496,6 +496,7 @@ const App = {
         ImageModule.init();
         VideoModule.initT2V();
         VideoModule.initI2V();
+        TimelineModule.init();
         RedrawModule.init();
         StoryModule.init();
         History.render();

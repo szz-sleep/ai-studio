@@ -355,6 +355,65 @@ const API = {
    },
 
     /**
+     * 创建 H3 长视频时间线任务。
+     * 调用方应先通过 H3TimelinePlan.validatePlan 校验并标准化计划。
+     * POST /v1/video/timeline/generations
+     */
+    async createTimelineVideoTask(plan, { signal } = {}) {
+        if (!plan || !Array.isArray(plan.segments) || plan.segments.length === 0) {
+            throw new Error('时间线计划至少需要一个分段');
+        }
+        const platform = Config.getCurrentPlatformConfig();
+        const endpoint = platform.timelineVideoEndpoint || '/v1/video/timeline/generations';
+        const resp = await fetch(this._url(endpoint), {
+            method: 'POST',
+            headers: this._headers(),
+            body: JSON.stringify(plan),
+            signal
+        });
+        if (!resp.ok) {
+            const errText = await resp.text().catch(() => '');
+            let errMessage = '';
+            try { errMessage = JSON.parse(errText).error?.message || ''; } catch (_) { /* text response */ }
+            throw new Error(errMessage || `长视频任务创建失败 (${resp.status}): ${errText.substring(0, 200)}`);
+        }
+        return await resp.json();
+    },
+
+    /** 查询 H3 长视频时间线任务。 */
+    async getTimelineVideoTask(taskId, { signal } = {}) {
+        if (!taskId) throw new Error('缺少长视频任务 ID');
+        const platform = Config.getCurrentPlatformConfig();
+        const endpoint = platform.timelineVideoEndpoint || '/v1/video/timeline/generations';
+        const resp = await fetch(this._url(`${endpoint}/${encodeURIComponent(taskId)}`), {
+            headers: this._headers(),
+            signal
+        });
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.error?.message || `查询长视频任务失败 (${resp.status})`);
+        }
+        return await resp.json();
+    },
+
+    /** 请求取消 H3 长视频时间线任务。 */
+    async cancelTimelineVideoTask(taskId, { signal } = {}) {
+        if (!taskId) throw new Error('缺少长视频任务 ID');
+        const platform = Config.getCurrentPlatformConfig();
+        const endpoint = platform.timelineVideoEndpoint || '/v1/video/timeline/generations';
+        const resp = await fetch(this._url(`${endpoint}/${encodeURIComponent(taskId)}`), {
+            method: 'DELETE',
+            headers: this._headers(),
+            signal
+        });
+        if (!resp.ok && resp.status !== 409) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.error?.message || `取消长视频任务失败 (${resp.status})`);
+        }
+        return resp.status === 204 ? { id: taskId, status: 'cancelled' } : await resp.json();
+    },
+
+    /**
      * 查询视频任务状态
      * GET /v1/video/generations/{task_id}
      */
