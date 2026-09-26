@@ -40,7 +40,6 @@
       "!clear.html"
     ],
     "asarUnpack": [
-      "models.json",
       "node_modules/@ffmpeg-installer/**/*"
     ],
     "mac": {
