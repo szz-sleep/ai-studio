@@ -214,6 +214,9 @@ const TimelineModule = {
                 for (const file of files) await this.uploadAsset(index, file);
             });
         });
+        container.querySelectorAll('[data-cancel-upload]').forEach(button => {
+            button.addEventListener('click', () => this.cancelUpload(button.dataset.cancelUpload));
+        });
         container.querySelectorAll('[data-remove-asset]').forEach(button => {
             button.addEventListener('click', () => this.removeAsset(Number(button.dataset.segment), Number(button.dataset.removeAsset)));
         });
@@ -250,7 +253,7 @@ const TimelineModule = {
     _renderPendingUploads(segmentId) {
         return Array.from(this.pendingUploads.values()).filter(item => item.segmentId === segmentId).map(item =>
             `<div class="timeline-upload-item" data-upload-id="${item.id}" role="status">
-                <div><span>${this._escape(item.name)}</span><strong data-upload-label>${item.progress === 100 ? '处理中…' : `${item.progress}%`}</strong></div>
+                <div><span>${this._escape(item.name)}</span><strong data-upload-label>${item.phase === 'compressing' ? '本地压缩中…' : item.progress === 100 ? '处理中…' : `${item.progress}%`}</strong><button type="button" data-cancel-upload="${item.id}" aria-label="删除上传 ${this._escape(item.name)}">删除</button></div>
                 <div class="timeline-upload-track"><i data-upload-fill style="width:${item.progress}%"></i></div>
             </div>`).join('');
     },
@@ -259,10 +262,20 @@ const TimelineModule = {
         const item = this.pendingUploads.get(id);
         if (!item) return;
         item.progress = progress;
+        item.phase = 'uploading';
         const row = Array.from(document.querySelectorAll('[data-upload-id]')).find(node => node.dataset.uploadId === id);
         if (!row) return;
         row.querySelector('[data-upload-fill]').style.width = `${progress}%`;
         row.querySelector('[data-upload-label]').textContent = progress === 100 ? '处理中…' : `${progress}%`;
+    },
+
+    cancelUpload(id) {
+        const item = this.pendingUploads.get(id);
+        if (!item) return;
+        item.controller.abort();
+        window.electronAPI?.cancelTimelineCompression?.(id);
+        this.pendingUploads.delete(id);
+        this.render();
     },
 
     openAssetPicker(segmentIndex) {
@@ -278,17 +291,37 @@ const TimelineModule = {
             UI.toast('素材格式不支持或本段素材已达到上限', 'error'); return;
         }
         const uploadId = `upload-${this.nextUploadId++}`;
-        this.pendingUploads.set(uploadId, { id: uploadId, segmentId: segment.id, name: file.name, progress: 0 });
+        const controller = new AbortController();
+        const compress = type === 'video' && document.getElementById('timelineFastUpload')?.checked;
+        this.pendingUploads.set(uploadId, { id: uploadId, segmentId: segment.id, name: file.name, progress: 0, controller, phase: compress ? 'compressing' : 'uploading' });
         this.render();
         try {
-            const uploaded = await API.uploadTimelineAsset(file, progress => this._updateUploadProgress(uploadId, progress));
-            if (!this.segments.includes(segment)) return;
+            let source = file;
+            if (compress) {
+                const result = await window.electronAPI?.compressTimelineVideo?.({
+                    id: uploadId, bytes: await file.arrayBuffer(), name: file.name
+                });
+                if (controller.signal.aborted) return;
+                if (result?.ok && result.smaller) {
+                    source = new File([result.bytes], file.name.replace(/\.[^.]+$/, '') + '.mp4', { type: 'video/mp4' });
+                } else if (!result?.ok) {
+                    UI.toast(`本地压缩不可用，改用原视频上传：${result?.error || '未安装 ffmpeg'}`, 'warning');
+                }
+            }
+            if (controller.signal.aborted) return;
+            this._updateUploadProgress(uploadId, 0);
+            const uploaded = await API.uploadTimelineAsset(source, progress => this._updateUploadProgress(uploadId, progress), { signal: controller.signal });
+            if (controller.signal.aborted || !this.segments.includes(segment)) return;
             segment.assets.push({ id: uploaded.id, name: file.name, type: uploaded.type, uri: uploaded.uri, role: 'reference' });
             this.assetPreviewUrls.set(uploaded.id, URL.createObjectURL(file));
             this._saveDraft();
             UI.toast(`已上传 H3 素材：${file.name}`, 'success');
-        } catch (error) { UI.toast(`上传失败：${error.message}`, 'error'); }
-        finally { this.pendingUploads.delete(uploadId); this.render(); }
+        } catch (error) {
+            if (!controller.signal.aborted && error.name !== 'AbortError') UI.toast(`上传失败：${error.message}`, 'error');
+        } finally {
+            this.pendingUploads.delete(uploadId);
+            this.render();
+        }
     },
 
     removeAsset(segmentIndex, assetIndex) {

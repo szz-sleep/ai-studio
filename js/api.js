@@ -381,29 +381,77 @@ const API = {
     },
 
     /** H3-only upload; never adds the file to the Volcano asset library. */
-    uploadTimelineAsset(file, onProgress) {
-        return new Promise((resolve, reject) => {
-            const data = new FormData();
-            data.append('file', file);
-            const request = new XMLHttpRequest();
-            request.open('POST', this._url('/v1/video/timeline/assets'));
-            request.setRequestHeader('Authorization', this._headers().Authorization);
-            request.upload.onprogress = event => {
-                if (event.lengthComputable) onProgress?.(Math.min(99, Math.round(event.loaded / event.total * 100)));
-            };
-            request.upload.onload = () => onProgress?.(100);
-            request.onerror = () => reject(new Error('网络连接中断，素材上传失败'));
-            request.onabort = () => reject(new Error('素材上传已中断'));
-            request.onload = () => {
-                let response;
-                try { response = JSON.parse(request.responseText); }
-                catch { reject(new Error(`H3 素材上传响应无效 (${request.status})`)); return; }
-                if (request.status < 200 || request.status >= 300) {
-                    reject(new Error(response.error?.message || `H3 素材上传失败 (${request.status})`));
-                } else resolve(response);
-            };
-            request.send(data);
+    async uploadTimelineAsset(file, onProgress, { signal } = {}) {
+        const aborted = () => { if (signal?.aborted) throw new DOMException('已取消上传', 'AbortError'); };
+        aborted();
+        const path = '/v1/video/timeline/assets/uploads';
+        const headers = this._headers();
+        const start = await fetch(this._url(path), {
+            method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: file.name, size: file.size }), signal
         });
+        if (!start.ok) {
+            const error = await start.json().catch(() => ({}));
+            throw new Error(start.status === 404 ? 'MaaS 服务尚未部署分块上传接口' : error.error?.message || `创建上传失败 (${start.status})`);
+        }
+        const { uploadId, chunkSize } = await start.json();
+        if (!uploadId || !Number.isSafeInteger(chunkSize) || chunkSize <= 0) throw new Error('MaaS 返回的分块配置无效');
+        const count = Math.ceil(file.size / chunkSize);
+        for (let index = 0; index < count; index++) {
+            aborted();
+            const offset = index * chunkSize;
+            const chunk = file.slice(offset, offset + chunkSize);
+            let lastError;
+            for (let attempt = 0; attempt < 3; attempt++) {
+                try {
+                    aborted();
+                    await new Promise((resolve, reject) => {
+                        const data = new FormData();
+                        data.append('file', chunk, `${index}.part`);
+                        const request = new XMLHttpRequest();
+                        const abort = () => request.abort();
+                        if (signal?.aborted) { reject(new DOMException('已取消上传', 'AbortError')); return; }
+                        signal?.addEventListener('abort', abort, { once: true });
+                        request.addEventListener('loadend', () => signal?.removeEventListener('abort', abort), { once: true });
+                        request.onabort = () => reject(new DOMException('已取消上传', 'AbortError'));
+                        request.open('PUT', this._url(`${path}/${encodeURIComponent(uploadId)}/${index}`));
+                        request.setRequestHeader('Authorization', headers.Authorization);
+                        request.upload.onprogress = event => {
+                            if (event.lengthComputable) onProgress?.(Math.min(99, Math.round((offset + Math.min(chunk.size, event.loaded)) / file.size * 100)));
+                        };
+                        request.onerror = () => reject(new Error('网络连接中断'));
+                        request.onload = () => {
+                            if (request.status >= 200 && request.status < 300) resolve();
+                            else {
+                                let message;
+                                try { message = JSON.parse(request.responseText).error?.message; } catch (_) {}
+                                reject(new Error(message || `分块上传失败 (${request.status})`));
+                            }
+                        };
+                        request.send(data);
+                    });
+                    lastError = null;
+                    break;
+                } catch (error) {
+                    if (signal?.aborted || error.name === 'AbortError') throw new DOMException('已取消上传', 'AbortError');
+                    lastError = error;
+                    onProgress?.(Math.round(offset / file.size * 100));
+                    if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+                }
+            }
+            if (lastError) throw new Error(`第 ${index + 1}/${count} 块重试失败：${lastError.message}`);
+            onProgress?.(Math.min(99, Math.round((offset + chunk.size) / file.size * 100)));
+        }
+        aborted();
+        onProgress?.(100);
+        const complete = await fetch(this._url(`${path}/${encodeURIComponent(uploadId)}/complete`), {
+            method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: '{}', signal
+        });
+        if (!complete.ok) {
+            const error = await complete.json().catch(() => ({}));
+            throw new Error(error.error?.message || `合并上传失败 (${complete.status})`);
+        }
+        return complete.json();
     },
 
     /** 查询 H3 长视频时间线任务。 */
