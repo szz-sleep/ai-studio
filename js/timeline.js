@@ -187,7 +187,6 @@ const TimelineModule = {
 
     _renderAssets(assets, segmentIndex) {
         if (!assets.length) return '<span class="timeline-assets-empty">尚未分配素材</span>';
-        const labels = { image: '图片', video: '视频', audio: '音频' };
         return assets.map((asset, assetIndex) => {
             const src = this._escape(this.assetPreviewUrls.get(asset.id) || API._url(`/v1/video/timeline/assets/${encodeURIComponent(asset.id)}`));
             const media = asset.type === 'image' ? `<img src="${src}" alt="" loading="lazy">`
@@ -196,13 +195,12 @@ const TimelineModule = {
             const enlarged = asset.type === 'image' ? `<img src="${src}" alt="${this._escape(asset.name || '图片参考')}">`
                 : asset.type === 'video' ? `<video src="${src}" controls preload="metadata" playsinline></video>`
                 : `<audio src="${src}" controls preload="none"></audio>`;
-            return `<span class="timeline-asset-chip asset-${asset.type}" tabindex="0">
+            return `<span class="timeline-asset-chip asset-${asset.type}" tabindex="0" aria-label="${this._escape(asset.name || asset.id)}">
             <span class="timeline-asset-thumb">${media}</span>
-            <span class="timeline-asset-name">${labels[asset.type] || '素材'} · ${this._escape(asset.name || asset.id)}</span>
             ${asset.type === 'video' ? `<select aria-label="视频参考方式" data-segment="${segmentIndex}" data-asset-role="${assetIndex}"><option value="guide" ${!['edit', 'boundary'].includes(asset.role) ? 'selected' : ''}>固定引导</option><option value="edit" ${asset.role === 'edit' ? 'selected' : ''}>可编辑参考</option><option value="boundary" ${asset.role === 'boundary' ? 'selected' : ''}>边界参考</option></select>` : ''}
             ${asset.type === 'audio' ? `<select aria-label="音频参考方式" data-segment="${segmentIndex}" data-asset-role="${assetIndex}"><option value="reference" ${asset.role !== 'locked' ? 'selected' : ''}>参考音频</option><option value="locked" ${asset.role === 'locked' ? 'selected' : ''}>保留原音</option></select>` : ''}
             <button type="button" data-segment="${segmentIndex}" data-remove-asset="${assetIndex}" aria-label="移除素材">×</button>
-            <span class="timeline-asset-popover"><span>${this._escape(asset.name || asset.id)}</span>${enlarged}</span>
+            <span class="timeline-asset-popover">${enlarged}</span>
         </span>`;
         }).join('');
     },
