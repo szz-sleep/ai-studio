@@ -1786,16 +1786,24 @@ select.select-input option { background: var(--bg-surface); }
 .timeline-assets-head { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
 .timeline-assets-head > span { color: var(--text-muted); font-size: 12px; }
 .timeline-add-asset { padding: 5px 9px; font-size: 11px; }
-.timeline-assets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; min-height: 25px; }
+.timeline-assets { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; min-height: 48px; }
 .timeline-assets-empty { color: var(--text-muted); font-size: 12px; padding: 4px 0; }
 .timeline-output-video { width: 100%; max-height: 420px; margin: 14px 0; background: #000; border-radius: 10px; }
 .timeline-asset-chip select { max-width: 92px; font-size: 11px; }
 .timeline-asset-chip {
-    display: inline-flex; align-items: center; gap: 6px;
-    max-width: 220px; border-radius: 8px; padding: 5px 7px;
+    position: relative; display: inline-flex; align-items: center; gap: 6px;
+    max-width: 270px; border-radius: 8px; padding: 5px 7px;
     border: 1px solid var(--border); color: var(--text-secondary); font-size: 11px;
 }
-.timeline-asset-chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.timeline-asset-name { max-width: 105px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.timeline-asset-thumb { flex: 0 0 56px; width: 56px; height: 38px; overflow: hidden; border-radius: 5px; background: #141821; display: grid; place-items: center; }
+.timeline-asset-thumb img, .timeline-asset-thumb video { display: block; width: 100%; height: 100%; object-fit: cover; }
+.timeline-asset-audio-icon { color: #5eead4; font-size: 23px; }
+.timeline-asset-popover { display: none; position: absolute; left: 0; bottom: 100%; z-index: 30; width: min(360px, 80vw); padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-secondary, #1b1e27); box-shadow: 0 12px 32px rgba(0,0,0,.4); color: var(--text-primary); overflow-wrap: anywhere; }
+.timeline-asset-chip:hover .timeline-asset-popover, .timeline-asset-chip:focus-within .timeline-asset-popover { display: block; }
+.timeline-asset-popover > span { display: block; margin-bottom: 7px; }
+.timeline-asset-popover img, .timeline-asset-popover video { display: block; width: 100%; max-height: 240px; object-fit: contain; border-radius: 6px; background: #000; }
+.timeline-asset-popover audio { display: block; width: 100%; }
 .timeline-asset-chip button { border: 0; background: none; color: inherit; cursor: pointer; padding: 0 2px; }
 .timeline-asset-chip.asset-image { background: rgba(99,102,241,.1); }
 .timeline-asset-chip.asset-video { background: rgba(14,165,233,.1); }
