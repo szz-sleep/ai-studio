@@ -232,8 +232,8 @@
             <button class="tab-btn" data-tab="t2i"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> 文生图</button>
             <button class="tab-btn" data-tab="i2i"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg> 图生图</button>
             <button class="tab-btn" data-tab="t2v"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg> 文生视频</button>
-            <button class="tab-btn" data-tab="timeline"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="8" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="11" cy="18" r="2"/></svg> H3 长视频</button>
             <button class="tab-btn" data-tab="i2v"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg> 图生视频</button>
+            <button class="tab-btn" data-tab="timeline"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="8" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="11" cy="18" r="2"/></svg> H3 长视频</button>
         </nav>
 
         
@@ -486,6 +486,7 @@
                             <button class="ratio-btn" data-duration="10">10秒</button>
                             <button class="ratio-btn" data-duration="12">12秒</button>
                             <button class="ratio-btn" data-duration="15">15秒</button>
+                            <button class="ratio-btn" data-duration="30" hidden>30秒</button>
                         </div>
                     </div>
                     <div class="form-group">
@@ -533,8 +534,8 @@
 
                     <div class="timeline-settings-grid">
                         <div class="form-group"><label for="timelineModel">模型</label><input id="timelineModel" type="text" value="minimax-h3"></div>
-                        <div class="form-group"><label for="timelineSize">输出尺寸</label><select id="timelineSize"><option value="1024x576">1024×576</option><option value="1536x832">1536×832</option><option value="576x1024">576×1024</option></select></div>
-                        <div class="form-group"><label for="timelineFps">帧率</label><select id="timelineFps"><option value="24" selected>24 FPS</option><option value="30">30 FPS</option></select></div>
+                        <div class="form-group"><label for="timelineSize">输出尺寸</label><select id="timelineSize"><option value="1344x768">1344×768 · 原生横屏</option><option value="768x1344">768×1344 · 原生竖屏</option><option value="1024x576">1024×576 · 快速草稿</option><option value="576x1024">576×1024 · 竖屏草稿</option><option value="1920x1080">1920×1080 · H3 超分</option><option value="1080x1920">1080×1920 · 竖屏超分</option></select></div>
+                        <div class="form-group"><label for="timelineFps">帧率</label><select id="timelineFps"><option value="24" selected>24 FPS（H3 原生）</option></select></div>
                         <div class="form-group"><label for="timelineSeed">随机种子</label><input id="timelineSeed" type="number" min="0" placeholder="留空则随机"></div>
                     </div>
 
@@ -548,13 +549,14 @@
                         <button type="button" class="btn-secondary" id="timelineAddSegmentBtn">＋ 添加分段</button>
                     </div>
                     <div id="timelineTrack" class="timeline-track" aria-label="视频时间线"></div>
+                    <p class="timeline-duration-hint">建议每段约 5–15 秒；单段技术上限约 150 秒，整条时间线目前最多 10 分钟。分段时长需符合 H3 的帧数规则。</p>
                     <div id="timelineSegments" class="timeline-segments"></div>
 
                     <details class="advanced-settings timeline-advanced">
                         <summary>采样与连续性设置</summary>
                         <div class="timeline-settings-grid timeline-sampling-grid">
                             <div class="form-group"><label for="timelineSteps">总采样步数</label><input id="timelineSteps" type="number" min="1" max="100" value="8"></div>
-                            <div class="form-group"><label for="timelineLowSteps">低分辨率步数</label><input id="timelineLowSteps" type="number" min="0" max="100" value="6"></div>
+                            <div class="form-group"><label for="timelineLowSteps">超分低分辨率步数（仅 1080p）</label><input id="timelineLowSteps" type="number" min="1" max="100" value="6"></div>
                             <label class="timeline-check"><input id="timelineDrift" type="checkbox" checked> 漂移控制</label>
                             <label class="timeline-check"><input id="timelineSoftAudio" type="checkbox" checked> 音频平滑衔接</label>
                         </div>
@@ -568,15 +570,24 @@
                 </div>
 
                 <aside class="timeline-preview-panel">
-                    <div class="timeline-preview-header"><strong>任务预览</strong><span id="timelinePlanStatus">等待编辑</span></div>
-                    <pre id="timelineJsonPreview">点击“预览任务 JSON”查看标准化请求。</pre>
+                    <section class="timeline-jobs-panel" aria-label="H3 任务列表">
+                        <div class="timeline-preview-header"><strong>H3 任务</strong><span>可同时生成多个视频</span></div>
+                        <div id="timelineJobsList" class="timeline-jobs-list"></div>
+                    </section>
                     <section id="timelineTaskPanel" class="timeline-task-panel hidden" aria-live="polite">
+                        <div id="timelineVideoWrap" class="timeline-video-wrap hidden">
+                            <video id="timelineOutputVideo" class="timeline-output-video" controls preload="metadata"></video>
+                            <button type="button" id="timelineVideoMenuBtn" class="timeline-video-menu-btn" aria-label="视频操作" aria-expanded="false">⋯</button>
+                            <div id="timelineVideoMenu" class="timeline-video-menu hidden"><button type="button" id="timelineVideoDownloadBtn">下载视频</button></div>
+                        </div>
                         <div class="timeline-task-title"><strong>生成进度</strong><span id="timelineTaskStatus">等待中</span></div>
                         <div class="timeline-progress"><div id="timelineProgressFill"></div></div>
                         <div id="timelineProgressText" class="timeline-progress-text">0%</div>
                         <div id="timelineSegmentProgress" class="timeline-segment-progress"></div>
                         <button type="button" id="timelineCancelTaskBtn" class="btn-secondary timeline-cancel-task">取消任务</button>
                     </section>
+                    <div class="timeline-preview-header"><strong>任务预览</strong><span id="timelinePlanStatus">等待编辑</span></div>
+                    <pre id="timelineJsonPreview">点击“预览任务 JSON”查看标准化请求。</pre>
                 </aside>
             </div>
         </section>
@@ -672,6 +683,7 @@
                             <button class="ratio-btn" data-duration="10">10秒</button>
                             <button class="ratio-btn" data-duration="12">12秒</button>
                             <button class="ratio-btn" data-duration="15">15秒</button>
+                            <button class="ratio-btn" data-duration="30" hidden>30秒</button>
                         </div>
                     </div>
                     <div class="form-group">
@@ -724,7 +736,7 @@
     </div>
 
     <!-- 版本号 -->
-    <div id="appVersion" class="app-version">AI Studio V1.0.21</div>
+    <div id="appVersion" class="app-version">AI Studio V1.0.22</div>
 
     <!-- 运行日志面板 -->
     <div id="logPanel" class="log-panel" style="display:none;">

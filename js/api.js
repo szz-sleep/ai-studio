@@ -380,6 +380,20 @@ const API = {
         return await resp.json();
     },
 
+    /** H3-only upload; never adds the file to the Volcano asset library. */
+    async uploadTimelineAsset(file) {
+        const data = new FormData();
+        data.append('file', file);
+        const resp = await fetch(this._url('/v1/video/timeline/assets'), {
+            method: 'POST', headers: { Authorization: this._headers().Authorization }, body: data
+        });
+        if (!resp.ok) {
+            const error = await resp.json().catch(() => ({}));
+            throw new Error(error.error?.message || `H3 素材上传失败 (${resp.status})`);
+        }
+        return resp.json();
+    },
+
     /** 查询 H3 长视频时间线任务。 */
     async getTimelineVideoTask(taskId, { signal } = {}) {
         if (!taskId) throw new Error('缺少长视频任务 ID');
@@ -411,6 +425,20 @@ const API = {
             throw new Error(err.error?.message || `取消长视频任务失败 (${resp.status})`);
         }
         return resp.status === 204 ? { id: taskId, status: 'cancelled' } : await resp.json();
+    },
+
+    /** Download a completed H3 video through the authenticated MaaS route. */
+    async downloadTimelineVideoTask(taskId) {
+        const platform = Config.getCurrentPlatformConfig();
+        const endpoint = platform.timelineVideoEndpoint || '/v1/video/timeline/generations';
+        const resp = await fetch(this._url(`${endpoint}/${encodeURIComponent(taskId)}/output`), {
+            headers: this._headers()
+        });
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.error?.message || `下载长视频失败 (${resp.status})`);
+        }
+        return await resp.blob();
     },
 
     /**

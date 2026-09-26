@@ -4,6 +4,8 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const https = require('https');
 const http = require('http');
+const os = require('os');
+const { spawn } = require('child_process');
 
 /**
  * 下载远程文件到本地硬盘
@@ -89,6 +91,74 @@ async function enforceHistoryQuota(dir) {
   } catch (e) {
     console.warn('[history:save] 配额清理异常:', e.message);
   }
+}
+
+// ============ 视频后处理（30 秒 = 两段 15 秒生成后拼接） ============
+
+/**
+ * 解析内置 ffmpeg 可执行文件路径。
+ * @ffmpeg-installer 的子包只携带二进制、没有 JS 入口，需自行拼路径；
+ * 打包后二进制被解到 app.asar.unpacked，路径要做一次映射。
+ * @returns {string|null}
+ */
+function resolveFfmpegPath() {
+  const exe = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+  // arm64 机器上没有原生包时回退到 x64（macOS 可经 Rosetta 运行）
+  const suffixes = [`${process.platform}-${process.arch}`, `${process.platform}-x64`];
+  const bases = [__dirname, __dirname.replace(/([\\/])app\.asar(?=[\\/]|$)/, '$1app.asar.unpacked')];
+  for (const suffix of suffixes) {
+    const rel = path.join('node_modules', '@ffmpeg-installer', suffix, exe);
+    for (const base of bases) {
+      const candidate = path.join(base, rel);
+      if (fs.existsSync(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
+/**
+ * 执行 ffmpeg，成功返回 stderr 文本，失败抛出带末行日志的错误
+ * @param {string[]} args
+ * @param {{timeoutMs?:number}} [opts]
+ */
+function runFfmpeg(args, { timeoutMs = 300000, cwd } = {}) {
+  return new Promise((resolve, reject) => {
+    const bin = resolveFfmpegPath();
+    if (!bin) return reject(new Error('未找到内置 ffmpeg，无法完成后处理'));
+    const child = spawn(bin, args, cwd ? { windowsHide: true, cwd } : { windowsHide: true });
+    let stderr = '';
+    const timer = setTimeout(() => {
+      try { child.kill('SIGKILL'); } catch { /* 进程可能已退出 */ }
+      reject(new Error('视频后处理超时'));
+    }, timeoutMs);
+    child.stderr.on('data', (d) => {
+      stderr += d.toString();
+      // 只保留尾部，避免长任务日志撑爆内存
+      if (stderr.length > 30000) stderr = stderr.slice(-10000);
+    });
+    child.on('error', (e) => {
+      clearTimeout(timer);
+      reject(new Error('ffmpeg 启动失败: ' + e.message));
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code === 0) return resolve(stderr);
+      const tail = stderr.trim().split('\n').pop() || '';
+      reject(new Error(`ffmpeg 处理失败(退出码 ${code}): ${tail}`));
+    });
+  });
+}
+
+/** 创建一次性临时工作目录 */
+function makeTmpDir(tag) {
+  const dir = path.join(os.tmpdir(), `ai-studio-${tag}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+/** 清理临时目录（失败不影响主流程） */
+function cleanupTmpDir(dir) {
+  fsp.rm(dir, { recursive: true, force: true }).catch(() => { /* 忽略清理失败 */ });
 }
 
 // 单实例锁 — 防止多开
@@ -193,7 +263,7 @@ const menuTemplate = [
             type: 'info',
             title: '关于 AI Studio',
             message: 'AI Studio - AI创作工坊',
-            detail: '版本 V1.0.21\n湖北生而为一科技有限公司'
+            detail: '版本 V1.0.22\n湖北生而为一科技有限公司'
           });
         }
       }
@@ -202,6 +272,21 @@ const menuTemplate = [
 ];
 
 app.whenReady().then(() => {
+  ipcMain.handle('history:save-video-bytes', async (event, { bytes, filename }) => {
+    try {
+      const data = Buffer.from(bytes);
+      if (!data.length || data.length > 200 * 1024 * 1024) throw new Error('视频大小超出本地历史记录限制');
+      const name = String(filename || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
+      if (!name) throw new Error('无效的任务文件名');
+      const dir = getHistoryDir('视频');
+      const localPath = path.join(dir, name + '.mp4');
+      await fsp.writeFile(localPath, data);
+      await enforceHistoryQuota(dir);
+      return { ok: true, path: localPath, fileUrl: 'file://' + localPath };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
   // 本地持久化：把远程视频/图片保存到本地 history 目录，返回本地 file:// 路径
   ipcMain.handle('history:save', async (event, { url, folder, filename }) => {
     try {
@@ -234,6 +319,109 @@ app.whenReady().then(() => {
     } catch (err) {
       console.error('[history:save] 保存失败:', err.message);
       return { ok: false, error: err.message };
+    }
+  });
+
+  // 后处理能力探测：渲染层据此决定 30 秒拼接能否执行
+  ipcMain.handle('video:ffmpeg-available', () => {
+    const p = resolveFfmpegPath();
+    return { ok: !!p, path: p || null };
+  });
+
+  // 抽取视频末帧：30 秒两段生成时，用它把第二段接在第一时间结尾的画面上
+  ipcMain.handle('video:extract-last-frame', async (event, { url }) => {
+    const tmp = makeTmpDir('frame');
+    try {
+      if (!resolveFfmpegPath()) throw new Error('未找到内置 ffmpeg，无法抽取衔接帧');
+      const dl = await downloadToBuffer(url);
+      const inPath = path.join(tmp, 'src.mp4');
+      await fsp.writeFile(inPath, dl.buf);
+
+      const outPath = path.join(tmp, 'last.jpg');
+      // -sseof 从结尾前若干秒起解码，-update 1 让每帧覆盖同一文件，最终留下的就是末帧
+      const seeks = [['-0.5'], ['-1'], ['-2']];
+      let ok = false;
+      for (const [offset] of seeks) {
+        try {
+          await runFfmpeg(['-y', '-sseof', offset, '-i', inPath, '-update', '1', '-q:v', '2', outPath], { timeoutMs: 120000 });
+          if (fs.existsSync(outPath) && fs.statSync(outPath).size > 0) { ok = true; break; }
+        } catch { /* 换更早的起点重试 */ }
+      }
+      if (!ok) throw new Error('无法从首段视频中抽取衔接帧');
+
+      const buf = await fsp.readFile(outPath);
+      console.log(`[video:extract-last-frame] 衔接帧已提取 (${(buf.length / 1024).toFixed(1)}KB)`);
+      return { ok: true, dataUrl: 'data:image/jpeg;base64,' + buf.toString('base64') };
+    } catch (err) {
+      console.error('[video:extract-last-frame] 失败:', err.message);
+      return { ok: false, error: err.message };
+    } finally {
+      cleanupTmpDir(tmp);
+    }
+  });
+
+  // 拼接多段视频为一个文件，并落盘到历史目录
+  ipcMain.handle('video:concat', async (event, { urls, folder, filename }) => {
+    const tmp = makeTmpDir('concat');
+    try {
+      if (!Array.isArray(urls) || urls.length < 2) throw new Error('至少需要两段视频才能拼接');
+      if (!resolveFfmpegPath()) throw new Error('未找到内置 ffmpeg，无法拼接视频');
+
+      const parts = [];
+      for (let i = 0; i < urls.length; i++) {
+        const dl = await downloadToBuffer(urls[i]);
+        const p = path.join(tmp, `part${i}.mp4`);
+        await fsp.writeFile(p, dl.buf);
+        parts.push(p);
+      }
+
+      const listPath = path.join(tmp, 'list.txt');
+      // ⚠️ Windows 上 ffmpeg 的 concat demuxer 会把盘符开头的绝对路径（C:/...）误判成相对路径，
+      // 再拼上清单所在目录，报 `Impossible to open 'C:/temp/c:/...'`，导致拼接必然失败。
+      // 故清单内一律写「相对文件名」，并让 ffmpeg 以 tmp 为工作目录运行：
+      // 相对名在 Windows 下按工作目录解析、在 POSIX 下按清单目录解析，两种规则都指向 tmp。
+      const listBody = parts
+        .map((p) => `file '${path.basename(p).replace(/'/g, "'\\''")}'`)
+        .join('\n') + '\n';
+      await fsp.writeFile(listPath, listBody, 'utf8');
+
+      const outPath = path.join(tmp, 'merged.mp4');
+      let copied = false;
+      try {
+        // 同模型同参数的两段通常可直接无损串接（快、无画质损失）
+        await runFfmpeg(
+          ['-y', '-f', 'concat', '-safe', '0', '-i', 'list.txt', '-c', 'copy', 'merged.mp4'],
+          { timeoutMs: 300000, cwd: tmp }
+        );
+        copied = fs.existsSync(outPath) && fs.statSync(outPath).size > 0;
+      } catch (e) {
+        console.warn('[video:concat] 无损拼接失败，转为重编码:', e.message);
+      }
+      if (!copied) {
+        // 编码参数不一致时降级重编码，保证一定能出片
+        await runFfmpeg([
+          '-y', '-f', 'concat', '-safe', '0', '-i', 'list.txt',
+          '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18',
+          '-c:a', 'aac', '-b:a', '192k', 'merged.mp4'
+        ], { timeoutMs: 1800000, cwd: tmp });
+      }
+      if (!fs.existsSync(outPath) || fs.statSync(outPath).size === 0) throw new Error('拼接未产出有效文件');
+
+      const dir = getHistoryDir(String(folder || '视频'));
+      const safeName = String(filename || `ai-video-merged-${Date.now()}`)
+        .replace(/[\\/:*?"<>|]/g, '_')
+        .replace(/\.[^.]+$/, '')
+        .slice(-60) + '.mp4';
+      const finalPath = path.join(dir, safeName);
+      await fsp.copyFile(outPath, finalPath);
+      await enforceHistoryQuota(dir);
+      console.log(`[video:concat] 已生成 ${safeName} (${(fs.statSync(finalPath).size / 1024 / 1024).toFixed(1)}MB)`);
+      return { ok: true, path: finalPath, fileUrl: 'file://' + finalPath };
+    } catch (err) {
+      console.error('[video:concat] 失败:', err.message);
+      return { ok: false, error: err.message };
+    } finally {
+      cleanupTmpDir(tmp);
     }
   });
 

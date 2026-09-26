@@ -1,10 +1,15 @@
 /** H3 long-video timeline editor. */
 const TimelineModule = {
     STORAGE_KEY: 'h3-timeline-draft-v1',
+    TASKS_KEY: 'h3-timeline-tasks-v1',
     segments: [],
     _nextId: 1,
     activeTaskId: null,
-    pollController: null,
+    jobs: [],
+    pollControllers: new Map(),
+    savingOutputs: new Set(),
+    previewUrl: null,
+    previewTaskId: null,
 
     init() {
         const container = document.getElementById('timelineSegments');
@@ -12,8 +17,8 @@ const TimelineModule = {
         this._loadDraft();
         if (!this.segments.length) {
             this.segments = [
-                this._newSegment(0, 7, ''),
-                this._newSegment(6, 13, '')
+                this._newSegment(0, 175 / 24, ''),
+                this._newSegment(153 / 24, 328 / 24, '')
             ];
         }
 
@@ -21,9 +26,80 @@ const TimelineModule = {
         document.getElementById('timelinePreviewJsonBtn').addEventListener('click', () => this.previewPlan());
         document.getElementById('timelineSubmitBtn').addEventListener('click', () => this.submit());
         document.getElementById('timelineCancelTaskBtn').addEventListener('click', () => this.cancelTask());
+        document.getElementById('timelineVideoMenuBtn').addEventListener('click', () => {
+            const menu = document.getElementById('timelineVideoMenu');
+            const expanded = menu.classList.toggle('hidden') === false;
+            document.getElementById('timelineVideoMenuBtn').setAttribute('aria-expanded', String(expanded));
+        });
+        document.getElementById('timelineVideoDownloadBtn').addEventListener('click', () => this.downloadOutput());
+        document.getElementById('timelineJobsList').addEventListener('click', event => {
+            const button = event.target.closest('[data-task-id]');
+            if (button) this.selectTask(button.dataset.taskId);
+        });
         ['timelineModel', 'timelineSize', 'timelineFps', 'timelineSeed', 'timelineGlobalPrompt', 'timelineSteps', 'timelineLowSteps', 'timelineDrift', 'timelineSoftAudio']
-            .forEach(id => document.getElementById(id)?.addEventListener('input', () => this._onChange()));
+            .forEach(id => document.getElementById(id)?.addEventListener('input', () => {
+                if (id === 'timelineSize' || id === 'timelineSteps') this._syncUpscaleOptions();
+                this._onChange();
+            }));
+        this._syncUpscaleOptions();
         this.render();
+        this._loadJobs();
+    },
+
+    _scope() {
+        return `${Config.getPlatform()}|${Config.getCurrentPlatformConfig().baseUrl || ''}`;
+    },
+
+    _saveJobs() {
+        try { localStorage.setItem(this.TASKS_KEY, JSON.stringify(this.jobs.slice(0, 30))); }
+        catch (error) { Logger.warn(`[H3 时间线] 无法保存任务列表: ${error.message}`); }
+    },
+
+    _loadJobs() {
+        try {
+            const saved = JSON.parse(localStorage.getItem(this.TASKS_KEY) || '[]');
+            this.jobs = Array.isArray(saved) ? saved.filter(job => job.scope === this._scope()).slice(0, 30) : [];
+        } catch { this.jobs = []; }
+        this._renderJobs();
+        if (this.jobs.length) this.selectTask(this.jobs[0].id);
+        this.jobs.forEach(job => this._pollTask(job.id));
+    },
+
+    _renderJobs() {
+        const list = document.getElementById('timelineJobsList');
+        list.innerHTML = this.jobs.length ? this.jobs.map(job => {
+            const status = this._escape(job.status || 'queued');
+            const date = new Date(job.time).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+            return `<button type="button" class="timeline-job ${job.id === this.activeTaskId ? 'selected' : ''}" data-task-id="${this._escape(job.id)}"><span>${date} · ${this._escape(job.model)}</span><strong>${status} · ${Math.round(Number(job.progress) || 0)}%</strong></button>`;
+        }).join('') : '<span class="timeline-jobs-empty">暂无任务</span>';
+    },
+
+    selectTask(taskId) {
+        const job = this.jobs.find(item => item.id === taskId);
+        if (!job) return;
+        this.activeTaskId = taskId;
+        this._renderJobs();
+        document.getElementById('timelinePlanStatus').textContent = `任务 ${taskId}`;
+        this._showTaskPanel(job.lastResponse || { status: job.status, progress: job.progress, segment_count: job.segmentCount });
+        if (this.previewTaskId !== taskId) {
+            const video = document.getElementById('timelineOutputVideo');
+            video.pause(); video.removeAttribute('src'); video.load();
+            document.getElementById('timelineVideoWrap').classList.add('hidden');
+            if (this.previewUrl) URL.revokeObjectURL(this.previewUrl);
+            this.previewUrl = null;
+            this.previewTaskId = null;
+        }
+        if (job.status === 'completed') this._showOutput(taskId);
+    },
+
+    _syncUpscaleOptions() {
+        const size = document.getElementById('timelineSize').value;
+        const low = document.getElementById('timelineLowSteps');
+        const upscale = size === '1920x1080' || size === '1080x1920';
+        low.disabled = !upscale;
+        if (upscale && Number(low.value) >= Number(document.getElementById('timelineSteps').value)) {
+            low.value = Math.max(1, Number(document.getElementById('timelineSteps').value) - 2);
+        }
     },
 
     _newSegment(start, end, prompt) {
@@ -32,8 +108,8 @@ const TimelineModule = {
 
     addSegment() {
         const previous = this.segments[this.segments.length - 1];
-        const start = previous ? Math.max(0, previous.end - 1) : 0;
-        const end = start + 7;
+        const start = previous ? Math.max(0, previous.end - 22 / 24) : 0;
+        const end = start + 175 / 24;
         this.segments.push(this._newSegment(start, end, ''));
         this.render();
         this._saveDraft();
@@ -72,7 +148,7 @@ const TimelineModule = {
                 <label class="timeline-prompt-label">本段提示词
                     <textarea rows="3" data-field="prompt" data-index="${index}" placeholder="留空时使用全局提示词">${this._escape(segment.prompt)}</textarea>
                 </label>
-                <div class="timeline-assets-head"><span>参考素材</span><button type="button" class="btn-secondary timeline-add-asset" data-add-asset="${index}">＋ 从素材库添加</button></div>
+                <div class="timeline-assets-head"><span>H3 参考素材</span><button type="button" class="btn-secondary timeline-add-asset" data-add-asset="${index}">＋ 上传图片 / 视频 / 音频</button><input type="file" hidden data-upload-asset="${index}" accept="image/png,image/jpeg,video/*,audio/*" multiple></div>
                 <div class="timeline-assets">${this._renderAssets(segment.assets || [], index)}</div>
             </article>`;
         }).join('');
@@ -86,8 +162,20 @@ const TimelineModule = {
         container.querySelectorAll('[data-add-asset]').forEach(button => {
             button.addEventListener('click', () => this.openAssetPicker(Number(button.dataset.addAsset)));
         });
+        container.querySelectorAll('[data-upload-asset]').forEach(input => {
+            input.addEventListener('change', async () => {
+                const index = Number(input.dataset.uploadAsset);
+                for (const file of input.files) await this.uploadAsset(index, file);
+            });
+        });
         container.querySelectorAll('[data-remove-asset]').forEach(button => {
             button.addEventListener('click', () => this.removeAsset(Number(button.dataset.segment), Number(button.dataset.removeAsset)));
+        });
+        container.querySelectorAll('[data-asset-role]').forEach(select => {
+            select.addEventListener('change', event => {
+                const asset = this.segments[Number(event.target.dataset.segment)]?.assets?.[Number(event.target.dataset.assetRole)];
+                if (asset) { asset.role = event.target.value; this._onChange(false); }
+            });
         });
         this._renderTrack();
         this._validate(false);
@@ -98,42 +186,30 @@ const TimelineModule = {
         const labels = { image: '图片', video: '视频', audio: '音频' };
         return assets.map((asset, assetIndex) => `<span class="timeline-asset-chip asset-${asset.type}">
             <span>${labels[asset.type] || '素材'} · ${this._escape(asset.name || asset.id)}</span>
+            ${asset.type === 'video' ? `<select aria-label="视频参考方式" data-segment="${segmentIndex}" data-asset-role="${assetIndex}"><option value="guide" ${!['edit', 'boundary'].includes(asset.role) ? 'selected' : ''}>固定引导</option><option value="edit" ${asset.role === 'edit' ? 'selected' : ''}>可编辑参考</option><option value="boundary" ${asset.role === 'boundary' ? 'selected' : ''}>边界参考</option></select>` : ''}
+            ${asset.type === 'audio' ? `<select aria-label="音频参考方式" data-segment="${segmentIndex}" data-asset-role="${assetIndex}"><option value="reference" ${asset.role !== 'locked' ? 'selected' : ''}>参考音频</option><option value="locked" ${asset.role === 'locked' ? 'selected' : ''}>保留原音</option></select>` : ''}
             <button type="button" data-segment="${segmentIndex}" data-remove-asset="${assetIndex}" aria-label="移除素材">×</button>
         </span>`).join('');
     },
 
     openAssetPicker(segmentIndex) {
-        if (typeof MaterialLib === 'undefined') {
-            UI.toast('素材库尚未初始化', 'error');
-            return;
+        document.querySelector(`[data-upload-asset="${segmentIndex}"]`)?.click();
+    },
+
+    async uploadAsset(segmentIndex, file) {
+        const segment = this.segments[segmentIndex];
+        if (!segment) return;
+        const type = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : file.type.startsWith('audio/') ? 'audio' : '';
+        if (!type || (type === 'image' && segment.assets.filter(a => a.type === type).length >= 9) ||
+            (type === 'audio' && segment.assets.filter(a => a.type === type).length >= 3)) {
+            UI.toast('素材格式不支持或本段素材已达到上限', 'error'); return;
         }
-        MaterialLib.openPicker(item => {
-            const segment = this.segments[segmentIndex];
-            if (!segment) return;
-            if ((segment.assets || []).some(asset => asset.id === item.id)) {
-                UI.toast('该素材已添加到本段', 'warn');
-                return;
-            }
-            const sameTypeCount = (segment.assets || []).filter(asset => asset.type === item.type).length;
-            if (item.type === 'image' && sameTypeCount >= 9) {
-                UI.toast('每段最多添加 9 张参考图片', 'warn');
-                return;
-            }
-            if (item.type === 'audio' && sameTypeCount >= 3) {
-                UI.toast('每段最多添加 3 个参考音频', 'warn');
-                return;
-            }
-            const isRemoteAsset = item.id && !item.id.startsWith('local_') && !item.id.startsWith('temp_');
-            const uri = isRemoteAsset ? `asset://${item.id}` : (item.sourceUrl || item.url);
-            if (!uri) {
-                UI.toast('素材缺少可用地址', 'error');
-                return;
-            }
-            segment.assets = segment.assets || [];
-            segment.assets.push({ id: item.id, name: item.name || '未命名素材', type: item.type, uri, role: 'reference' });
-            this.render();
-            this._saveDraft();
-        });
+        try {
+            const uploaded = await API.uploadTimelineAsset(file);
+            segment.assets.push({ id: uploaded.id, name: file.name, type: uploaded.type, uri: uploaded.uri, role: 'reference' });
+            this.render(); this._saveDraft();
+            UI.toast(`已上传 H3 素材：${file.name}`, 'success');
+        } catch (error) { UI.toast(`上传失败：${error.message}`, 'error'); }
     },
 
     removeAsset(segmentIndex, assetIndex) {
@@ -193,6 +269,8 @@ const TimelineModule = {
     async submit() {
         const plan = this.previewPlan();
         if (!plan) return;
+        document.getElementById('timelineVideoMenu').classList.add('hidden');
+        document.getElementById('timelineVideoMenuBtn').setAttribute('aria-expanded', 'false');
         const button = document.getElementById('timelineSubmitBtn');
         button.disabled = true;
         button.textContent = '正在提交…';
@@ -202,9 +280,12 @@ const TimelineModule = {
             if (!taskId) throw new Error('后端未返回任务 ID');
             Logger.success(`[H3 时间线] 任务已创建: ${taskId || '未返回任务 ID'}`);
             UI.toast('长视频任务已提交', 'success');
-            document.getElementById('timelinePlanStatus').textContent = `任务 ${taskId}`;
-            this.activeTaskId = taskId;
-            this._showTaskPanel(task.data || task);
+            this.jobs.unshift({ id: taskId, scope: this._scope(), time: Date.now(), model: plan.model,
+                prompt: plan.global_prompt || plan.segments[0]?.prompt || '', segmentCount: plan.segments.length,
+                status: 'queued', progress: 0, lastResponse: task.data || task });
+            this.jobs = this.jobs.slice(0, 30);
+            this._saveJobs();
+            this.selectTask(taskId);
             this._pollTask(taskId);
         } catch (error) {
             Logger.error(`[H3 时间线] ${error.message}`);
@@ -225,20 +306,23 @@ const TimelineModule = {
         const progress = Math.max(0, Math.min(100, Number.parseFloat(data.progress) || 0));
         const status = String(data.status || 'queued').toLowerCase();
         const phaseLabels = {
-            queued: '排队中', preparing: '准备模型', low_resolution_sampling: '低分辨率采样',
-            high_resolution_sampling: '高分辨率采样', assembling: '合并音视频', completed: '已完成',
-            failed: '失败', cancelled: '已取消', running: '生成中', processing: '生成中'
+            queued: '排队中', preparing: '准备参考素材', submitting: '提交 ComfyUI 工作流', low_resolution_sampling: '低分辨率采样',
+            high_resolution_sampling: '高分辨率采样', assembling: '合并音视频', sampling: '工作流生成中',
+            transferring: '正在取回视频', reconnecting: '等待 ComfyUI 响应', completed: '已完成',
+            failed: '失败', cancelled: '已取消', cancelling: '正在取消', running: '生成中', processing: '生成中'
         };
         document.getElementById('timelineTaskStatus').textContent = phaseLabels[data.phase] || phaseLabels[status] || status;
         document.getElementById('timelineProgressFill').style.width = `${progress}%`;
         const current = Number(data.current_segment || 0);
-        const total = Number(data.segment_count || this.segments.length);
-        document.getElementById('timelineProgressText').textContent = `${Math.round(progress)}%${current ? ` · 分段 ${current}/${total}` : ''}`;
+        const total = Number(data.segment_count || this.jobs.find(job => job.id === this.activeTaskId)?.segmentCount || this.segments.length);
+        document.getElementById('timelineProgressText').textContent = status === 'failed' && data.error
+            ? `失败：${String(data.error).slice(0, 500)}`
+            : `${Math.round(progress)}%${status === 'completed' ? ` · ${total} 段完成` : data.phase === 'sampling' && total > 1 ? ` · ${total} 段工作流生成中` : current ? ` · 分段 ${current}/${total}` : ''}`;
 
-        const segmentStates = Array.isArray(data.segments) ? data.segments : this.segments.map((segment, index) => ({
-            id: segment.id,
-            status: current > index + 1 ? 'completed' : current === index + 1 ? 'running' : 'queued',
-            progress: current > index + 1 ? 100 : current === index + 1 ? progress : 0
+        const segmentStates = Array.isArray(data.segments) ? data.segments : Array.from({ length: total }, (_, index) => ({
+            id: `segment-${index + 1}`,
+            status: status === 'completed' ? 'completed' : data.phase === 'sampling' ? 'processing' : current > index + 1 ? 'completed' : current === index + 1 ? 'running' : 'queued',
+            progress: status === 'completed' || current > index + 1 ? 100 : data.phase === 'sampling' ? 0 : current === index + 1 ? progress : 0
         }));
         document.getElementById('timelineSegmentProgress').innerHTML = segmentStates.map((segment, index) => {
             const pct = Math.max(0, Math.min(100, Number.parseFloat(segment.progress) || (segment.status === 'completed' ? 100 : 0)));
@@ -252,31 +336,103 @@ const TimelineModule = {
             const outputUrl = data.output?.url || data.url;
             if (outputUrl) {
                 document.getElementById('timelineJsonPreview').textContent = JSON.stringify(data, null, 2);
-                UI.toast('H3 长视频生成完成', 'success');
+                const taskId = data.id || data.task_id || this.activeTaskId;
+                if (taskId === this.activeTaskId) this._showOutput(taskId);
             }
         }
     },
 
+    async _showOutput(taskId) {
+        if (!taskId) return;
+        if (this.previewTaskId === taskId) return;
+        const job = this.jobs.find(item => item.id === taskId);
+        if (job?.localUrl) {
+            if (this.activeTaskId === taskId) {
+                const video = document.getElementById('timelineOutputVideo');
+                video.src = job.localUrl;
+                this.previewTaskId = taskId;
+                document.getElementById('timelineVideoWrap').classList.remove('hidden');
+            }
+            return;
+        }
+        if (this.savingOutputs.has(taskId)) return;
+        this.savingOutputs.add(taskId);
+        try {
+            const blob = await API.downloadTimelineVideoTask(taskId);
+            let localUrl = null;
+            if (window.electronAPI?.saveHistoryVideo) {
+                const saved = await window.electronAPI.saveHistoryVideo({ bytes: await blob.arrayBuffer(), filename: taskId });
+                if (saved?.ok) {
+                    localUrl = saved.fileUrl;
+                    if (job) { job.localUrl = localUrl; this._saveJobs(); }
+                    if (typeof History !== 'undefined' && !History.getAll().some(item => item.taskId === taskId)) {
+                        await History.add({ type: 'video', url: localUrl, taskId,
+                            prompt: job?.prompt || '(H3 长视频)', model: job?.model || 'minimax-h3', time: job?.time || Date.now() });
+                    }
+                } else Logger.warn(`[H3 时间线] 保存历史视频失败: ${saved?.error || '未知错误'}`);
+            }
+            if (this.activeTaskId === taskId) {
+                if (this.previewUrl) URL.revokeObjectURL(this.previewUrl);
+                this.previewUrl = localUrl ? null : URL.createObjectURL(blob);
+                const video = document.getElementById('timelineOutputVideo');
+                video.src = localUrl || this.previewUrl;
+                this.previewTaskId = taskId;
+                document.getElementById('timelineVideoWrap').classList.remove('hidden');
+                UI.toast('H3 长视频已生成，可以预览', 'success');
+            }
+        } catch (error) {
+            UI.toast(`预览加载失败：${error.message}`, 'error');
+        } finally {
+            this.savingOutputs.delete(taskId);
+        }
+    },
+
+    downloadOutput() {
+        if (!this.previewTaskId) return;
+        const url = document.getElementById('timelineOutputVideo').src;
+        if (!url) return;
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${this.previewTaskId}.mp4`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        document.getElementById('timelineVideoMenu').classList.add('hidden');
+        document.getElementById('timelineVideoMenuBtn').setAttribute('aria-expanded', 'false');
+    },
+
     async _pollTask(taskId) {
-        if (this.pollController) this.pollController.abort();
-        this.pollController = new AbortController();
-        const signal = this.pollController.signal;
+        if (this.pollControllers.has(taskId)) return;
+        const controller = new AbortController();
+        this.pollControllers.set(taskId, controller);
+        const signal = controller.signal;
         const terminal = ['completed', 'success', 'succeeded', 'failed', 'error', 'cancelled', 'canceled'];
-        while (!signal.aborted && this.activeTaskId === taskId) {
+        while (!signal.aborted) {
             try {
                 const task = await API.getTimelineVideoTask(taskId, { signal });
                 const data = task.data || task;
-                this._renderTaskProgress(data);
+                const job = this.jobs.find(item => item.id === taskId);
+                if (job) {
+                    job.status = String(data.status || 'running').toLowerCase();
+                    job.progress = Number(data.progress) || 0;
+                    job.lastResponse = data;
+                    this._saveJobs();
+                    this._renderJobs();
+                }
+                if (this.activeTaskId === taskId) this._renderTaskProgress(data);
                 if (terminal.includes(String(data.status || '').toLowerCase())) {
-                    this.activeTaskId = null;
+                    if (['completed', 'success', 'succeeded'].includes(String(data.status).toLowerCase())) {
+                        await this._showOutput(taskId);
+                    }
+                    this.pollControllers.delete(taskId);
                     return;
                 }
                 await new Promise((resolve, reject) => {
-                    const timer = setTimeout(resolve, 5000);
+                    const timer = setTimeout(resolve, 2000);
                     signal.addEventListener('abort', () => { clearTimeout(timer); reject(new DOMException('已取消轮询', 'AbortError')); }, { once: true });
                 });
             } catch (error) {
-                if (error.name === 'AbortError') return;
+                if (error.name === 'AbortError') { this.pollControllers.delete(taskId); return; }
                 Logger.warn(`[H3 时间线] 查询任务失败，将重试: ${error.message}`);
                 await new Promise(resolve => setTimeout(resolve, 8000));
             }
@@ -289,9 +445,12 @@ const TimelineModule = {
         const taskId = this.activeTaskId;
         try {
             const task = await API.cancelTimelineVideoTask(taskId);
-            this.pollController?.abort();
-            this.activeTaskId = null;
+            const job = this.jobs.find(item => item.id === taskId);
+            if (job) { job.status = String(task.status || 'cancelling'); job.lastResponse = task; this._saveJobs(); this._renderJobs(); }
             this._renderTaskProgress(task);
+            if (String(task.status).toLowerCase() === 'cancelled') {
+                this.pollControllers.get(taskId)?.abort();
+            }
             UI.toast('已请求取消任务', 'success');
         } catch (error) {
             Logger.error(`[H3 时间线] 取消失败: ${error.message}`);
@@ -324,7 +483,7 @@ const TimelineModule = {
             this.segments = draft.segments;
             this._nextId = this.segments.length + 1;
             const values = {
-                timelineModel: draft.model, timelineSize: draft.size, timelineFps: draft.fps,
+                timelineModel: draft.model, timelineSize: draft.size === '1536x832' ? '1344x768' : draft.size, timelineFps: draft.fps,
                 timelineSeed: draft.seed, timelineGlobalPrompt: draft.global_prompt,
                 timelineSteps: draft.sampling?.steps, timelineLowSteps: draft.sampling?.low_resolution_steps
             };

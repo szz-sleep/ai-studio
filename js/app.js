@@ -755,6 +755,10 @@ const App = {
                 i2vSel.innerHTML = '<option value="">无可用模型</option>';
             }
 
+            // 触发 change，让视频面板按当前模型刷新 30 秒时长选项的可见性
+            if (t2vSel) t2vSel.dispatchEvent(new Event('change'));
+            if (i2vSel) i2vSel.dispatchEvent(new Event('change'));
+
             // 文本模型（故事创作用）
             if (storySel) {
                 storySel.innerHTML = '';
