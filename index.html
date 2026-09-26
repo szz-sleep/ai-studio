@@ -570,10 +570,6 @@
                 </div>
 
                 <aside class="timeline-preview-panel">
-                    <section class="timeline-jobs-panel" aria-label="H3 任务列表">
-                        <div class="timeline-preview-header"><strong>H3 任务</strong><span>可同时生成多个视频</span></div>
-                        <div id="timelineJobsList" class="timeline-jobs-list"></div>
-                    </section>
                     <section id="timelineTaskPanel" class="timeline-task-panel hidden" aria-live="polite">
                         <div id="timelineVideoWrap" class="timeline-video-wrap hidden">
                             <video id="timelineOutputVideo" class="timeline-output-video" controls preload="metadata"></video>
@@ -583,8 +579,13 @@
                         <div class="timeline-task-title"><strong>生成进度</strong><span id="timelineTaskStatus">等待中</span></div>
                         <div class="timeline-progress"><div id="timelineProgressFill"></div></div>
                         <div id="timelineProgressText" class="timeline-progress-text">0%</div>
+                        <div class="timeline-task-title timeline-segments-title"><strong>片段进度</strong></div>
                         <div id="timelineSegmentProgress" class="timeline-segment-progress"></div>
                         <button type="button" id="timelineCancelTaskBtn" class="btn-secondary timeline-cancel-task">取消任务</button>
+                    </section>
+                    <section class="timeline-jobs-panel" aria-label="H3 任务列表">
+                        <div class="timeline-preview-header"><strong>H3 任务</strong><span>可同时生成多个视频</span></div>
+                        <div id="timelineJobsList" class="timeline-jobs-list"></div>
                     </section>
                     <div class="timeline-preview-header"><strong>任务预览</strong><span id="timelinePlanStatus">等待编辑</span></div>
                     <pre id="timelineJsonPreview">点击“预览任务 JSON”查看标准化请求。</pre>
