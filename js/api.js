@@ -381,17 +381,29 @@ const API = {
     },
 
     /** H3-only upload; never adds the file to the Volcano asset library. */
-    async uploadTimelineAsset(file) {
-        const data = new FormData();
-        data.append('file', file);
-        const resp = await fetch(this._url('/v1/video/timeline/assets'), {
-            method: 'POST', headers: { Authorization: this._headers().Authorization }, body: data
+    uploadTimelineAsset(file, onProgress) {
+        return new Promise((resolve, reject) => {
+            const data = new FormData();
+            data.append('file', file);
+            const request = new XMLHttpRequest();
+            request.open('POST', this._url('/v1/video/timeline/assets'));
+            request.setRequestHeader('Authorization', this._headers().Authorization);
+            request.upload.onprogress = event => {
+                if (event.lengthComputable) onProgress?.(Math.min(99, Math.round(event.loaded / event.total * 100)));
+            };
+            request.upload.onload = () => onProgress?.(100);
+            request.onerror = () => reject(new Error('网络连接中断，素材上传失败'));
+            request.onabort = () => reject(new Error('素材上传已中断'));
+            request.onload = () => {
+                let response;
+                try { response = JSON.parse(request.responseText); }
+                catch { reject(new Error(`H3 素材上传响应无效 (${request.status})`)); return; }
+                if (request.status < 200 || request.status >= 300) {
+                    reject(new Error(response.error?.message || `H3 素材上传失败 (${request.status})`));
+                } else resolve(response);
+            };
+            request.send(data);
         });
-        if (!resp.ok) {
-            const error = await resp.json().catch(() => ({}));
-            throw new Error(error.error?.message || `H3 素材上传失败 (${resp.status})`);
-        }
-        return resp.json();
     },
 
     /** 查询 H3 长视频时间线任务。 */

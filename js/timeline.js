@@ -11,6 +11,8 @@ const TimelineModule = {
     previewUrl: null,
     previewTaskId: null,
     assetPreviewUrls: new Map(),
+    pendingUploads: new Map(),
+    nextUploadId: 1,
 
     init() {
         const container = document.getElementById('timelineSegments');
@@ -34,6 +36,8 @@ const TimelineModule = {
         });
         document.getElementById('timelineVideoDownloadBtn').addEventListener('click', () => this.downloadOutput());
         document.getElementById('timelineJobsList').addEventListener('click', event => {
+            const remove = event.target.closest('[data-delete-task]');
+            if (remove) { this.deleteTask(remove.dataset.deleteTask); return; }
             const button = event.target.closest('[data-task-id]');
             if (button) this.selectTask(button.dataset.taskId);
         });
@@ -74,8 +78,44 @@ const TimelineModule = {
         list.innerHTML = this.jobs.length ? this.jobs.map(job => {
             const status = this._escape(job.status || 'queued');
             const date = new Date(job.time).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-            return `<button type="button" class="timeline-job ${job.id === this.activeTaskId ? 'selected' : ''}" data-task-id="${this._escape(job.id)}"><span>${date} · ${this._escape(job.model)}</span><strong>${status} · ${Math.round(Number(job.progress) || 0)}%</strong></button>`;
+            return `<div class="timeline-job-row"><button type="button" class="timeline-job ${job.id === this.activeTaskId ? 'selected' : ''}" data-task-id="${this._escape(job.id)}"><span>${date} · ${this._escape(job.model)}</span><strong>${status} · ${Math.round(Number(job.progress) || 0)}%</strong></button><button type="button" class="timeline-job-delete" data-delete-task="${this._escape(job.id)}" aria-label="删除任务 ${this._escape(job.id)}" title="删除此任务">×</button></div>`;
         }).join('') : '<span class="timeline-jobs-empty">暂无任务</span>';
+    },
+
+    async deleteTask(taskId) {
+        const job = this.jobs.find(item => item.id === taskId);
+        if (!job) return;
+        const terminal = ['completed', 'success', 'succeeded', 'failed', 'error', 'cancelled', 'canceled'];
+        const running = !terminal.includes(String(job.status || '').toLowerCase());
+        const message = running ? '此任务仍在运行。删除将先取消生成，确定继续吗？' : '确定从 H3 任务列表删除此任务吗？';
+        if (!(await UI.confirm(message, { danger: true }))) return;
+        try {
+            if (running) await API.cancelTimelineVideoTask(taskId);
+        } catch (error) {
+            UI.toast(`取消失败，任务未删除：${error.message}`, 'error');
+            return;
+        }
+        this.pollControllers.get(taskId)?.abort();
+        this.pollControllers.delete(taskId);
+        this.jobs = this.jobs.filter(item => item.id !== taskId);
+        this._saveJobs();
+        if (this.activeTaskId === taskId) {
+            this.activeTaskId = null;
+            const video = document.getElementById('timelineOutputVideo');
+            video.pause(); video.removeAttribute('src'); video.load();
+            document.getElementById('timelineVideoWrap').classList.add('hidden');
+            if (this.previewUrl) URL.revokeObjectURL(this.previewUrl);
+            this.previewUrl = null;
+            this.previewTaskId = null;
+            document.getElementById('timelineVideoMenu').classList.add('hidden');
+            if (this.jobs.length) this.selectTask(this.jobs[0].id);
+            else {
+                document.getElementById('timelineTaskPanel').classList.add('hidden');
+                document.getElementById('timelinePlanStatus').textContent = '等待编辑';
+            }
+        }
+        this._renderJobs();
+        UI.toast('H3 任务已从列表删除', 'success');
     },
 
     selectTask(taskId) {
@@ -154,6 +194,7 @@ const TimelineModule = {
                 </label>
                 <div class="timeline-assets-head"><span>H3 参考素材</span><button type="button" class="btn-secondary timeline-add-asset" data-add-asset="${index}">＋ 上传图片 / 视频 / 音频</button><input type="file" hidden data-upload-asset="${index}" accept="image/png,image/jpeg,video/*,audio/*" multiple></div>
                 <div class="timeline-assets">${this._renderAssets(segment.assets || [], index)}</div>
+                <div class="timeline-upload-list">${this._renderPendingUploads(segment.id)}</div>
             </article>`;
         }).join('');
 
@@ -169,7 +210,8 @@ const TimelineModule = {
         container.querySelectorAll('[data-upload-asset]').forEach(input => {
             input.addEventListener('change', async () => {
                 const index = Number(input.dataset.uploadAsset);
-                for (const file of input.files) await this.uploadAsset(index, file);
+                const files = Array.from(input.files || []);
+                for (const file of files) await this.uploadAsset(index, file);
             });
         });
         container.querySelectorAll('[data-remove-asset]').forEach(button => {
@@ -205,6 +247,24 @@ const TimelineModule = {
         }).join('');
     },
 
+    _renderPendingUploads(segmentId) {
+        return Array.from(this.pendingUploads.values()).filter(item => item.segmentId === segmentId).map(item =>
+            `<div class="timeline-upload-item" data-upload-id="${item.id}" role="status">
+                <div><span>${this._escape(item.name)}</span><strong data-upload-label>${item.progress === 100 ? '处理中…' : `${item.progress}%`}</strong></div>
+                <div class="timeline-upload-track"><i data-upload-fill style="width:${item.progress}%"></i></div>
+            </div>`).join('');
+    },
+
+    _updateUploadProgress(id, progress) {
+        const item = this.pendingUploads.get(id);
+        if (!item) return;
+        item.progress = progress;
+        const row = Array.from(document.querySelectorAll('[data-upload-id]')).find(node => node.dataset.uploadId === id);
+        if (!row) return;
+        row.querySelector('[data-upload-fill]').style.width = `${progress}%`;
+        row.querySelector('[data-upload-label]').textContent = progress === 100 ? '处理中…' : `${progress}%`;
+    },
+
     openAssetPicker(segmentIndex) {
         document.querySelector(`[data-upload-asset="${segmentIndex}"]`)?.click();
     },
@@ -217,13 +277,18 @@ const TimelineModule = {
             (type === 'audio' && segment.assets.filter(a => a.type === type).length >= 3)) {
             UI.toast('素材格式不支持或本段素材已达到上限', 'error'); return;
         }
+        const uploadId = `upload-${this.nextUploadId++}`;
+        this.pendingUploads.set(uploadId, { id: uploadId, segmentId: segment.id, name: file.name, progress: 0 });
+        this.render();
         try {
-            const uploaded = await API.uploadTimelineAsset(file);
+            const uploaded = await API.uploadTimelineAsset(file, progress => this._updateUploadProgress(uploadId, progress));
+            if (!this.segments.includes(segment)) return;
             segment.assets.push({ id: uploaded.id, name: file.name, type: uploaded.type, uri: uploaded.uri, role: 'reference' });
             this.assetPreviewUrls.set(uploaded.id, URL.createObjectURL(file));
-            this.render(); this._saveDraft();
+            this._saveDraft();
             UI.toast(`已上传 H3 素材：${file.name}`, 'success');
         } catch (error) { UI.toast(`上传失败：${error.message}`, 'error'); }
+        finally { this.pendingUploads.delete(uploadId); this.render(); }
     },
 
     removeAsset(segmentIndex, assetIndex) {
@@ -284,6 +349,10 @@ const TimelineModule = {
     },
 
     async submit() {
+        if (this.pendingUploads.size) {
+            UI.toast('请等待 H3 参考素材上传完成', 'warn');
+            return;
+        }
         const plan = this.previewPlan();
         if (!plan) return;
         document.getElementById('timelineVideoMenu').classList.add('hidden');
@@ -427,6 +496,10 @@ const TimelineModule = {
         while (!signal.aborted) {
             try {
                 const task = await API.getTimelineVideoTask(taskId, { signal });
+                if (!this.jobs.some(item => item.id === taskId)) {
+                    this.pollControllers.delete(taskId);
+                    return;
+                }
                 const data = task.data || task;
                 const job = this.jobs.find(item => item.id === taskId);
                 if (job) {
