@@ -10,6 +10,7 @@ const TimelineModule = {
     savingOutputs: new Set(),
     previewUrl: null,
     previewTaskId: null,
+    assetPreviewUrls: new Map(),
 
     init() {
         const container = document.getElementById('timelineSegments');
@@ -42,6 +43,9 @@ const TimelineModule = {
                 this._onChange();
             }));
         this._syncUpscaleOptions();
+        window.addEventListener('beforeunload', () => {
+            for (const url of this.assetPreviewUrls.values()) URL.revokeObjectURL(url);
+        });
         this.render();
         this._loadJobs();
     },
@@ -184,12 +188,23 @@ const TimelineModule = {
     _renderAssets(assets, segmentIndex) {
         if (!assets.length) return '<span class="timeline-assets-empty">尚未分配素材</span>';
         const labels = { image: '图片', video: '视频', audio: '音频' };
-        return assets.map((asset, assetIndex) => `<span class="timeline-asset-chip asset-${asset.type}">
-            <span>${labels[asset.type] || '素材'} · ${this._escape(asset.name || asset.id)}</span>
+        return assets.map((asset, assetIndex) => {
+            const src = this._escape(this.assetPreviewUrls.get(asset.id) || API._url(`/v1/video/timeline/assets/${encodeURIComponent(asset.id)}`));
+            const media = asset.type === 'image' ? `<img src="${src}" alt="" loading="lazy">`
+                : asset.type === 'video' ? `<video src="${src}" muted preload="metadata" playsinline></video>`
+                : '<span class="timeline-asset-audio-icon" aria-hidden="true">♫</span>';
+            const enlarged = asset.type === 'image' ? `<img src="${src}" alt="${this._escape(asset.name || '图片参考')}">`
+                : asset.type === 'video' ? `<video src="${src}" controls preload="metadata" playsinline></video>`
+                : `<audio src="${src}" controls preload="none"></audio>`;
+            return `<span class="timeline-asset-chip asset-${asset.type}" tabindex="0">
+            <span class="timeline-asset-thumb">${media}</span>
+            <span class="timeline-asset-name">${labels[asset.type] || '素材'} · ${this._escape(asset.name || asset.id)}</span>
             ${asset.type === 'video' ? `<select aria-label="视频参考方式" data-segment="${segmentIndex}" data-asset-role="${assetIndex}"><option value="guide" ${!['edit', 'boundary'].includes(asset.role) ? 'selected' : ''}>固定引导</option><option value="edit" ${asset.role === 'edit' ? 'selected' : ''}>可编辑参考</option><option value="boundary" ${asset.role === 'boundary' ? 'selected' : ''}>边界参考</option></select>` : ''}
             ${asset.type === 'audio' ? `<select aria-label="音频参考方式" data-segment="${segmentIndex}" data-asset-role="${assetIndex}"><option value="reference" ${asset.role !== 'locked' ? 'selected' : ''}>参考音频</option><option value="locked" ${asset.role === 'locked' ? 'selected' : ''}>保留原音</option></select>` : ''}
             <button type="button" data-segment="${segmentIndex}" data-remove-asset="${assetIndex}" aria-label="移除素材">×</button>
-        </span>`).join('');
+            <span class="timeline-asset-popover"><span>${this._escape(asset.name || asset.id)}</span>${enlarged}</span>
+        </span>`;
+        }).join('');
     },
 
     openAssetPicker(segmentIndex) {
@@ -207,6 +222,7 @@ const TimelineModule = {
         try {
             const uploaded = await API.uploadTimelineAsset(file);
             segment.assets.push({ id: uploaded.id, name: file.name, type: uploaded.type, uri: uploaded.uri, role: 'reference' });
+            this.assetPreviewUrls.set(uploaded.id, URL.createObjectURL(file));
             this.render(); this._saveDraft();
             UI.toast(`已上传 H3 素材：${file.name}`, 'success');
         } catch (error) { UI.toast(`上传失败：${error.message}`, 'error'); }
@@ -215,6 +231,9 @@ const TimelineModule = {
     removeAsset(segmentIndex, assetIndex) {
         const segment = this.segments[segmentIndex];
         if (!segment) return;
+        const removed = segment.assets?.[assetIndex];
+        const previewUrl = removed && this.assetPreviewUrls.get(removed.id);
+        if (previewUrl) { URL.revokeObjectURL(previewUrl); this.assetPreviewUrls.delete(removed.id); }
         segment.assets = (segment.assets || []).filter((_, index) => index !== assetIndex);
         this.render();
         this._saveDraft();
