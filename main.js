@@ -322,6 +322,57 @@ app.whenReady().then(() => {
     }
   });
 
+  const timelineCompressions = new Map();
+  ipcMain.on('timeline:cancel-compression', (event, id) => {
+    const entry = timelineCompressions.get(id);
+    if (entry && entry.sender === event.sender) entry.child?.kill('SIGKILL');
+    if (entry && entry.sender === event.sender) entry.cancelled = true;
+  });
+  ipcMain.handle('timeline:compress-video', async (event, { id, bytes, name }) => {
+    if (typeof id !== 'string' || !/^upload-\d+$/.test(id) ||
+        !bytes || bytes.byteLength < 1 || bytes.byteLength > 512 * 1024 * 1024 ||
+        !resolveFfmpegPath() || timelineCompressions.has(id)) {
+      return { ok: false, error: '视频压缩不可用或文件超过 512 MB' };
+    }
+    const entry = { sender: event.sender, child: null, cancelled: false };
+    timelineCompressions.set(id, entry);
+    const tmp = makeTmpDir('timeline-upload');
+    try {
+      const input = path.join(tmp, 'input' + (path.extname(String(name || '')).match(/^\.[a-z0-9]{1,8}$/i)?.[0] || '.mp4'));
+      const output = path.join(tmp, 'output.mp4');
+      await fsp.writeFile(input, Buffer.from(bytes));
+      if (entry.cancelled) return { ok: false, cancelled: true };
+      await new Promise((resolve, reject) => {
+        const child = spawn(resolveFfmpegPath(), [
+          '-hide_banner', '-loglevel', 'error', '-y', '-i', input,
+          '-map', '0:v:0', '-map', '0:a?', '-vf', 'scale=1280:1280:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2',
+          '-c:v', 'libx264', '-preset', 'veryfast', '-b:v', '1200k', '-maxrate', '1400k', '-bufsize', '2800k',
+          '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '96k', '-movflags', '+faststart', output
+        ], { windowsHide: true });
+        entry.child = child;
+        if (entry.cancelled) child.kill('SIGKILL');
+        let stderr = '';
+        const timer = setTimeout(() => child.kill('SIGKILL'), 300000);
+        child.stderr.on('data', data => { stderr = (stderr + data.toString()).slice(-2000); });
+        child.on('error', reject);
+        child.on('close', code => {
+          clearTimeout(timer);
+          if (entry.cancelled) reject(new Error('已取消'));
+          else if (code === 0) resolve();
+          else reject(new Error(stderr.trim() || `视频压缩失败 (${code})`));
+        });
+      });
+      if (entry.cancelled) return { ok: false, cancelled: true };
+      const compressed = await fsp.readFile(output);
+      return { ok: true, bytes: compressed, smaller: compressed.length < bytes.byteLength };
+    } catch (error) {
+      return { ok: false, cancelled: entry.cancelled, error: error.message };
+    } finally {
+      timelineCompressions.delete(id);
+      cleanupTmpDir(tmp);
+    }
+  });
+
   // 后处理能力探测：渲染层据此决定 30 秒拼接能否执行
   ipcMain.handle('video:ffmpeg-available', () => {
     const p = resolveFfmpegPath();

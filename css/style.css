@@ -2382,3 +2382,7 @@ select option {
     align-items: center;
     gap: 8px;
 }
+
+.timeline-fast-upload { display: flex; align-items: center; gap: 8px; margin: 10px 0; color: var(--text-secondary); font-size: 12px; cursor: pointer; }
+.timeline-upload-item [data-cancel-upload] { flex: none; border: 0; background: transparent; color: var(--text-secondary); cursor: pointer; padding: 0 3px; }
+.timeline-upload-item [data-cancel-upload]:hover { color: var(--danger, #e45b5b); }

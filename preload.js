@@ -11,5 +11,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 拼接多段视频并落盘，返回 { ok, path, fileUrl }
   concatVideos: (payload) => ipcRenderer.invoke('video:concat', payload),
   // 后处理能力探测，返回 { ok, path }
+  compressTimelineVideo: (payload) => ipcRenderer.invoke('timeline:compress-video', payload),
+  cancelTimelineCompression: (id) => ipcRenderer.send('timeline:cancel-compression', id),
   ffmpegAvailable: () => ipcRenderer.invoke('video:ffmpeg-available')
 });
