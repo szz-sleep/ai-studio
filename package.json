@@ -84,7 +84,7 @@
           ]
         }
       ],
-      "icon": "assets/icon.png",
+      "icon": "assets/icon.ico",
       "files": [
         "!node_modules/@ffmpeg-installer/darwin-x64/**",
         "!node_modules/@ffmpeg-installer/linux-x64/**"
@@ -101,11 +101,10 @@
       "uninstallerIcon": "assets/icon.ico",
       "installerHeaderIcon": "assets/icon.ico",
       "license": "LICENSE.txt",
-      "include": "build/installer.nsh",
       "unicode": true
     }
   },
-  "dependencies": {
+  "optionalDependencies": {
     "@ffmpeg-installer/darwin-x64": "^4.1.0",
     "@ffmpeg-installer/win32-x64": "^4.1.0"
   }
