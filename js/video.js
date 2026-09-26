@@ -100,6 +100,11 @@ const VideoModule = {
             });
         });
 
+        // 模型切换：minimax-H3 时显示 30 秒时长选项
+        document.getElementById('t2vModel').addEventListener('change', (e) => {
+            VideoModule._updateDurationOptions('t2v', e.target.value);
+        });
+
         // 生成按钮
         document.getElementById('t2vGenerateBtn').addEventListener('click', () => this.generateT2V());
     },
@@ -238,8 +243,247 @@ const VideoModule = {
             });
         });
 
+        // 模型切换：minimax-H3 时显示 30 秒时长选项
+        document.getElementById('i2vModel').addEventListener('change', (e) => {
+            VideoModule._updateDurationOptions('i2v', e.target.value);
+        });
+
         // 生成按钮
         document.getElementById('i2vGenerateBtn').addEventListener('click', () => this.generateI2V());
+    },
+
+    /**
+     * 根据当前选中的视频模型，决定是否显示 30 秒时长选项。
+     * 仅 minimax-H3 模型支持 30 秒；切换到其它模型时若 30 秒处于选中态，回退到默认 4 秒。
+     */
+    _updateDurationOptions(tab, model) {
+        const durationGroup = document.getElementById(`${tab}Duration`);
+        if (!durationGroup) return;
+        const btn30 = durationGroup.querySelector('.ratio-btn[data-duration="30"]');
+        if (!btn30) return;
+        const isH3 = VideoModule._isMinimaxH3(model);
+        btn30.hidden = !isH3;
+        if (!isH3 && btn30.classList.contains('active')) {
+            btn30.classList.remove('active');
+            const fallback = durationGroup.querySelector('.ratio-btn[data-duration="4"]');
+            if (fallback) fallback.classList.add('active');
+        }
+    },
+
+    /**
+     * 判断是否为 minimax-H3 模型。
+     * 同时要求出现 minimax 与 h3，容忍大小写、分隔符差异，以及中间夹带的额外词
+     * （例如 minimax-H3 / minimax_h3 / minimaxh3 / MiniMax-Hailuo-H3 / minimax-h3-1080p）。
+     * h3 后面若紧跟数字（如 h300）不算，避免误判版本号。
+     */
+    _isMinimaxH3(model) {
+        const id = String(model || '').toLowerCase();
+        return id.includes('minimax') && /h3(?!\d)/.test(id);
+    },
+
+    /**
+     * 提交前的时长校验：把超出模型能力的取值拦在本地，
+     * 不必把请求发给平台、再等平台返回错误。
+     * - MiniMax-H3 单段上限 15 秒，30 秒走「两段生成 + 本地拼接」
+     * - 其它模型沿用界面上限 15 秒
+     * @param {string} model
+     * @param {number} duration
+     * @returns {string|null} 不通过时返回中文提示；通过返回 null
+     */
+    _validateDuration(model, duration) {
+        if (!Number.isFinite(duration) || duration <= 0) {
+            return '视频时长无效，请重新选择时长';
+        }
+        if (this._isMinimaxH3(model)) {
+            // H3 单段最长 15 秒；30 秒由两段拼接实现
+            if (duration <= 15 || duration === 30) return null;
+            return `MiniMax-H3 单段最长 15 秒，最长可生成 30 秒（两段拼接）；不支持 ${duration} 秒`;
+        }
+        if (duration > 15) {
+            return `当前模型最长支持 15 秒，无法生成 ${duration} 秒视频（30 秒仅 MiniMax-H3 支持）`;
+        }
+        return null;
+    },
+
+    /**
+     * 从任务响应中解析视频地址（各平台字段名不一，逐个兜底）
+     * @param {object} result - pollVideoTask 的返回值
+     * @returns {string|null}
+     */
+    _pickVideoUrl(result) {
+        if (!result) return null;
+        const taskData = result._taskData || result.data || result;
+        // 火山引擎：content.video_url
+        const volcUrl = result.content?.video_url || taskData?.content?.video_url;
+        return API.normalizeResultUrl(
+            volcUrl
+            || result.url
+            || result.result_url
+            || result.data?.url
+            || taskData?.result_url
+            || taskData?.url
+            || result.output?.url
+            || result.video?.url
+            || result.data?.video_url
+            || result.output?.video_url
+            || result.urls?.[0]
+            || result.data?.output?.url
+            || result.video_url
+            || result.download_url
+            || null
+        ) || null;
+    },
+
+    /**
+     * 提交一段视频生成并轮询到完成
+     * @param {object} params - API.createVideoTask 入参
+     * @param {AbortSignal} signal
+     * @param {{label?:string, onStatus?:function}} [hooks]
+     * @returns {Promise<string>} 视频地址
+     */
+    async _runVideoClip(params, signal, hooks = {}) {
+        const label = hooks.label || '视频';
+        const task = await API.createVideoTask(params);
+        Logger.success(`[${label}] 任务创建成功: ${JSON.stringify(task).substring(0, 200)}`);
+
+        const taskId = task.video_id || task.task_id || task.id || task.data?.task_id;
+        if (!taskId) {
+            Logger.error(`[${label}] 未找到任务ID: ${JSON.stringify(task)}`);
+            throw new Error('API 未返回任务ID，请检查日志确认响应格式');
+        }
+        Logger.info(`[${label}] 任务ID: ${taskId}, 开始轮询...`);
+
+        let pollCount = 0;
+        const result = await API.pollVideoTask(
+            taskId,
+            (pct, status) => {
+                pollCount++;
+                Logger.info(`[${label}] 轮询 #${pollCount}: status=${status}, 进度=${pct}%`);
+                hooks.onStatus?.(pct, status);
+            },
+            API.VIDEO_POLL_INTERVAL_MS,
+            API.VIDEO_POLL_TIMEOUT_MS,
+            signal
+        );
+
+        const videoUrl = this._pickVideoUrl(result);
+        if (!videoUrl) {
+            Logger.error(`[${label}] 响应中未找到视频地址: ${JSON.stringify(result).substring(0, 300)}`);
+            throw new Error(`${label}未返回视频地址`);
+        }
+        Logger.success(`[${label}] 视频地址: ${videoUrl}`);
+        return videoUrl;
+    },
+
+    /**
+     * 30 秒视频：MiniMax-H3 单段上限 15 秒，且官方接口没有延长参数，
+     * 因此拆成两段 15 秒 —— 第二段以第一段末帧为首帧续接 —— 再用内置 ffmpeg 拼接。
+     * @param {object} opts
+     * @param {object} opts.params - 基础入参（duration 会被覆盖为单段时长）
+     * @param {AbortSignal} opts.signal
+     * @param {function(number,string):void} [opts.onStage] - 分段进度回调
+     * @returns {Promise<string>} 拼接后的本地 file:// 地址
+     */
+    async _generate30s({ params, signal, onStage }) {
+        const CLIP_SECONDS = 15;   // H3 单段上限
+
+        // 0) 能力检查：拼接依赖内置 ffmpeg
+        const ff = await window.electronAPI?.ffmpegAvailable?.();
+        if (!ff?.ok) {
+            throw new Error('缺少视频拼接组件（ffmpeg），无法生成 30 秒视频，请更新到最新版本');
+        }
+
+        // 1) 第一段
+        onStage?.(1, '正在生成第 1 段（15 秒）...');
+        const clip1 = await this._runVideoClip({
+            ...params,
+            duration: CLIP_SECONDS,
+            lastFrameUrl: null   // 尾帧会顶掉续接语义，这里只保留首帧（若有）
+        }, signal, {
+            label: '30秒·第1段',
+            onStatus: (pct, status) => onStage?.(1, `第 1 段生成中：${status}${pct ? ` ${pct}%` : ''}`)
+        });
+
+        // 2) 抽末帧 → 上传托管，作为第二段的首帧
+        onStage?.(2, '正在抽取衔接帧...');
+        const frame = await window.electronAPI.extractLastFrame({ url: clip1 });
+        if (!frame?.ok) {
+            throw new Error('抽取首段衔接帧失败：' + (frame?.error || '未知错误'));
+        }
+        const frameUrl = await this._uploadToTempHost(frame.dataUrl, 'continue_frame');
+        if (!frameUrl || frameUrl.startsWith('data:')) {
+            throw new Error('衔接帧上传公网托管失败，无法续接第二段');
+        }
+        Logger.info('[30秒] 衔接帧已就绪');
+
+        // 3) 第二段（以末帧为首帧续接）
+        onStage?.(3, '正在生成第 2 段（15 秒）...');
+        const clip2 = await this._runVideoClip({
+            ...params,
+            duration: CLIP_SECONDS,
+            prompt: `${params.prompt || ''}\n\n请延续上一镜头的画面：保持主体、场景、人物、风格、光影与色调一致，动作自然接续，不要重新开始。`,
+            firstFrameUrl: frameUrl,
+            lastFrameUrl: null,
+            // 参考素材只服务第一段，第二段的内容已由首帧锁定，混用会被平台拒绝
+            image: null,
+            images: null,
+            referenceImages: null,
+            referenceVideos: null,
+            referenceAudios: null
+        }, signal, {
+            label: '30秒·第2段',
+            onStatus: (pct, status) => onStage?.(3, `第 2 段生成中：${status}${pct ? ` ${pct}%` : ''}`)
+        });
+
+        // 4) 本地拼接
+        onStage?.(4, '正在拼接为 30 秒视频...');
+        const merged = await window.electronAPI.concatVideos({
+            urls: [clip1, clip2],
+            folder: '视频',
+            filename: `ai-video-30s-${Date.now()}`
+        });
+        if (!merged?.ok) {
+            throw new Error('视频拼接失败：' + (merged?.error || '未知错误'));
+        }
+        Logger.success(`[30秒] 拼接完成: ${merged.path}`);
+        return merged.fileUrl;
+    },
+
+    /**
+     * 渲染视频结果卡片并写入历史
+     * @param {object} opts
+     * @param {HTMLElement} opts.resultArea
+     * @param {string} opts.videoUrl
+     * @param {string} opts.prompt
+     * @param {string} opts.model
+     * @param {string} [opts.badge] - 卡片副标题
+     */
+    _renderVideoResult({ resultArea, videoUrl, prompt, model, badge }) {
+        resultArea.innerHTML = '';
+        const filename = `aistudio-video-${Date.now()}.mp4`;
+        const div = document.createElement('div');
+        div.className = 'result-item';
+        div.innerHTML = `
+            ${badge ? `<div class="result-subtitle">${badge}</div>` : ''}
+            <video controls src="${videoUrl}"></video>
+            <div class="result-actions">
+                <button class="result-action-btn view-btn">🔍 查看</button>
+                <button class="result-action-btn download-btn" data-filename="${filename}">下载</button>
+            </div>
+        `;
+        div.querySelector('.view-btn').addEventListener('click', () => UI.previewVideo(videoUrl));
+        div.querySelector('.download-btn').addEventListener('click', () => UI.downloadFile(videoUrl, filename));
+        resultArea.appendChild(div);
+
+        // 已是本地 file:// 时 History 不会再下载一次（仅 http(s) 触发 autosave）
+        History.add({
+            type: 'video',
+            url: videoUrl,
+            prompt: prompt || '(图生视频)',
+            model,
+            time: Date.now(),
+            autosave: true
+        });
     },
 
     /**
@@ -306,6 +550,14 @@ const VideoModule = {
 
         const btn = document.getElementById('i2vGenerateBtn');
         const resultArea = document.getElementById('i2vResult');
+
+        // —— 本地前置校验：超出模型能力的时长直接拦下 ——
+        const invalidDuration = this._validateDuration(model, duration);
+        if (invalidDuration) {
+            Logger.warn(`[图生视频] 时长校验未通过: ${invalidDuration}`);
+            UI.toast(invalidDuration, 'error', 5000);
+            return;
+        }
 
         btn.disabled = true;
         btn.textContent = '提交中...';
@@ -467,8 +719,7 @@ const VideoModule = {
 
             Logger.req(`模型: ${model}, 分辨率=${resolution}, 比例=${ratio}, 时长=${duration}s, FPS=${fps}`);
 
-            // 一次调用
-            const task = await API.createVideoTask({
+            const params = {
                 model, prompt, images: imageList,
                 resolution, ratio, duration, fps,
                 seed: undefined,
@@ -477,93 +728,46 @@ const VideoModule = {
                 referenceAudios: refAudios?.length > 0 ? refAudios : null,
                 firstFrameUrl,
                 lastFrameUrl
-            });
+            };
 
-            Logger.success(`任务创建成功, task_id: ${task.task_id || task.id || task.data?.task_id}`);
-
-            const taskId = task.video_id || task.task_id || task.id || task.data?.task_id;
-            if (!taskId) {
-                Logger.error(`未找到task_id: ${JSON.stringify(task)}`);
-                throw new Error('API未返回任务ID');
+            // 30 秒：H3 单段上限 15 秒，改为两段生成后本地拼接
+            if (duration === 30) {
+                const mergedUrl = await this._generate30s({
+                    params,
+                    signal,
+                    onStage: (stage, text) => {
+                        btn.textContent = `第 ${stage}/4 步...`;
+                        UI.updateLoading(text, 0);
+                    }
+                });
+                this._renderVideoResult({
+                    resultArea,
+                    videoUrl: mergedUrl,
+                    prompt: `[多图融合] ${prompt}`,
+                    model,
+                    badge: '30秒 · 两段拼接生成'
+                });
+                UI.toast('30 秒视频生成成功！', 'success');
+                return;
             }
 
             btn.textContent = '视频生成中...';
             UI.updateLoading('视频生成中...', 0);
-            Logger.info(`任务ID: ${taskId}, 开始轮询...`);
 
-            let pollCount = 0;
-            const result = await API.pollVideoTask(
-                taskId,
-                (pct, status) => {
-                    pollCount++;
-                    Logger.info(`轮询 #${pollCount}: ${status}, ${pct}%`);
-                    UI.updateLoading(status, pct);
-                },
-                API.VIDEO_POLL_INTERVAL_MS,
-                API.VIDEO_POLL_TIMEOUT_MS,
-                signal
-            );
+            const videoUrl = await this._runVideoClip(params, signal, {
+                label: '图生视频',
+                onStatus: (pct, status) => UI.updateLoading(status, pct)
+            });
 
-            Logger.success(`视频生成完成!`);
-
-            // 解析视频URL
-            const taskData = result._taskData || result.data || result;
-            // 火山引擎：content.video_url
-            const volcUrl = result.content?.video_url || taskData?.content?.video_url;
-            const videoUrl = API.normalizeResultUrl(
-                volcUrl
-                || result.url
-                || result.result_url
-                || result.data?.url
-                || taskData?.result_url
-                || taskData?.url
-                || result.output?.url
-                || result.video?.url
-                || result.data?.video_url
-                || result.output?.video_url
-                || result.urls?.[0]
-                || result.data?.output?.url
-                || result.video_url
-                || result.download_url
-            );
-
-            if (videoUrl) {
-                Logger.success(`视频URL: ${videoUrl}`);
-
-                const filename = `aistudio-i2v-multi-${Date.now()}.mp4`;
-                const div = document.createElement('div');
-                div.className = 'result-item';
-                div.innerHTML = `
-                    <div class="result-subtitle">多图融合 · 生成视频</div>
-                    <video controls src="${videoUrl}"></video>
-                    <div class="result-actions">
-                        <button class="result-action-btn view-btn" data-url="${videoUrl}">🔍 查看</button>
-                        <button class="result-action-btn download-btn" data-url="${videoUrl}" data-filename="${filename}">下载</button>
-                    </div>
-                `;
-                div.querySelector('.view-btn').addEventListener('click', () => {
-                    UI.previewVideo(videoUrl);
-                });
-                div.querySelector('.download-btn').addEventListener('click', () => {
-                    UI.downloadFile(videoUrl, filename);
-                });
-                resultArea.appendChild(div);
-
-                History.add({
-                    type: 'video',
-                    url: videoUrl,
-                    prompt: `[多图融合] ${prompt}`,
-                    model,
-                    time: Date.now(),
-                    autosave: true
-                });
-
-                UI.toast('视频生成成功！', 'success');
-            } else {
-                Logger.error(`未找到视频URL: ${JSON.stringify(result).substring(0, 300)}`);
-                resultArea.innerHTML = this._createI2VErrorCard('未返回视频地址');
-                UI.toast('视频生成失败', 'error');
-            }
+            Logger.success(`视频生成完成! 视频URL: ${videoUrl}`);
+            this._renderVideoResult({
+                resultArea,
+                videoUrl,
+                prompt: `[多图融合] ${prompt}`,
+                model,
+                badge: mode === 'firstlast' ? '首尾帧 · 生成视频' : '多图融合 · 生成视频'
+            });
+            UI.toast('视频生成成功！', 'success');
         } catch (err) {
             if (err.name === 'AbortError') {
                 Logger.warn('用户取消了视频生成');
@@ -617,6 +821,14 @@ const VideoModule = {
         const btn = document.getElementById(btnId);
         const resultArea = document.getElementById(`${tab}Result`);
 
+        // —— 本地前置校验：超出模型能力的时长直接拦下，不必发给平台再等报错 ——
+        const invalidDuration = this._validateDuration(model, duration);
+        if (invalidDuration) {
+            Logger.warn(`[${tab}] 时长校验未通过: ${invalidDuration}`);
+            UI.toast(invalidDuration, 'error', 5000);
+            return;
+        }
+
         btn.disabled = true;
         btn.textContent = '提交中...';
 
@@ -635,105 +847,39 @@ const VideoModule = {
             Logger.req(`模型: ${model}, prompt: "${prompt.substring(0, 60)}${prompt.length > 60 ? '...' : ''}"`);
             Logger.req(`参数: 分辨率=${resolution}, 比例=${ratio}, duration=${duration}s, fps=${fps}${image ? ', 含图片' : ''}`);
 
-            // 创建任务
-            const task = await API.createVideoTask({
+            const params = {
                 model, prompt, image,
                 resolution, ratio, duration, fps,
                 seed: seed || undefined,
                 referenceImages, referenceVideos, referenceAudios,
                 firstFrameUrl, lastFrameUrl
-            });
+            };
 
-            Logger.success(`任务创建成功, 响应: ${JSON.stringify(task)}`);
-
-            // 火山引擎返回 id，Agnes 用 video_id，其它平台用 task_id
-            if (!task.task_id && !task.video_id && !task.id) {
-                const tid = task.id || task.data?.task_id;
-                if (!tid) {
-                    Logger.error(`未找到 task_id, 完整响应: ${JSON.stringify(task)}`);
-                    throw new Error('API 未返回任务ID，请检查日志确认响应格式');
-                }
-                task.task_id = tid;
-                Logger.info(`使用备用字段: ${tid}`);
+            // 30 秒：H3 单段上限 15 秒，改为两段生成后本地拼接
+            if (duration === 30) {
+                const mergedUrl = await this._generate30s({
+                    params,
+                    signal,
+                    onStage: (stage, text) => {
+                        btn.textContent = `第 ${stage}/4 步...`;
+                        UI.updateLoading(text, 0);
+                    }
+                });
+                this._renderVideoResult({ resultArea, videoUrl: mergedUrl, prompt, model, badge: '30秒 · 两段拼接生成' });
+                UI.toast('30 秒视频生成成功！', 'success');
+                return;
             }
-            // 优先 video_id（Agnes），其次 task_id，最后 id（火山引擎）
-            const pollTaskId = task.video_id || task.task_id || task.id;
 
             btn.textContent = '生成中...';
-            Logger.info(`任务ID: ${pollTaskId}, 开始轮询...`);
             UI.updateLoading('视频生成中，请耐心等待...', 0);
 
-            let pollCount = 0;
-            const result = await API.pollVideoTask(
-                pollTaskId,
-                (pct, status) => {
-                    pollCount++;
-                    Logger.info(`轮询 #${pollCount}: status=${status}, 进度=${pct}%`);
-                    UI.updateLoading(status, pct);
-                },
-                API.VIDEO_POLL_INTERVAL_MS,
-                API.VIDEO_POLL_TIMEOUT_MS,
-                signal
-            );
+            const videoUrl = await this._runVideoClip(params, signal, {
+                label: '文生视频',
+                onStatus: (pct, status) => UI.updateLoading(status, pct)
+            });
 
-            Logger.success(`任务完成! 响应: ${JSON.stringify(result).substring(0, 300)}`);
-
-            resultArea.innerHTML = '';
-
-            const taskData = result._taskData || result.data || result;
-            // 火山引擎：content.video_url
-            const volcUrl = result.content?.video_url || taskData?.content?.video_url;
-            const videoUrl = API.normalizeResultUrl(
-                volcUrl
-                || result.url
-                || result.result_url
-                || result.data?.url
-                || taskData?.result_url
-                || taskData?.url
-                || result.output?.url
-                || result.video?.url
-                || result.data?.video_url
-                || result.output?.video_url
-                || result.urls?.[0]
-                || result.data?.output?.url
-                || result.video_url
-                || result.download_url
-            );
-            if (videoUrl) {
-                Logger.success(`视频URL: ${videoUrl}`);
-
-                const filename = `aistudio-video-${Date.now()}.mp4`;
-                const div = document.createElement('div');
-                div.className = 'result-item';
-                div.innerHTML = `
-                    <video controls src="${videoUrl}"></video>
-                    <div class="result-actions">
-                        <button class="result-action-btn view-btn" data-url="${videoUrl}">🔍 查看</button>
-                        <button class="result-action-btn download-btn" data-url="${videoUrl}" data-filename="${filename}">下载</button>
-                    </div>
-                `;
-                div.querySelector('.view-btn').addEventListener('click', () => {
-                    UI.previewVideo(videoUrl);
-                });
-                div.querySelector('.download-btn').addEventListener('click', () => {
-                    UI.downloadFile(videoUrl, filename);
-                });
-                resultArea.appendChild(div);
-
-                History.add({
-                    type: 'video',
-                    url: videoUrl,
-                    prompt: prompt || '(图生视频)',
-                    model: model,
-                    time: Date.now(),
-                    autosave: true
-                });
-
-                UI.toast('视频生成成功！', 'success');
-            } else {
-                Logger.error(`响应中未找到视频URL, 完整数据: ${JSON.stringify(result)}`);
-                UI.toast('未返回视频地址', 'error');
-            }
+            this._renderVideoResult({ resultArea, videoUrl, prompt, model });
+            UI.toast('视频生成成功！', 'success');
         } catch (err) {
             if (err.name === 'AbortError') {
                 Logger.warn('用户取消了视频生成');
