@@ -1779,11 +1779,36 @@ select.select-input option { background: var(--bg-surface); }
 .timeline-remove { border: 0; background: none; color: var(--text-muted); cursor: pointer; font-size: 12px; }
 .timeline-remove:hover { color: #ef4444; }
 .timeline-time-row { display: grid; grid-template-columns: 1fr 24px 1fr; align-items: end; gap: 8px; margin: 12px 0; }
+.timeline-aligned { margin: -4px 0 12px; color: var(--text-muted); font-size: 12px; }
 .timeline-time-row label,
 .timeline-prompt-label { color: var(--text-muted); font-size: 12px; }
 .timeline-time-row span { text-align: center; color: var(--text-muted); padding-bottom: 10px; }
 .timeline-prompt-label textarea { min-height: 64px; margin-top: 6px; resize: vertical; }
 .timeline-assets-head { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+.timeline-assets-head > div { display: flex; gap: 6px; flex-wrap: wrap; }
+.timeline-library-modal { position: fixed; inset: 0; z-index: 400; display: grid; place-items: center; padding: 18px; background: var(--bg-modal-overlay); backdrop-filter: blur(6px); }
+.timeline-library-modal.hidden { display: none; }
+.timeline-library-dialog { width: min(900px, 100%); max-height: min(780px, 92vh); display: flex; flex-direction: column; overflow: hidden; background: var(--bg-surface); color: var(--text-primary); border: 1px solid var(--border); border-radius: 18px; box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+.timeline-library-dialog header, .timeline-library-dialog footer { display: flex; align-items: center; gap: 12px; padding: 16px 22px; }
+.timeline-library-dialog header { border-bottom: 1px solid var(--border); }
+.timeline-library-dialog header h2 { margin: 0; font-size: 20px; }
+.timeline-library-close { margin-left: auto; border: 0; background: none; color: var(--text-muted); cursor: pointer; font-size: 28px; line-height: 1; }
+.timeline-library-dialog footer { justify-content: flex-end; border-top: 1px solid var(--border); }
+.timeline-library-body { min-height: 220px; padding: 20px 22px; overflow-y: auto; }
+.timeline-library-toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; color: var(--text-muted); font-size: 13px; }
+.timeline-library-filters { display: flex; flex-wrap: wrap; gap: 7px; }
+.timeline-library-filters button { border: 1px solid var(--border); border-radius: 20px; padding: 6px 16px; background: transparent; color: var(--text-muted); cursor: pointer; }
+.timeline-library-filters button.active { background: var(--text-primary); border-color: var(--text-primary); color: var(--bg-surface); }
+.timeline-library-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); gap: 14px; }
+.timeline-library-card { position: relative; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-surface-2); }
+.timeline-library-thumb { width: 100%; aspect-ratio: 1; display: grid; place-items: center; overflow: hidden; background: var(--bg-glass); }
+.timeline-library-thumb img, .timeline-library-thumb video { display: block; width: 100%; height: 100%; object-fit: cover; }
+.timeline-library-audio-icon { font-size: 38px; color: var(--text-muted); }
+.timeline-library-card-actions { display: flex; gap: 6px; padding: 8px; }
+.timeline-library-card-actions button { flex: 1; border: 1px solid var(--border); border-radius: 8px; padding: 7px 4px; background: var(--bg-surface); color: var(--text-primary); cursor: pointer; }
+.timeline-library-card-actions button:first-child { background: var(--text-primary); color: var(--bg-surface); }
+.timeline-library-card-actions button:hover { border-color: var(--accent); }
+@media (max-width: 600px) { .timeline-library-modal { padding: 8px; } .timeline-library-body { padding: 14px; } .timeline-library-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } }
 .timeline-assets-head > span { color: var(--text-muted); font-size: 12px; }
 .timeline-add-asset { padding: 5px 9px; font-size: 11px; }
 .timeline-assets { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; min-height: 48px; }

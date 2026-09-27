@@ -381,7 +381,60 @@ const API = {
     },
 
     /** H3-only upload; never adds the file to the Volcano asset library. */
+    async listTimelineAssets({ signal } = {}) {
+        const response = await fetch(this._url('/v1/video/timeline/assets'), { headers: this._headers(), signal });
+        if (!response.ok) throw new Error(`H3 素材库同步失败 (${response.status})`);
+        const body = await response.json();
+        return Array.isArray(body) ? body : body.assets;
+    },
+
+    async deleteTimelineAsset(id, { signal } = {}) {
+        const response = await fetch(this._url(`/v1/video/timeline/assets/${encodeURIComponent(id)}`), {
+            method: 'DELETE', headers: this._headers(), signal
+        });
+        if (!response.ok) {
+            const body = await response.json().catch(() => ({}));
+            throw new Error(body.error?.message || `删除 H3 素材失败 (${response.status})`);
+        }
+    },
+
     async uploadTimelineAsset(file, onProgress, { signal } = {}) {
+        try {
+            return await new Promise((resolve, reject) => {
+                const data = new FormData();
+                data.append('file', file);
+                const request = new XMLHttpRequest();
+                const abort = () => request.abort();
+                if (signal?.aborted) { reject(new DOMException('已取消上传', 'AbortError')); return; }
+                signal?.addEventListener('abort', abort, { once: true });
+                request.addEventListener('loadend', () => signal?.removeEventListener('abort', abort), { once: true });
+                request.open('POST', this._url('/v1/video/timeline/assets'));
+                request.setRequestHeader('Authorization', this._headers().Authorization);
+                request.upload.onprogress = event => {
+                    if (event.lengthComputable) onProgress?.(Math.min(99, Math.round(event.loaded / event.total * 100)));
+                };
+                request.onerror = () => reject(new Error('网络连接中断，素材上传失败'));
+                request.onabort = () => reject(new DOMException('已取消上传', 'AbortError'));
+                request.onload = () => {
+                    let response;
+                    try { response = JSON.parse(request.responseText); }
+                    catch { reject(new Error(`H3 素材上传响应无效 (${request.status})`)); return; }
+                    if (request.status < 200 || request.status >= 300) {
+                        const error = new Error(response.error?.message || `H3 素材上传失败 (${request.status})`);
+                        error.status = request.status;
+                        reject(error);
+                    } else { onProgress?.(100); resolve(response); }
+                };
+                request.send(data);
+            });
+        } catch (error) {
+            if (![404, 405, 413].includes(error.status)) throw error;
+            onProgress?.(0);
+            return this._uploadTimelineAssetChunks(file, onProgress, { signal });
+        }
+    },
+
+    async _uploadTimelineAssetChunks(file, onProgress, { signal } = {}) {
         const aborted = () => { if (signal?.aborted) throw new DOMException('已取消上传', 'AbortError'); };
         aborted();
         const path = '/v1/video/timeline/assets/uploads';

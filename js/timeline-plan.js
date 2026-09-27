@@ -22,6 +22,50 @@
         return Math.max(5, Math.min(3592, 5 + 17 * Math.round((frames - 5) / 17)));
     }
 
+    // Resolve approximate UI windows together; keep buildPlan strict for API callers.
+    function alignInput(input) {
+        const fps = Number(input?.fps || DEFAULT_FPS);
+        assert(fps === 24, 'H3 原生 Loop 仅支持 24 FPS');
+        const raw = input?.segments;
+        assert(Array.isArray(raw) && raw.length > 0 && raw.length <= 64, '分段数量必须在 1–64 之间');
+        const lengths = Array.from({ length: Math.floor((3592 - 5) / 17) + 1 }, (_, n) => 5 + 17 * n);
+        const overlaps = [0, 1, ...lengths];
+        const closest = (items, target, count) => items.slice().sort((a, b) =>
+            Math.abs(a - target) - Math.abs(b - target) || a - b).slice(0, count);
+        let states = [{ windows: [], score: 0 }];
+        raw.forEach((item, index) => {
+            assert(item && isFiniteNumber(item.start) && isFiniteNumber(item.end) &&
+                item.start >= 0 && item.end > item.start, `第 ${index + 1} 段需要有效的起止秒数`);
+            if (index) {
+                assert(item.start > raw[index - 1].start && item.end > raw[index - 1].end,
+                    `第 ${index + 1} 段必须向前推进时间线`);
+                assert(item.start <= raw[index - 1].end, `第 ${index + 1} 段与上一段之间存在空白`);
+            }
+            const desiredStart = item.start * fps;
+            const desiredEnd = item.end * fps;
+            const next = [];
+            for (const state of states) {
+                const previous = state.windows.at(-1);
+                const candidates = previous ? closest(overlaps.filter(o => o < previous.length), previous.end - desiredStart, 5) : [0];
+                for (const overlap of candidates) {
+                    const start = previous ? previous.end - overlap : 0;
+                    if (previous && start <= previous.start) continue;
+                    for (const length of closest(lengths.filter(n => n > overlap), desiredEnd - desiredStart, 5)) {
+                        const end = start + length;
+                        if (end > fps * 600 || (previous && end <= previous.end)) continue;
+                        const score = state.score + ((start - desiredStart) / fps) ** 2 + ((end - desiredEnd) / fps) ** 2;
+                        next.push({ windows: [...state.windows, { start, end, length }], score });
+                    }
+                }
+            }
+            assert(next.length, `第 ${index + 1} 段无法对齐到 H3 合法帧数或超出 10 分钟`);
+            states = next.sort((a, b) => a.score - b.score).slice(0, 120);
+        });
+        return { ...input, segments: raw.map((segment, index) => ({
+            ...segment, start: states[0].windows[index].start / fps, end: states[0].windows[index].end / fps
+        })) };
+    }
+
     function isFiniteNumber(value) {
         return typeof value === 'number' && Number.isFinite(value);
     }
@@ -139,5 +183,5 @@
         }
     }
 
-    return { PLAN_VERSION, DEFAULT_FPS, buildPlan, validatePlan };
+    return { PLAN_VERSION, DEFAULT_FPS, alignInput, buildPlan, validatePlan };
 });

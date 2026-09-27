@@ -1,6 +1,24 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { buildPlan, validatePlan } = require('../js/timeline-plan.js');
+const { alignInput, buildPlan, validatePlan } = require('../js/timeline-plan.js');
+
+test('aligns approximate segment windows while preserving the draft and strict validator', () => {
+    const input = { global_prompt: '测试', segments: [
+        { start: 0, end: 15 }, { start: 13, end: 30 }, { start: 28, end: 40 }
+    ] };
+    const aligned = alignInput(input);
+    const result = validatePlan(aligned);
+    assert.equal(result.valid, true);
+    assert.deepEqual(input.segments.map(s => [s.start, s.end]), [[0, 15], [13, 30], [28, 40]]);
+    assert.ok(Math.abs(result.plan.segments.at(-1).end - 40) < 1);
+    for (const [index, segment] of result.plan.segments.entries()) {
+        assert.equal((segment.end_frame - segment.start_frame - 5) % 17, 0);
+        assert.ok(Math.abs(segment.start - input.segments[index].start) < 1);
+        assert.ok(Math.abs(segment.end - input.segments[index].end) < 1);
+        if (index) assert.ok(segment.overlap_frames === 0 || segment.overlap_frames === 1 ||
+            (segment.overlap_frames - 5) % 17 === 0);
+    }
+});
 
 test('builds a continuous two-segment plan and calculates overlap', () => {
     const plan = buildPlan({

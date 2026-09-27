@@ -13,6 +13,10 @@ const TimelineModule = {
     assetPreviewUrls: new Map(),
     pendingUploads: new Map(),
     nextUploadId: 1,
+    libraryAssets: [],
+    librarySegmentIndex: null,
+    libraryLoading: false,
+    libraryFilter: 'all',
 
     init() {
         const container = document.getElementById('timelineSegments');
@@ -46,12 +50,17 @@ const TimelineModule = {
                 if (id === 'timelineSize' || id === 'timelineSteps') this._syncUpscaleOptions();
                 this._onChange();
             }));
+        const globalPrompt = document.getElementById('timelineGlobalPrompt');
+        globalPrompt.addEventListener('input', () => this._resizePrompt(globalPrompt));
+        this._resizePrompt(globalPrompt);
         this._syncUpscaleOptions();
         window.addEventListener('beforeunload', () => {
             for (const url of this.assetPreviewUrls.values()) URL.revokeObjectURL(url);
         });
+        this._ensureLibraryModal();
         this.render();
         this._loadJobs();
+        this.syncAssetLibrary();
     },
 
     _scope() {
@@ -165,6 +174,7 @@ const TimelineModule = {
             return;
         }
         this.segments.splice(index, 1);
+        this.librarySegmentIndex = null;
         this.render();
         this._saveDraft();
     },
@@ -189,10 +199,11 @@ const TimelineModule = {
                     <span>→</span>
                     <label>结束（秒）<input type="number" min="0.01" step="0.01" value="${segment.end}" data-field="end" data-index="${index}"></label>
                 </div>
+                <div class="timeline-aligned" data-aligned="${index}"></div>
                 <label class="timeline-prompt-label">本段提示词
                     <textarea rows="3" data-field="prompt" data-index="${index}" placeholder="留空时使用全局提示词">${this._escape(segment.prompt)}</textarea>
                 </label>
-                <div class="timeline-assets-head"><span>H3 参考素材</span><button type="button" class="btn-secondary timeline-add-asset" data-add-asset="${index}">＋ 上传图片 / 视频 / 音频</button><input type="file" hidden data-upload-asset="${index}" accept="image/png,image/jpeg,video/*,audio/*" multiple></div>
+                <div class="timeline-assets-head"><span>H3 参考素材</span><div><button type="button" class="btn-secondary" data-open-library="${index}">从 H3 素材库选择</button><button type="button" class="btn-secondary timeline-add-asset" data-add-asset="${index}">＋ 上传图片 / 视频 / 音频</button></div><input type="file" hidden data-upload-asset="${index}" accept="image/png,image/jpeg,video/*,audio/*" multiple></div>
                 <div class="timeline-assets">${this._renderAssets(segment.assets || [], index)}</div>
                 <div class="timeline-upload-list">${this._renderPendingUploads(segment.id)}</div>
             </article>`;
@@ -200,6 +211,10 @@ const TimelineModule = {
 
         container.querySelectorAll('[data-field]').forEach(input => {
             input.addEventListener('input', event => this.updateSegment(Number(event.target.dataset.index), event.target.dataset.field, event.target.value));
+            if (input.tagName === 'TEXTAREA') {
+                input.addEventListener('input', () => this._resizePrompt(input));
+                this._resizePrompt(input);
+            }
         });
         container.querySelectorAll('[data-remove]').forEach(button => {
             button.addEventListener('click', () => this.removeSegment(Number(button.dataset.remove)));
@@ -207,6 +222,12 @@ const TimelineModule = {
         container.querySelectorAll('[data-add-asset]').forEach(button => {
             button.addEventListener('click', () => this.openAssetPicker(Number(button.dataset.addAsset)));
         });
+        container.querySelectorAll('[data-open-library]').forEach(button => button.addEventListener('click', () => {
+            this.librarySegmentIndex = Number(button.dataset.openLibrary);
+            this.libraryFilter = 'all';
+            this._renderLibraryModal();
+            this.syncAssetLibrary();
+        }));
         container.querySelectorAll('[data-upload-asset]').forEach(input => {
             input.addEventListener('change', async () => {
                 const index = Number(input.dataset.uploadAsset);
@@ -228,6 +249,138 @@ const TimelineModule = {
         });
         this._renderTrack();
         this._validate(false);
+        this._renderLibraryModal();
+    },
+
+    _resizePrompt(input) {
+        input.style.height = 'auto';
+        input.style.height = `${input.scrollHeight}px`;
+    },
+
+    _ensureLibraryModal() {
+        if (document.getElementById('timelineLibraryModal')) return;
+        const modal = document.createElement('div');
+        modal.id = 'timelineLibraryModal';
+        modal.className = 'timeline-library-modal hidden';
+        document.body.appendChild(modal);
+        modal.addEventListener('click', event => {
+            if (event.target === modal || event.target.closest('[data-library-close]')) {
+                this.librarySegmentIndex = null;
+                this._renderLibraryModal();
+                return;
+            }
+            const filter = event.target.closest('[data-library-filter]');
+            if (filter) { this.libraryFilter = filter.dataset.libraryFilter; this._renderLibraryModal(); return; }
+            if (event.target.closest('[data-library-sync]')) { this.syncAssetLibrary(); return; }
+            if (event.target.closest('[data-library-upload]')) { modal.querySelector('[data-library-file]')?.click(); return; }
+            const add = event.target.closest('[data-library-add]');
+            if (add) { this.addLibraryAsset(add.dataset.libraryAdd); return; }
+            const remove = event.target.closest('[data-library-delete]');
+            if (remove) { this.deleteLibraryAsset(remove.dataset.libraryDelete); return; }
+            const cancel = event.target.closest('[data-cancel-upload]');
+            if (cancel) this.cancelUpload(cancel.dataset.cancelUpload);
+        });
+        modal.addEventListener('change', async event => {
+            if (!event.target.matches('[data-library-file]')) return;
+            const segment = this.segments[this.librarySegmentIndex];
+            for (const file of Array.from(event.target.files || [])) {
+                const index = this.segments.indexOf(segment);
+                if (index < 0) break;
+                await this.uploadAsset(index, file, true);
+            }
+        });
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape' && this.librarySegmentIndex !== null) {
+                this.librarySegmentIndex = null;
+                this._renderLibraryModal();
+            }
+        });
+    },
+
+    _renderLibraryModal() {
+        const modal = document.getElementById('timelineLibraryModal');
+        if (!modal) return;
+        const index = this.librarySegmentIndex;
+        if (index === null || !this.segments[index]) {
+            modal.classList.add('hidden');
+            modal.innerHTML = '';
+            return;
+        }
+        const scrollTop = modal.querySelector('.timeline-library-body')?.scrollTop || 0;
+        modal.classList.remove('hidden');
+        const assets = this.libraryAssets.filter(asset => this.libraryFilter === 'all' || asset.type === this.libraryFilter);
+        const items = assets.map(asset => {
+            const src = this._escape(this.assetPreviewUrls.get(asset.id) || API._url(asset.previewUrl || `/v1/video/timeline/assets/${encodeURIComponent(asset.id)}`));
+            const thumb = asset.type === 'image' ? `<img src="${src}" alt="" loading="lazy">`
+                : asset.type === 'video' ? `<video src="${src}" muted preload="metadata" playsinline></video>`
+                : '<span class="timeline-library-audio-icon" aria-hidden="true">♫</span>';
+            const label = this._escape(asset.name || asset.id);
+            return `<div class="timeline-library-card" aria-label="${label}">
+                <div class="timeline-library-thumb">${thumb}</div>
+                <div class="timeline-library-card-actions">
+                    <button type="button" data-library-add="${this._escape(asset.id)}" aria-label="添加 ${label} 到第 ${index + 1} 段">添加</button>
+                    <button type="button" data-library-delete="${this._escape(asset.id)}" aria-label="删除 ${label}">删除</button>
+                </div>
+            </div>`;
+        }).join('');
+        const filters = [['all', '全部'], ['image', '图片'], ['audio', '音频'], ['video', '视频']]
+            .map(([type, label]) => `<button type="button" data-library-filter="${type}" class="${this.libraryFilter === type ? 'active' : ''}" aria-pressed="${this.libraryFilter === type}">${label}</button>`).join('');
+        modal.innerHTML = `<div class="timeline-library-dialog" role="dialog" aria-modal="true" aria-label="H3 素材库">
+            <header><h2>素材库</h2><button type="button" class="btn-secondary" data-library-sync>↻ 同步</button><button type="button" class="timeline-library-close" data-library-close aria-label="关闭素材库">×</button></header>
+            <div class="timeline-library-body"><div class="timeline-library-toolbar"><div class="timeline-library-filters">${filters}</div><span>共 ${this.libraryAssets.length} 个素材</span></div>
+                <div class="timeline-library-grid">${this.libraryLoading ? '<p>正在同步…</p>' : items}</div>
+                ${this._renderPendingUploads(this.segments[index].id)}
+            </div>
+            <footer><input type="file" hidden data-library-file accept="image/png,image/jpeg,video/*,audio/*" multiple><button type="button" class="btn-secondary" data-library-upload>＋ 上传素材</button><button type="button" class="btn-secondary" data-library-close>关闭</button></footer>
+        </div>`;
+        modal.querySelector('.timeline-library-body').scrollTop = scrollTop;
+    },
+
+    async syncAssetLibrary() {
+        if (this.libraryLoading) return;
+        this.libraryLoading = true;
+        this.libraryAssets = [];
+        for (const url of this.assetPreviewUrls.values()) if (url.startsWith('blob:')) URL.revokeObjectURL(url);
+        this.assetPreviewUrls.clear();
+        this.render();
+        const key = Config.getApiKey();
+        try {
+            const assets = await API.listTimelineAssets();
+            if (key !== Config.getApiKey()) return;
+            this.libraryAssets = Array.isArray(assets) ? assets : [];
+            for (const asset of this.libraryAssets) {
+                if (asset.previewUrl) this.assetPreviewUrls.set(asset.id, API._url(asset.previewUrl));
+            }
+        } catch (error) { UI.toast(error.message, 'error'); }
+        finally { this.libraryLoading = false; this.render(); }
+    },
+
+    addLibraryAsset(id) {
+        const asset = this.libraryAssets.find(item => item.id === id);
+        const segment = this.segments[this.librarySegmentIndex];
+        if (!asset || !segment || (segment.assets || []).some(item => item.id === id)) return;
+        const count = segment.assets.filter(item => item.type === asset.type).length;
+        if ((asset.type === 'image' && count >= 9) || (asset.type === 'audio' && count >= 3)) {
+            UI.toast('本段此类素材已达到上限', 'error'); return;
+        }
+        segment.assets.push({ id: asset.id, name: asset.name, type: asset.type, uri: asset.uri, role: 'reference' });
+        this._saveDraft();
+        this.render();
+    },
+
+    async deleteLibraryAsset(id) {
+        const modal = document.getElementById('timelineLibraryModal');
+        modal?.classList.add('hidden');
+        const confirmed = await UI.confirm('删除服务器上的 H3 素材？已添加到段落的引用也会失效。', { danger: true });
+        this._renderLibraryModal();
+        if (!confirmed) return;
+        try {
+            await API.deleteTimelineAsset(id);
+            for (const segment of this.segments) segment.assets = segment.assets.filter(item => item.id !== id);
+            this.libraryAssets = this.libraryAssets.filter(item => item.id !== id);
+            this._saveDraft();
+            this.render();
+        } catch (error) { UI.toast(error.message, 'error'); }
     },
 
     _renderAssets(assets, segmentIndex) {
@@ -263,10 +416,11 @@ const TimelineModule = {
         if (!item) return;
         item.progress = progress;
         item.phase = 'uploading';
-        const row = Array.from(document.querySelectorAll('[data-upload-id]')).find(node => node.dataset.uploadId === id);
-        if (!row) return;
-        row.querySelector('[data-upload-fill]').style.width = `${progress}%`;
-        row.querySelector('[data-upload-label]').textContent = progress === 100 ? '处理中…' : `${progress}%`;
+        document.querySelectorAll('[data-upload-id]').forEach(row => {
+            if (row.dataset.uploadId !== id) return;
+            row.querySelector('[data-upload-fill]').style.width = `${progress}%`;
+            row.querySelector('[data-upload-label]').textContent = progress === 100 ? '处理中…' : `${progress}%`;
+        });
     },
 
     cancelUpload(id) {
@@ -282,12 +436,12 @@ const TimelineModule = {
         document.querySelector(`[data-upload-asset="${segmentIndex}"]`)?.click();
     },
 
-    async uploadAsset(segmentIndex, file) {
+    async uploadAsset(segmentIndex, file, libraryOnly = false) {
         const segment = this.segments[segmentIndex];
         if (!segment) return;
         const type = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : file.type.startsWith('audio/') ? 'audio' : '';
-        if (!type || (type === 'image' && segment.assets.filter(a => a.type === type).length >= 9) ||
-            (type === 'audio' && segment.assets.filter(a => a.type === type).length >= 3)) {
+        if (!type || (!libraryOnly && ((type === 'image' && segment.assets.filter(a => a.type === type).length >= 9) ||
+            (type === 'audio' && segment.assets.filter(a => a.type === type).length >= 3)))) {
             UI.toast('素材格式不支持或本段素材已达到上限', 'error'); return;
         }
         const uploadId = `upload-${this.nextUploadId++}`;
@@ -311,11 +465,14 @@ const TimelineModule = {
             if (controller.signal.aborted) return;
             this._updateUploadProgress(uploadId, 0);
             const uploaded = await API.uploadTimelineAsset(source, progress => this._updateUploadProgress(uploadId, progress), { signal: controller.signal });
-            if (controller.signal.aborted || !this.segments.includes(segment)) return;
-            segment.assets.push({ id: uploaded.id, name: file.name, type: uploaded.type, uri: uploaded.uri, role: 'reference' });
-            this.assetPreviewUrls.set(uploaded.id, URL.createObjectURL(file));
-            this._saveDraft();
+            if (controller.signal.aborted) return;
+            if (!libraryOnly && this.segments.includes(segment)) {
+                segment.assets.push({ id: uploaded.id, name: file.name, type: uploaded.type, uri: uploaded.uri, role: 'reference' });
+                this.assetPreviewUrls.set(uploaded.id, URL.createObjectURL(file));
+                this._saveDraft();
+            }
             UI.toast(`已上传 H3 素材：${file.name}`, 'success');
+            this.syncAssetLibrary();
         } catch (error) {
             if (!controller.signal.aborted && error.name !== 'AbortError') UI.toast(`上传失败：${error.message}`, 'error');
         } finally {
@@ -337,13 +494,20 @@ const TimelineModule = {
 
     _renderTrack() {
         const track = document.getElementById('timelineTrack');
-        const duration = Math.max(...this.segments.map(segment => Number(segment.end) || 0), 1);
-        track.innerHTML = this.segments.map((segment, index) => {
+        const result = this._alignedResult();
+        const displayed = result.valid ? result.plan.segments : this.segments;
+        const duration = Math.max(...displayed.map(segment => Number(segment.end) || 0), 1);
+        track.innerHTML = displayed.map((segment, index) => {
             const left = Math.max(0, Number(segment.start) / duration * 100);
             const width = Math.max(1, (Number(segment.end) - Number(segment.start)) / duration * 100);
             return `<div class="timeline-block block-${index % 5}" style="left:${left}%;width:${width}%" title="分段 ${index + 1}: ${segment.start}s–${segment.end}s">${index + 1}</div>`;
         }).join('');
-        document.getElementById('timelineDurationSummary').textContent = `总时长 ${duration.toFixed(2)} 秒 · ${this.segments.length} 段`;
+        document.getElementById('timelineDurationSummary').textContent = `${result.valid ? '校正后' : '期望'}总时长 ${duration.toFixed(2)} 秒 · ${this.segments.length} 段`;
+    },
+
+    _alignedResult() {
+        try { return H3TimelinePlan.validatePlan(H3TimelinePlan.alignInput(this._collectInput())); }
+        catch (error) { return { valid: false, errors: [error.message], plan: null }; }
     },
 
     _collectInput() {
@@ -364,12 +528,21 @@ const TimelineModule = {
     },
 
     _validate(showToast) {
-        const result = H3TimelinePlan.validatePlan(this._collectInput());
+        const result = this._alignedResult();
         const status = document.getElementById('timelineValidation');
         const planStatus = document.getElementById('timelinePlanStatus');
         status.textContent = result.valid ? '时间线校验通过' : result.errors[0];
         status.className = `timeline-validation ${result.valid ? 'valid' : 'invalid'}`;
         planStatus.textContent = result.valid ? '计划有效' : '需要修改';
+        document.querySelectorAll('[data-aligned]').forEach((element, index) => {
+            const segment = result.plan?.segments[index];
+            element.textContent = segment ? `实际 ${segment.start.toFixed(3)}–${segment.end.toFixed(3)} 秒 · ${segment.end_frame - segment.start_frame} 帧${index ? ` · 重叠 ${segment.overlap_frames} 帧` : ''}` : '';
+        });
+        document.querySelectorAll('.timeline-segment-card').forEach((card, index) => {
+            const badge = card.querySelector('.timeline-overlap');
+            const segment = result.plan?.segments[index];
+            if (badge) badge.textContent = index ? (segment ? `实际重叠 ${(segment.overlap_frames / result.plan.fps).toFixed(3)} 秒` : '待校正') : '起始镜头';
+        });
         if (!result.valid && showToast) UI.toast(result.errors[0], 'error', 5000);
         return result;
     },
@@ -582,15 +755,7 @@ const TimelineModule = {
     },
 
     _onChange(rerenderTrack = true) {
-        if (rerenderTrack) this._renderTrack();
-        else {
-            this._renderTrack();
-            document.querySelectorAll('.timeline-segment-card').forEach((card, index) => {
-                const badge = card.querySelector('.timeline-overlap');
-                const overlap = index ? Math.max(0, this.segments[index - 1].end - this.segments[index].start) : 0;
-                badge.textContent = index ? `重叠 ${overlap.toFixed(2)} 秒` : '起始镜头';
-            });
-        }
+        this._renderTrack();
         this._validate(false);
         this._saveDraft();
     },
