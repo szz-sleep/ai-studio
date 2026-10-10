@@ -2167,6 +2167,464 @@ select.select-input option { background: var(--bg-surface); }
     display: none;
 }
 
+/* ============================================================
+   Agent 对话面板（云镜 Agent，默认首页）
+   ============================================================ */
+
+/* ---- 侧栏底部服务状态 ---- */
+.agent-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-muted);
+    padding: 2px 2px;
+    margin-top: 8px;
+}
+.agent-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--text-muted);
+}
+.agent-status.connecting .agent-status-dot {
+    background: var(--yellow-warn);
+    animation: agentPulse 1.2s ease-in-out infinite;
+}
+.agent-status.ok { color: var(--green-text); }
+.agent-status.ok .agent-status-dot { background: var(--green); }
+.agent-status.down { color: var(--red-text); }
+.agent-status.down .agent-status-dot { background: var(--red); }
+@keyframes agentPulse {
+    0%, 100% { opacity: 0.35; }
+    50% { opacity: 1; }
+}
+
+/* ---- 欢迎页特性胶囊 ---- */
+.agent-feature-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 18px;
+}
+.agent-feature-chip {
+    font-size: 12px;
+    color: var(--text-secondary);
+    background: var(--bg-pill);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 4px 12px;
+}
+
+/* ---- 输入区附件 ---- */
+.agent-attach-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 0 2px 8px;
+}
+.agent-attach-row:empty { display: none; }
+.agent-attach-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    background: var(--bg-pill);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 3px 10px;
+    max-width: 260px;
+}
+.agent-attach-chip .a-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.agent-attach-chip button {
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0 2px;
+}
+.agent-attach-chip button:hover { color: var(--red); }
+.agent-spin {
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--border-strong);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: agentSpin 0.8s linear infinite;
+    flex-shrink: 0;
+}
+@keyframes agentSpin { to { transform: rotate(360deg); } }
+
+.agent-attach-btn {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    border: 1px dashed var(--border-strong);
+    border-radius: 8px;
+    background: none;
+    color: var(--text-muted);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition);
+}
+.agent-attach-btn:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+
+/* ---- 工具调用卡片 ---- */
+.agent-tool-chip {
+    max-width: 712px;
+    margin: 0 auto 12px;
+    padding: 6px 14px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    background: var(--bg-surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    flex-wrap: wrap;
+    animation: msgFadeIn 0.3s ease;
+}
+.agent-tool-chip b { color: var(--text-primary); font-weight: 600; }
+.agent-tool-chip .args {
+    font-family: Consolas, Menlo, monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+}
+.agent-tool-chip .result {
+    width: 100%;
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 120px;
+    overflow-y: auto;
+    border-top: 1px dashed var(--border);
+    padding-top: 4px;
+    margin-top: 2px;
+}
+
+/* ---- 错误卡片 ---- */
+.agent-error-chip {
+    max-width: 712px;
+    margin: 0 auto 12px;
+    padding: 8px 14px;
+    font-size: 13px;
+    color: var(--red-text);
+    background: var(--red-soft);
+    border: 1px solid var(--red);
+    border-radius: 8px;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    animation: msgFadeIn 0.3s ease;
+}
+.agent-error-chip span { white-space: pre-wrap; word-break: break-word; }
+
+/* ---- 产物文件卡片 ---- */
+.agent-file-card {
+    max-width: 712px;
+    margin: 0 auto 12px;
+    padding: 10px 14px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    animation: msgFadeIn 0.3s ease;
+    box-shadow: var(--shadow-sm);
+}
+.agent-file-card .fc-icon {
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+}
+.agent-file-card .fc-info {
+    flex: 1;
+    min-width: 0;
+}
+.agent-file-card .fc-info b {
+    display: block;
+    font-size: 13px;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.agent-file-card .fc-info span {
+    font-size: 11px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: block;
+}
+.agent-file-card .fc-ops { display: flex; gap: 6px; flex-shrink: 0; }
+.fc-btn {
+    font-size: 12px;
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all var(--transition);
+}
+.fc-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    border-color: var(--border-hover);
+}
+
+/* ---- 打字光标 ---- */
+.agent-cursor {
+    display: inline-block;
+    color: var(--text-muted);
+    animation: agentPulse 0.9s ease-in-out infinite;
+    font-size: 14px;
+}
+
+/* ---- Markdown 渲染 ---- */
+.agent-md { line-height: 1.65; font-size: 14px; }
+.agent-md p { margin: 0 0 0.6em; }
+.agent-md p:last-child { margin-bottom: 0; }
+.agent-md h1, .agent-md h2, .agent-md h3, .agent-md h4 {
+    margin: 0.9em 0 0.4em;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.35;
+}
+.agent-md h1 { font-size: 1.25em; }
+.agent-md h2 { font-size: 1.15em; }
+.agent-md h3, .agent-md h4 { font-size: 1.05em; }
+.agent-md h1:first-child, .agent-md h2:first-child, .agent-md h3:first-child { margin-top: 0; }
+.agent-md ul, .agent-md ol { margin: 0.4em 0 0.6em; padding-left: 1.5em; }
+.agent-md li { margin: 0.15em 0; }
+.agent-md code {
+    font-family: Consolas, Menlo, monospace;
+    font-size: 0.9em;
+    background: var(--bg-pill);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 5px;
+    word-break: break-word;
+}
+.agent-md pre {
+    background: var(--bg-surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    overflow-x: auto;
+    margin: 0.5em 0 0.7em;
+}
+.agent-md pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 12px;
+    line-height: 1.5;
+}
+.agent-md blockquote {
+    border-left: 3px solid var(--border-strong);
+    padding-left: 10px;
+    margin: 0.5em 0;
+    color: var(--text-secondary);
+}
+.agent-md table {
+    border-collapse: collapse;
+    margin: 0.5em 0;
+    font-size: 13px;
+    width: 100%;
+    display: block;
+    overflow-x: auto;
+}
+.agent-md th, .agent-md td {
+    border: 1px solid var(--border);
+    padding: 5px 10px;
+    text-align: left;
+}
+.agent-md th { background: var(--bg-surface-2); font-weight: 600; }
+.agent-md a { color: var(--blue-info); text-decoration: none; }
+.agent-md a:hover { text-decoration: underline; }
+.agent-md hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 0.8em 0;
+}
+.agent-md img { max-width: 100%; border-radius: 8px; }
+/* 思考过程折叠块 */
+.agent-md details.agent-think {
+    background: var(--bg-pill);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 10px;
+    margin: 0.4em 0 0.6em;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+.agent-md details.agent-think summary {
+    cursor: pointer;
+    user-select: none;
+    font-weight: 500;
+    color: var(--text-muted);
+}
+.agent-md details.agent-think[open] summary { margin-bottom: 6px; }
+
+/* ---- 弹窗（对话框 / 文件预览） ---- */
+.agent-mask {
+    position: fixed;
+    inset: 0;
+    background: var(--bg-modal-overlay);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: agentFadeIn 0.15s ease;
+}
+@keyframes agentFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+.agent-dialog {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    width: 380px;
+    max-width: 90vw;
+    padding: 20px;
+}
+.agent-dialog-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 14px;
+}
+.agent-dialog-input {
+    width: 100%;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 14px;
+    color: var(--text-primary);
+    outline: none;
+    transition: border-color var(--transition);
+}
+.agent-dialog-input:focus { border-color: var(--accent); }
+.agent-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
+}
+.agent-dialog-btn {
+    font-size: 13px;
+    padding: 7px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: all var(--transition);
+}
+.agent-dialog-btn.ghost {
+    background: none;
+    color: var(--text-secondary);
+}
+.agent-dialog-btn.ghost:hover { background: var(--bg-hover); }
+.agent-dialog-btn.primary {
+    background: var(--accent);
+    color: var(--text-on-accent);
+    border-color: var(--accent);
+}
+.agent-dialog-btn.primary:hover { background: var(--accent-hover); }
+
+/* 文件预览弹窗 */
+.agent-fileview {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    width: 820px;
+    max-width: 92vw;
+    height: 80vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.agent-fileview .fv-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+.agent-fileview .fv-name {
+    font-size: 14px;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.agent-fileview .fv-ops { display: flex; gap: 6px; flex-shrink: 0; }
+.agent-fileview .fv-body {
+    flex: 1;
+    overflow: auto;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+}
+.agent-fileview .fv-loading {
+    color: var(--text-muted);
+    font-size: 13px;
+    text-align: center;
+    padding: 30px 0;
+}
+.agent-fileview .fv-img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    margin: 0 auto;
+    border-radius: 8px;
+}
+.agent-fileview .fv-video {
+    max-width: 100%;
+    max-height: 100%;
+    margin: 0 auto;
+    border-radius: 8px;
+}
+.agent-fileview .fv-text {
+    font-family: Consolas, Menlo, monospace;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.agent-fileview .fv-md { max-width: 760px; margin: 0 auto; width: 100%; }
 /* select option 在深色模式下 */
 select option {
     background: var(--bg-surface);

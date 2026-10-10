@@ -437,17 +437,25 @@ const App = {
                 document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
                 btn.classList.add('active');
                 document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
-                // 故事模式下隐藏底部历史记录和日志面板
-                const isStory = btn.dataset.tab === 'story';
+                if (btn.dataset.tab === 'timeline') {
+                    requestAnimationFrame(() => {
+                        document.querySelectorAll('#timelineGlobalPrompt, #tab-timeline textarea[data-field="prompt"]')
+                            .forEach(input => TimelineModule._resizePrompt(input));
+                    });
+                }
+                // 对话类页面（故事 / Agent）隐藏底部历史记录和日志面板
+                const isChat = btn.dataset.tab === 'agent';
                 const histSection = document.querySelector('.history-section');
                 const logPanel = document.getElementById('logPanel');
-                if (histSection) histSection.style.display = isStory ? 'none' : '';
-                if (logPanel) logPanel.style.display = isStory ? 'none' : '';
+                if (histSection) histSection.style.display = isChat ? 'none' : '';
+                if (logPanel) logPanel.style.display = isChat ? 'none' : '';
             });
         });
-        // 初始：默认故事模式隐藏历史记录
+        // 初始：默认 Agent 对话页隐藏历史记录和日志面板
         const _histInit = document.querySelector('.history-section');
         if (_histInit) _histInit.style.display = 'none';
+        const _logInit = document.getElementById('logPanel');
+        if (_logInit) _logInit.style.display = 'none';
 
         // 清空历史
 
@@ -498,8 +506,12 @@ const App = {
         VideoModule.initI2V();
         TimelineModule.init();
         RedrawModule.init();
-        StoryModule.init();
         History.render();
+
+        // 初始化 Agent 对话模块
+        if (typeof AgentModule !== 'undefined') {
+            AgentModule.init();
+        }
 
         // 初始化素材库
         if (typeof MaterialLib !== 'undefined') {
@@ -699,9 +711,9 @@ const App = {
         const t2vSel = document.getElementById('t2vModel');
         const i2vSel = document.getElementById('i2vModel');
         const i2iSel = document.getElementById('i2iModel');
-        const storySel = document.getElementById('storyModel');
+        const agentSel = document.getElementById('agentModel');
 
-        [t2iSel, t2vSel, i2vSel, i2iSel, storySel].forEach(sel => {
+        [t2iSel, t2vSel, i2vSel, i2iSel, agentSel].forEach(sel => {
             if (sel) sel.innerHTML = '<option value="">加载中...</option>';
         });
 
@@ -759,16 +771,16 @@ const App = {
             if (t2vSel) t2vSel.dispatchEvent(new Event('change'));
             if (i2vSel) i2vSel.dispatchEvent(new Event('change'));
 
-            // 文本模型（故事创作用）
-            if (storySel) {
-                storySel.innerHTML = '';
+            // 文本模型（Agent 对话用）
+            if (agentSel) {
+                agentSel.innerHTML = '';
                 // 火山引擎：只保留已验证可用的聊天模型
                 if (classified.text.length > 0) {
                     classified.text.forEach(m => {
                         const opt = document.createElement('option');
                         opt.value = m.id;
                         opt.textContent = m._label ? `${m._label} (${m.id})` : m.id;
-                        storySel.appendChild(opt);
+                        agentSel.appendChild(opt);
                     });
                 } else {
                     // 没有识别到文本模型时，把所有模型都放进去作为备选
@@ -776,12 +788,20 @@ const App = {
                         const opt = document.createElement('option');
                         opt.value = m.id;
                         opt.textContent = m.id;
-                        storySel.appendChild(opt);
+                        agentSel.appendChild(opt);
                     });
-                    if (storySel.children.length === 0) {
-                        storySel.innerHTML = '<option value="">无可用模型</option>';
+                    if (agentSel.children.length === 0) {
+                        agentSel.innerHTML = '<option value="">无可用模型</option>';
                     }
                 }
+                // 恢复上次选择的模型
+                const savedModel = localStorage.getItem('agentModel');
+                if (savedModel && agentSel.querySelector(`option[value="${CSS.escape(savedModel)}"]`)) {
+                    agentSel.value = savedModel;
+                }
+                agentSel.addEventListener('change', () => {
+                    localStorage.setItem('agentModel', agentSel.value);
+                });
             }
 
             // 把所有模型（含 other）追加到所有下拉，避免漏掉自定义/未识别模型
@@ -816,6 +836,17 @@ const App = {
                 });
                 t2vSel.appendChild(grp3);
                 i2vSel.appendChild(grp3.cloneNode(true));
+
+                // Agent 对话下拉也追加未识别模型，保证所有模型可见
+                const grp4 = document.createElement('optgroup');
+                grp4.label = '其他模型（部分可能不支持）';
+                classified.other.forEach(m => {
+                    const opt = document.createElement('option');
+                    opt.value = m.id;
+                    opt.textContent = m.id;
+                    grp4.appendChild(opt);
+                });
+                agentSel.appendChild(grp4);
             }
 
         } catch (err) {
@@ -827,7 +858,7 @@ const App = {
             } else {
                 UI.toast(err.message, 'error');
             }
-            [t2iSel, t2vSel, i2vSel, i2iSel, storySel].forEach(sel => {
+            [t2iSel, t2vSel, i2vSel, i2iSel, agentSel].forEach(sel => {
                 if (sel) sel.innerHTML = '<option value="">加载失败</option>';
             });
         }

@@ -360,6 +360,15 @@
       ]
     },
     {
+      "match": "minimax-h3",
+      "type": "text",
+      "label": "MiniMax H3",
+      "tags": [
+        "文本对话",
+        "MiniMax"
+      ]
+    },
+    {
       "match": "minimax",
       "type": "video",
       "label": "MiniMax 海螺",

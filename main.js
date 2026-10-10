@@ -161,6 +161,90 @@ function cleanupTmpDir(dir) {
   fsp.rm(dir, { recursive: true, force: true }).catch(() => { /* 忽略清理失败 */ });
 }
 
+// ============ 云镜 Agent 后端（my-agent FastAPI，127.0.0.1:8765） ============
+// Agent 对话标签页依赖这个本地 Python 服务；随应用自动拉起，退出时关闭。
+const AGENT_DIR = 'C:\\Users\\Administrator\\Desktop\\AGENT\\my-agent';
+const AGENT_PYTHON = 'C:\\Users\\Administrator\\.workbuddy\\binaries\\python\\envs\\default\\Scripts\\python.exe';
+const AGENT_PORT = 8765;
+let agentChild = null; // 仅在由本应用拉起时才持有引用，退出时才会去关
+
+/** 探测 Agent 后端是否已在运行 */
+function agentServerReachable(timeoutMs = 800) {
+  return new Promise((resolve) => {
+    const req = http.get({ host: '127.0.0.1', port: AGENT_PORT, path: '/api/config', timeout: timeoutMs }, (res) => {
+      res.resume();
+      resolve(!!res.statusCode && res.statusCode < 500);
+    });
+    req.on('timeout', () => { req.destroy(); resolve(false); });
+    req.on('error', () => resolve(false));
+  });
+}
+
+/** 用 Chromium 自带的代理解析读取系统代理（httpx 不读系统代理，需要显式传给后端进程） */
+async function detectSystemProxy() {
+  try {
+    const { session } = require('electron');
+    const info = await session.defaultSession.resolveProxy('https://openai.zhrccp.com');
+    // PAC 格式："PROXY 127.0.0.1:10808; DIRECT" / "DIRECT" / "SOCKS ..."
+    const first = info.split(';').map(s => s.trim())
+      .find(s => /^(PROXY|HTTPS)\s/i.test(s));
+    if (!first) return null;
+    const addr = first.replace(/^(PROXY|HTTPS)\s+/i, '').trim();
+    if (!addr || /^socks/i.test(addr)) return null;
+    return 'http://' + addr;
+  } catch { return null; }
+}
+
+/** 应用启动时拉起 Agent 后端（已在运行则跳过，避免端口冲突） */
+async function startAgentBackend() {
+  try {
+    if (await agentServerReachable()) {
+      console.log('[agent] 后端已在运行，跳过自启动');
+      return;
+    }
+    if (!fs.existsSync(path.join(AGENT_DIR, 'server.py'))) {
+      console.warn('[agent] 未找到 ' + AGENT_DIR + '\\server.py，Agent 功能不可用');
+      return;
+    }
+    if (!fs.existsSync(AGENT_PYTHON)) {
+      console.warn('[agent] 未找到 Python 解释器 ' + AGENT_PYTHON + '，Agent 功能不可用');
+      return;
+    }
+    const env = { ...process.env };
+    // 显式注入系统代理（httpx 只认环境变量），本机回环不走代理
+    const proxy = await detectSystemProxy();
+    if (proxy) {
+      env.HTTP_PROXY = proxy;
+      env.HTTPS_PROXY = proxy;
+      env.NO_PROXY = 'localhost,127.0.0.1';
+      console.log('[agent] 已注入系统代理:', proxy);
+    } else {
+      console.log('[agent] 未检测到系统代理，后端将直连');
+    }
+    agentChild = spawn(
+      AGENT_PYTHON,
+      ['-m', 'uvicorn', 'server:app', '--host', '127.0.0.1', '--port', String(AGENT_PORT)],
+      { cwd: AGENT_DIR, windowsHide: true, stdio: 'ignore', env }
+    );
+    agentChild.on('error', (e) => console.warn('[agent] 后端启动失败:', e.message));
+    agentChild.on('close', (code) => {
+      console.log('[agent] 后端进程退出 (code=' + code + ')');
+      if (agentChild && agentChild.exitCode !== null) agentChild = null;
+    });
+    console.log('[agent] 已拉起 Agent 后端 (uvicorn @127.0.0.1:' + AGENT_PORT + ')');
+  } catch (e) {
+    console.warn('[agent] 后端启动异常:', e.message);
+  }
+}
+
+/** 退出前关闭由本应用拉起的 Agent 后端 */
+function stopAgentBackend() {
+  if (!agentChild) return;
+  try { agentChild.kill(); } catch { /* 进程可能已退出 */ }
+  agentChild = null;
+  console.log('[agent] 已关闭 Agent 后端');
+}
+
 // 单实例锁 — 防止多开
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
@@ -272,6 +356,9 @@ const menuTemplate = [
 ];
 
 app.whenReady().then(() => {
+  // 拉起 Agent 对话后端（异步，不阻塞窗口创建）
+  startAgentBackend();
+
   ipcMain.handle('history:save-video-bytes', async (event, { bytes, filename }) => {
     try {
       const data = Buffer.from(bytes);
@@ -488,3 +575,5 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
+
+app.on('before-quit', stopAgentBackend);
