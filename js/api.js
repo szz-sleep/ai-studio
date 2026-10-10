@@ -389,16 +389,22 @@ const API = {
     },
 
     async deleteTimelineAsset(id, { signal } = {}) {
+        const headers = this._headers();
+        delete headers['Content-Type'];
         const response = await fetch(this._url(`/v1/video/timeline/assets/${encodeURIComponent(id)}`), {
-            method: 'DELETE', headers: this._headers(), signal
+            method: 'DELETE', headers, signal
         });
         if (!response.ok) {
             const body = await response.json().catch(() => ({}));
-            throw new Error(body.error?.message || `删除 H3 素材失败 (${response.status})`);
+            throw new Error(body.error?.message || body.message || `删除 H3 素材失败 (${response.status})`);
         }
     },
 
     async uploadTimelineAsset(file, onProgress, { signal } = {}) {
+        // Small images have repeatedly timed out behind the current tunnel's whole-file route.
+        if (file.type.startsWith('image/') && file.size <= 8 * 1024 * 1024) {
+            return this._uploadTimelineAssetChunks(file, onProgress, { signal });
+        }
         try {
             return await new Promise((resolve, reject) => {
                 const data = new FormData();
@@ -418,7 +424,12 @@ const API = {
                 request.onload = () => {
                     let response;
                     try { response = JSON.parse(request.responseText); }
-                    catch { reject(new Error(`H3 素材上传响应无效 (${request.status})`)); return; }
+                    catch {
+                        const error = new Error(`H3 素材上传响应无效 (${request.status})`);
+                        error.status = request.status;
+                        reject(error);
+                        return;
+                    }
                     if (request.status < 200 || request.status >= 300) {
                         const error = new Error(response.error?.message || `H3 素材上传失败 (${request.status})`);
                         error.status = request.status;
@@ -428,7 +439,7 @@ const API = {
                 request.send(data);
             });
         } catch (error) {
-            if (![404, 405, 413].includes(error.status)) throw error;
+            if (![404, 405, 413, 524].includes(error.status)) throw error;
             onProgress?.(0);
             return this._uploadTimelineAssetChunks(file, onProgress, { signal });
         }
@@ -496,7 +507,7 @@ const API = {
             onProgress?.(Math.min(99, Math.round((offset + chunk.size) / file.size * 100)));
         }
         aborted();
-        onProgress?.(100);
+        onProgress?.(99);
         const complete = await fetch(this._url(`${path}/${encodeURIComponent(uploadId)}/complete`), {
             method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: '{}', signal
         });
@@ -504,7 +515,9 @@ const API = {
             const error = await complete.json().catch(() => ({}));
             throw new Error(error.error?.message || `合并上传失败 (${complete.status})`);
         }
-        return complete.json();
+        const asset = await complete.json();
+        onProgress?.(100);
+        return asset;
     },
 
     /** 查询 H3 长视频时间线任务。 */

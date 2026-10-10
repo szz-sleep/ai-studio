@@ -55,6 +55,9 @@
       "category": "public.app-category.productivity",
       "artifactName": "AI-Studio-${version}-${arch}.${ext}",
       "files": [
+        "!history",
+        "!history/**",
+        "!history/**/*",
         "!node_modules/@ffmpeg-installer/win32-x64/**",
         "!node_modules/@ffmpeg-installer/linux-x64/**"
       ]
@@ -85,6 +88,9 @@
       ],
       "icon": "assets/icon.ico",
       "files": [
+        "!history",
+        "!history/**",
+        "!history/**/*",
         "!node_modules/@ffmpeg-installer/darwin-x64/**",
         "!node_modules/@ffmpeg-installer/linux-x64/**"
       ]
