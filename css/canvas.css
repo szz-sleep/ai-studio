@@ -11,6 +11,11 @@
 }
 #tab-canvas.active {
     display: flex;
+    flex-direction: column;
+    /* 面板默认无高度约束，flex:1 的画布区会塌缩为 0，
+       与 Agent 页 .story-creation-container 同款：用视口高度撑起 */
+    height: calc(100vh - 140px);
+    min-height: 520px;
 }
 
 /* ===== 工具栏 ===== */
