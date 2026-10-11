@@ -38,9 +38,10 @@ const MaterialLib = {
         }
     },
 
-    /** 保存到 localStorage */
+    /** 保存到 localStorage（并广播缓存变化，画布等外部模块据此刷新审核状态） */
     _save(list) {
         localStorage.setItem(this.STORAGE_KEY, JSON.stringify(list));
+        try { document.dispatchEvent(new CustomEvent('aistudio-material-cache')); } catch {}
     },
 
     /**

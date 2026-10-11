@@ -11,11 +11,15 @@
  */
 
 const CanvasModule = {
-    STORAGE_KEY: 'aistudio_canvas_v1',
+    STORAGE_KEY: 'aistudio_canvas_v1',          // 旧版单空间数据（仅迁移用）
+    PROJECTS_KEY: 'aistudio_canvas_projects',   // 项目索引 [{id,name,createdAt,updatedAt}]
+    PROJECT_CURRENT_KEY: 'aistudio_canvas_current',
+    PROJECT_POLL_TIMER: null,
 
     // ===== 状态 =====
     nodes: [],
     edges: [],
+    currentProjectId: null,    // 当前打开的项目 id
     viewport: { x: 0, y: 0, k: 1 },
     selection: new Set(),      // 选中的节点 id
     selectedEdge: null,        // 选中的连线 id
@@ -42,9 +46,10 @@ const CanvasModule = {
     _clipboard: [],            // Ctrl+C 复制的节点快照
 
     // 允许的连线：from 类型 → 允许的 to 类型
+    // image → material：图片入库通道（素材节点自动上传火山素材库并跟踪审核状态）
     _EDGE_RULES: {
         text: ['video', 'image'],
-        image: ['video', 'image'],
+        image: ['video', 'image', 'material'],
         material: ['video', 'image'],
     },
 
@@ -85,7 +90,11 @@ const CanvasModule = {
         this._bindContextMenu();
         this._bindMinimap();
         this._bindCanvasSettings();
+        this._bindProjectPanel();
+        // 素材库缓存变化（审核轮询/手动同步）→ 刷新画布内素材状态徽标
+        document.addEventListener('aistudio-material-cache', () => this._refreshMaterialBadges());
         this.renderAll();
+        this._renderProjects();
 
         Logger.info('[画布] 初始化完成');
     },
@@ -95,6 +104,7 @@ const CanvasModule = {
         // DOM 已就绪，无需特殊处理；预留给未来按需刷新
         this.renderEdges();
         this._minimapSchedule();
+        this._renderProjects();
     },
 
     // ================================================================
@@ -299,57 +309,290 @@ const CanvasModule = {
         }
     },
 
-    // ===== 持久化 =====
+    // ===== 持久化（项目库）=====
+
+    /** 项目索引：[{ id, name, createdAt, updatedAt }] */
+    _projects() {
+        try { return JSON.parse(localStorage.getItem(this.PROJECTS_KEY) || '[]'); }
+        catch (e) { return []; }
+    },
+    _saveProjects(list) {
+        localStorage.setItem(this.PROJECTS_KEY, JSON.stringify(list));
+    },
+    _projectKey(id) { return 'aistudio_canvas_project_' + id; },
+    _newProjectId() { return 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); },
+
+    /** 立即落盘当前项目（绕过防抖；切换项目/刷新前调用） */
+    _saveNow() {
+        clearTimeout(this._saveTimer);
+        try {
+            const id = this.currentProjectId;
+            if (!id) return;
+            localStorage.setItem(this._projectKey(id), JSON.stringify({
+                nodes: this.nodes,
+                edges: this.edges,
+                viewport: this.viewport,
+            }));
+            const list = this._projects();
+            const p = list.find(x => x.id === id);
+            if (p) {
+                p.updatedAt = Date.now();
+                p.nodeCount = this.nodes.length;
+                this._saveProjects(list);
+            }
+        } catch (e) {
+            if (!this._quotaWarned) {
+                this._quotaWarned = true;
+                Logger.warn('[画布] 画布保存失败（本地存储空间不足），图片过多时请及时清理');
+                UI.toast('画布自动保存失败：本地存储空间不足，图片节点过多时建议同步素材库后删除大图', 'warn', 6000);
+            }
+        }
+    },
 
     save() {
         clearTimeout(this._saveTimer);
-        this._saveTimer = setTimeout(() => {
-            try {
-                localStorage.setItem(this.STORAGE_KEY, JSON.stringify({
-                    nodes: this.nodes,
-                    edges: this.edges,
-                    viewport: this.viewport,
-                }));
-            } catch (e) {
-                if (!this._quotaWarned) {
-                    this._quotaWarned = true;
-                    Logger.warn('[画布] 画布保存失败（本地存储空间不足），图片过多时请及时清理');
-                    UI.toast('画布自动保存失败：本地存储空间不足，图片节点过多时建议同步素材库后删除大图', 'warn', 6000);
-                }
+        this._saveTimer = setTimeout(() => this._saveNow(), 300);
+    },
+
+    /** 把一份数据套用进当前画布（含中断状态清理、id 计数恢复） */
+    _applyLoadedState(s) {
+        this.nodes = Array.isArray(s.nodes) ? s.nodes : [];
+        this.edges = Array.isArray(s.edges) ? s.edges : [];
+        if (s.viewport && typeof s.viewport.k === 'number') this.viewport = s.viewport;
+        // 恢复生成中节点为 idle（轮询/长请求不跨会话恢复）
+        this.nodes.forEach(n => {
+            if (n.type === 'video' && (n.data.status === 'generating' || n.data.status === 'uploading')) {
+                n.data.status = 'error';
+                n.data.error = '上次会话中断，请重新生成';
             }
-        }, 300);
+            if (n.type === 'image' && (n.data.status === 'generating' || n.data.status === 'uploading')) {
+                n.data.status = 'idle';
+                n.data.error = '';
+            }
+        });
+        let maxId = 0;
+        this.nodes.concat(this.edges).forEach(x => {
+            const m = String(x.id || '').match(/_(\w+)$/);
+            if (m) maxId++;
+        });
+        this._idCounter = maxId + 1;
     },
 
     _restore() {
         try {
-            const raw = localStorage.getItem(this.STORAGE_KEY);
-            if (!raw) return;
-            const s = JSON.parse(raw);
-            this.nodes = Array.isArray(s.nodes) ? s.nodes : [];
-            this.edges = Array.isArray(s.edges) ? s.edges : [];
-            if (s.viewport && typeof s.viewport.k === 'number') this.viewport = s.viewport;
-            // 恢复生成中节点为 idle（轮询/长请求不跨会话恢复）
-            this.nodes.forEach(n => {
-                if (n.type === 'video' && (n.data.status === 'generating' || n.data.status === 'uploading')) {
-                    n.data.status = 'error';
-                    n.data.error = '上次会话中断，请重新生成';
-                }
-                if (n.type === 'image' && (n.data.status === 'generating' || n.data.status === 'uploading')) {
-                    n.data.status = 'idle';
-                    n.data.error = '';
-                }
-            });
-            let maxId = 0;
-            this.nodes.concat(this.edges).forEach(x => {
-                const m = String(x.id || '').match(/_(\w+)$/);
-                if (m) maxId++;
-            });
-            this._idCounter = maxId + 1;
+            let projects = this._projects();
+            if (projects.length === 0) {
+                // 迁移：旧版单空间数据 → 「默认项目」
+                let legacy = null;
+                const raw = localStorage.getItem(this.STORAGE_KEY);
+                if (raw) { try { legacy = JSON.parse(raw); } catch (e) { legacy = null; } }
+                const id = this._newProjectId();
+                projects = [{ id, name: '默认项目', createdAt: Date.now(), updatedAt: Date.now() }];
+                localStorage.setItem(this._projectKey(id), JSON.stringify(legacy || { nodes: [], edges: [], viewport: { x: 0, y: 0, k: 1 } }));
+                this._saveProjects(projects);
+            }
+            const curId = localStorage.getItem(this.PROJECT_CURRENT_KEY);
+            const current = projects.find(p => p.id === curId) || projects[0];
+            this.currentProjectId = current.id;
+            localStorage.setItem(this.PROJECT_CURRENT_KEY, current.id);
+            const dataRaw = localStorage.getItem(this._projectKey(current.id));
+            this._applyLoadedState(dataRaw ? JSON.parse(dataRaw) : { nodes: [], edges: [] });
         } catch (e) {
             Logger.warn('[画布] 恢复画布失败: ' + e.message);
             this.nodes = [];
             this.edges = [];
         }
+    },
+
+    // ===== 项目库管理 =====
+
+    /** 切换项目：先落盘当前，再载入目标；清空撤销栈与选区 */
+    _loadProject(id) {
+        if (!this._projects().find(p => p.id === id)) return;
+        if (id === this.currentProjectId) { this._renderProjects(); return; }
+        this._saveNow();
+        const dataRaw = localStorage.getItem(this._projectKey(id));
+        try {
+            this._applyLoadedState(dataRaw ? JSON.parse(dataRaw) : { nodes: [], edges: [] });
+        } catch (e) {
+            Logger.warn('[画布] 项目数据损坏，已重置: ' + e.message);
+            this._applyLoadedState({ nodes: [], edges: [] });
+        }
+        this.currentProjectId = id;
+        localStorage.setItem(this.PROJECT_CURRENT_KEY, id);
+        this._undoStack.length = 0;
+        this._redoStack.length = 0;
+        this.selection.clear();
+        this.selectedEdge = null;
+        this._clearEdgeSelect();
+        this.renderAll();
+        this._renderProjects();
+        Logger.info(`[画布] 切换项目: ${id}`);
+    },
+
+    _createProject(name) {
+        const list = this._projects();
+        const used = new Set(list.map(p => p.name));
+        if (!name) {
+            let i = list.length + 1;
+            while (used.has(`项目 ${i}`)) i++;
+            name = `项目 ${i}`;
+        }
+        const p = { id: this._newProjectId(), name, createdAt: Date.now(), updatedAt: Date.now(), nodeCount: 0 };
+        list.unshift(p);
+        localStorage.setItem(this._projectKey(p.id), JSON.stringify({ nodes: [], edges: [], viewport: { x: 0, y: 0, k: 1 } }));
+        this._saveProjects(list);
+        this._loadProject(p.id);
+        return p;
+    },
+
+    _deleteProject(id) {
+        const list = this._projects();
+        const p = list.find(x => x.id === id);
+        if (!p) return;
+        const next = list.filter(x => x.id !== id);
+        localStorage.removeItem(this._projectKey(id));
+        if (next.length === 0) {
+            // 最后一个项目：清空画布而不是删掉
+            next.push({ id: this._newProjectId(), name: '默认项目', createdAt: Date.now(), updatedAt: Date.now(), nodeCount: 0 });
+            localStorage.setItem(this._projectKey(next[0].id), JSON.stringify({ nodes: [], edges: [], viewport: { x: 0, y: 0, k: 1 } }));
+        }
+        this._saveProjects(next);
+        if (id === this.currentProjectId) {
+            this._loadProject(next[0].id);
+        } else {
+            this._renderProjects();
+        }
+    },
+
+    _duplicateProject(id) {
+        const list = this._projects();
+        const src = list.find(x => x.id === id);
+        if (!src) return;
+        const dataRaw = localStorage.getItem(this._projectKey(id));
+        const copy = {
+            id: this._newProjectId(),
+            name: src.name + ' 副本',
+            createdAt: Date.now(), updatedAt: Date.now(),
+            nodeCount: src.nodeCount || 0,
+        };
+        localStorage.setItem(this._projectKey(copy.id), dataRaw || JSON.stringify({ nodes: [], edges: [] }));
+        const idx = list.findIndex(x => x.id === id);
+        list.splice(idx + 1, 0, copy);
+        this._saveProjects(list);
+        this._renderProjects();
+    },
+
+    _renameProject(id, name) {
+        const list = this._projects();
+        const p = list.find(x => x.id === id);
+        if (!p) return;
+        p.name = (name || '').trim() || p.name;
+        p.updatedAt = Date.now();
+        this._saveProjects(list);
+        this._renderProjects();
+    },
+
+    // ===== 项目库面板（右侧悬浮卡片）=====
+
+    _bindProjectPanel() {
+        const wrap = document.getElementById('canvasProjects');
+        if (!wrap) return;
+        this._projectsWrap = wrap;
+        const panel = document.getElementById('canvasProjectsPanel');
+        const handle = document.getElementById('canvasProjectsHandle');
+
+        handle?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            panel.classList.toggle('hidden');
+            if (!panel.classList.contains('hidden')) this._renderProjects();
+        });
+        panel?.addEventListener('click', (e) => e.stopPropagation());
+        // 点击画布其他区域收起面板
+        document.addEventListener('mousedown', (e) => {
+            if (wrap.contains(e.target)) return;
+            panel?.classList.add('hidden');
+        });
+
+        document.getElementById('canvasProjectNewBtn')?.addEventListener('click', () => {
+            this._saveNow();
+            const p = this._createProject();
+            UI.toast(`已创建「${p.name}」`, 'success');
+        });
+    },
+
+    _renderProjects() {
+        const list = document.getElementById('canvasProjectsList');
+        if (!list) return;
+        const projects = this._projects().slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+        if (projects.length === 0) {
+            list.innerHTML = '<div class="canvas-projects-empty">暂无项目</div>';
+            return;
+        }
+        list.innerHTML = '';
+        projects.forEach(p => {
+            const item = document.createElement('div');
+            item.className = 'canvas-project-item' + (p.id === this.currentProjectId ? ' active' : '');
+            item.dataset.id = p.id;
+
+            const info = document.createElement('div');
+            info.className = 'canvas-project-info';
+            const nameEl = document.createElement('div');
+            nameEl.className = 'canvas-project-name';
+            nameEl.textContent = p.name;
+            nameEl.title = '双击重命名';
+            info.appendChild(nameEl);
+            const meta = document.createElement('div');
+            meta.className = 'canvas-project-meta';
+            const d = new Date(p.updatedAt || p.createdAt || Date.now());
+            const timeStr = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+            meta.textContent = `${timeStr}${typeof p.nodeCount === 'number' ? ` · ${p.nodeCount} 节点` : ''}`;
+            info.appendChild(meta);
+            item.appendChild(info);
+
+            // 双击行内重命名
+            nameEl.addEventListener('dblclick', (e) => {
+                e.stopPropagation();
+                if (info.querySelector('input')) return;
+                const input = document.createElement('input');
+                input.className = 'canvas-project-rename';
+                input.value = p.name;
+                nameEl.replaceWith(input);
+                input.focus();
+                input.select();
+                const commit = () => this._renameProject(p.id, input.value);
+                input.addEventListener('blur', commit);
+                input.addEventListener('keydown', (ev) => {
+                    ev.stopPropagation();
+                    if (ev.key === 'Enter') input.blur();
+                    if (ev.key === 'Escape') { input.removeEventListener('blur', commit); this._renderProjects(); }
+                });
+            });
+
+            const actions = document.createElement('div');
+            actions.className = 'canvas-project-actions';
+            const mkBtn = (title, svg, fn) => {
+                const b = document.createElement('button');
+                b.className = 'canvas-project-btn';
+                b.title = title;
+                b.innerHTML = svg;
+                b.addEventListener('click', (e) => { e.stopPropagation(); fn(); });
+                return b;
+            };
+            actions.appendChild(mkBtn('复制项目', '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+                () => this._duplicateProject(p.id)));
+            actions.appendChild(mkBtn('删除项目', '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+                async () => {
+                    if (await UI.confirm(`确定删除项目「${p.name}」吗？\n其中的画布内容将一并删除。`, { danger: true })) {
+                        this._deleteProject(p.id);
+                    }
+                }));
+            item.appendChild(actions);
+
+            // 单击打开项目
+            item.addEventListener('click', () => this._loadProject(p.id));
+            list.appendChild(item);
+        });
     },
 
     // ================================================================
@@ -574,13 +817,15 @@ const CanvasModule = {
             const sub = el.querySelector('.cnode-sub');
             if (sub && sub.textContent !== (n.data.name || '')) sub.textContent = n.data.name || '';
         }
-        // 素材徽标
+        // 素材徽标（含火山审核状态）
         if (n.type === 'image' || n.type === 'material') {
             const badge = el.querySelector('.cnode-lib-badge');
             if (badge) {
-                const has = n.type === 'material' ? !!n.data.assetId : !!n.data.assetId;
-                badge.textContent = has ? '已入库' : (n.type === 'material' ? '未入库' : '未入库');
-                badge.classList.toggle('ok', has);
+                const info = this._libBadgeInfo(n);
+                badge.textContent = info.text;
+                badge.classList.toggle('ok', info.ok);
+                badge.classList.toggle('bad', info.bad);
+                badge.classList.toggle('busy', info.busy);
             }
         }
     },
@@ -1424,8 +1669,15 @@ const CanvasModule = {
                         const world = this._screenToWorld(e.clientX, e.clientY);
                         const titles = { text: '提示词', image: '图片', material: '素材库', video: '视频' };
                         this._showContextMenu(e.clientX, e.clientY, allowed.map(t => ({
-                            label: `新建「${titles[t]}」节点并连线`,
+                            label: t === 'material' && from.type === 'image'
+                                ? '新建「素材库」节点并入库'
+                                : `新建「${titles[t]}」节点并连线`,
                             action: () => {
+                                if (t === 'material' && from.type === 'image') {
+                                    // 图片入库通道：图片节点保留原图，素材节点承接上传与审核状态
+                                    this._materializeImage(fromId, world.x, world.y - 20);
+                                    return;
+                                }
                                 const n = this.addNode(t, world.x, world.y - 20);
                                 this._connect(fromId, n.id);
                             },
@@ -1700,6 +1952,87 @@ const CanvasModule = {
         }
     },
 
+    /** 从 MaterialLib 本地缓存按 assetId 反查素材记录（含审核状态） */
+    _materialRecord(assetId) {
+        if (!assetId || typeof MaterialLib === 'undefined') return null;
+        try { return MaterialLib.getAll().find(i => i.id === assetId) || null; }
+        catch (e) { return null; }
+    },
+
+    /** 节点入库徽标状态：{ text, ok, bad, busy } */
+    _libBadgeInfo(n) {
+        const assetId = n.data.assetId;
+        if (!VideoModule._validAssetId(assetId)) {
+            if (n.type === 'material' && n.data.uploading) return { text: '上传中', ok: false, bad: false, busy: true };
+            return { text: '未入库', ok: false, bad: false, busy: false };
+        }
+        const rec = this._materialRecord(assetId);
+        const status = rec ? rec.status : 'active';
+        if (status === 'active') return { text: '审核通过', ok: true, bad: false, busy: false };
+        if (status === 'processing' || status === 'pending') return { text: '审核中', ok: false, bad: false, busy: true };
+        if (status === 'failed' || status === 'error') return { text: '审核失败', ok: false, bad: true, busy: false };
+        return { text: '已入库', ok: true, bad: false, busy: false };
+    },
+
+    /**
+     * 图片节点 → 素材库节点（入库通道）：
+     *  - 图片节点保留原图，新建素材节点承接上传与审核状态
+     *  - 图片已在库（有有效 assetId）→ 素材节点直接继承引用，秒完成
+     *  - 否则自动走 _syncImageToLib 上传（uguu 托管 → 火山素材库 → 轮询审核）
+     */
+    _materializeImage(fromId, wx, wy) {
+        const from = this.getNode(fromId);
+        if (!from || from.type !== 'image' || !from.data.url) {
+            UI.toast('图片节点还没有图片，无法入库', 'warn');
+            return;
+        }
+        const m = this.addNode('material', wx, wy, {
+            url: from.data.url,
+            sourceUrl: from.data.url,
+            name: from.data.name || '画布图片',
+            mtype: 'image',
+            assetId: VideoModule._validAssetId(from.data.assetId) ? from.data.assetId : '',
+        });
+        this.edges.push({ id: this._uid('edge'), from: fromId, to: m.id });
+        this.renderAll();
+        this.save();
+        if (VideoModule._validAssetId(m.data.assetId)) {
+            UI.toast('图片已在素材库，直接继承引用', 'success');
+        } else {
+            // 异步上传：完成/失败都会刷新徽标
+            m.data.uploading = true;
+            this._syncImageToLib(m);
+        }
+    },
+
+    /** MaterialLib 缓存变化（审核状态轮询/同步）后刷新画布徽标与连线 */
+    _refreshMaterialBadges() {
+        let dirty = false;
+        this.nodes.forEach(n => {
+            if (n.type !== 'image' && n.type !== 'material') return;
+            if (!n.data.assetId) return;
+            const el = this._nodesLayer.querySelector(`.cnode[data-id="${n.id}"]`);
+            if (!el) return;
+            const badge = el.querySelector('.cnode-lib-badge');
+            if (badge) {
+                const info = this._libBadgeInfo(n);
+                if (badge.textContent !== info.text) dirty = true;
+                badge.textContent = info.text;
+                badge.classList.toggle('ok', info.ok);
+                badge.classList.toggle('bad', info.bad);
+                badge.classList.toggle('busy', info.busy);
+            }
+        });
+        // 素材节点上传完成后清 uploading 标记并重绘连线状态
+        this.nodes.forEach(n => {
+            if (n.type === 'material' && n.data.uploading && VideoModule._validAssetId(n.data.assetId)) {
+                n.data.uploading = false;
+                dirty = true;
+            }
+        });
+        if (dirty) { this.renderEdges(); this.save(); }
+    },
+
     /** 把图片节点的图同步到火山素材库（获得 asset:// 引用资格） */
     async _syncImageToLib(node) {
         if (!node || !node.data.url) { UI.toast('请先给图片节点设置图片', 'warn'); return; }
@@ -1729,7 +2062,9 @@ const CanvasModule = {
         } catch (e) {
             UI.toast('同步素材库失败: ' + e.message, 'error');
         } finally {
+            if (node && node.data) node.data.uploading = false;
             UI.hideLoading();
+            this.renderAll();
         }
     },
 
@@ -1821,6 +2156,32 @@ const CanvasModule = {
         if (mediaNodes.length === 0 && !prompt) {
             UI.toast('请先连线图片/素材节点，或填写提示词', 'warn');
             return;
+        }
+
+        // 严格模式：上游素材节点必须在库且审核通过（审核中/失败一律禁止生成）
+        for (const m of mediaNodes) {
+            if (m.type !== 'material') continue;
+            const name = m.data.name || '未命名素材';
+            const reportError = (msg) => {
+                UI.toast(msg, 'error', 6000);
+                node.data.status = 'idle';
+                node.data.error = msg;
+                this._updateVideoNodeStatus(
+                    this._nodesLayer.querySelector(`.cnode[data-id="${node.id}"]`), node);
+            };
+            if (!VideoModule._validAssetId(m.data.assetId)) {
+                reportError(`素材「${name}」尚未完成入库，请先入库并等审核通过后再生成视频`);
+                return;
+            }
+            const st = this._materialRecord(m.data.assetId)?.status;
+            if (st === 'processing' || st === 'pending') {
+                reportError(`素材「${name}」火山审核中，审核通过后才能生成视频`);
+                return;
+            }
+            if (st === 'failed' || st === 'error') {
+                reportError(`素材「${name}」审核失败，请重新处理该素材后再试`);
+                return;
+            }
         }
 
         const isLocalModel = API._isLocalModel(model);
