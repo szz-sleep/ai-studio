@@ -163,6 +163,11 @@
     box-shadow: 0 0 0 2px rgba(59,130,246,0.18), 0 4px 14px rgba(0,0,0,0.10);
     z-index: 2;
 }
+/* 参考图标签点选的来源节点：橘黄色高亮（区别于普通蓝色选中） */
+.cnode.selected.ref-pick {
+    border-color: #f97316;
+    box-shadow: 0 0 0 2px rgba(249,115,22,0.28), 0 4px 14px rgba(0,0,0,0.10);
+}
 .cnode-head {
     display: flex;
     align-items: center;
@@ -753,12 +758,14 @@
 .canvas-pin-btn.active .pin-on { display: none; }
 .canvas-pin-btn.active .pin-off { display: inline-block; }
 .canvas-pin-btn.active {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--text-on-accent, #fff);
+    /* 用主题柔和色而非 --accent（那是反色强调：浅色主题=深黑，会显得突兀） */
+    background: var(--accent-soft, rgba(0,0,0,0.05));
+    border-color: var(--accent-border, var(--border-hover));
+    color: var(--text-primary);
 }
 .canvas-pin-btn.active:hover {
-    background: var(--accent-hover, var(--accent));
+    background: var(--accent-soft-hover, rgba(0,0,0,0.08));
+    border-color: var(--accent, var(--border-hover));
 }
 
 /* ===== 节点内参数区折叠 ===== */

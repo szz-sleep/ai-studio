@@ -1,13 +1,15 @@
 ALL=PASS
 PASS bg.darkIsBlack :: "rgb(0, 0, 0)"
 PASS bg.lightIs170-200-185 :: "rgb(170, 200, 185)"
-PASS bg.defaultOptionExists :: true
-PASS bg.colorEnabledInDefault :: true
-PASS bg.customColorInDefault :: "rgb(255, 136, 0)"
+PASS bg.noDefaultOption :: true
+PASS bg.hasDefaultBtn :: true
+PASS bg.colorEnabled :: true
+PASS bg.dotsWithDefaultColor :: "rgb(170, 200, 185)"
+PASS bg.dotsClassApplied :: true
+PASS bg.customColor :: "rgb(255, 136, 0)"
 PASS bg.restoreClearsColor :: "rgb(170, 200, 185)"
 PASS bg.bgColorCleared :: true
-PASS bg.colorEnabledInDots :: true
-PASS bg.dotsClassApplied :: true
+PASS bg.styleKeptDots :: true
 PASS align.buttonsPresent :: 8
 PASS align.left :: {"after":[-20,-20,-20],"before":{"a":{"x":-20,"y":260,"w":240},"b":{"x":280,"y":60},"c":{"x":580,"y":160},"sel":3}}
 PASS align.top :: true
@@ -19,6 +21,16 @@ PASS ref.twoLabels :: ["图片1","图片2"]
 PASS ref.labelText :: ["图片1","图片2"]
 PASS ref.titleHasName :: "图片1：第一张 —— 在提示词中可用「图片1」引用这张图"
 PASS ref.singleNoLabels :: true
-PASS ref.clickSelectsSource :: {"src":"image_mv3xkn2c_5","exp":"image_mv3xkn2c_5","before":["text_mv3xkn26_1"],"after":["image_mv3xkn2c_5"]}
+PASS ref.clickSelectsSource :: {"src":"image_mv3y8w0c_5","exp":"image_mv3y8w0c_5","before":["text_mv3y8w07_1"],"after":["image_mv3y8w0c_5"]}
 PASS ref.noNodeDragOnMousedown :: true
+PASS ref.orangeHighlight :: {"pick":true,"border":"rgb(249, 115, 22)"}
+PASS ref.pickClearedOnNormalSelect :: {"cleared":true,"border":"rgb(59, 130, 246)"}
 PASS ref.prominentStyle :: {"fs":11.5,"fw":"600","op":1}
+PASS pin.activeToggles :: true
+PASS pin.lightThemeSoftBg :: "rgba(0, 0, 0, 0.04)"
+PASS pin.darkThemeSoftBg :: "rgba(255, 255, 255, 0.05)"
+PASS proj.itemExists :: true
+PASS proj.renameInputShown :: true
+PASS proj.renamed :: true
+PASS proj.inactiveInputShown :: true
+PASS proj.inactiveRenamed :: true

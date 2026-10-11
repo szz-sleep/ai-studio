@@ -524,6 +524,19 @@ const CanvasModule = {
     _renderProjects() {
         const list = document.getElementById('canvasProjectsList');
         if (!list) return;
+        // 事件委托绑在持久容器上（列表每次重渲染会重建子元素，
+        // 绑在子元素上的 dblclick 会因单击触发的重渲染而失效——重命名 bug 根因）
+        if (!list.dataset.delegated) {
+            list.dataset.delegated = '1';
+            list.addEventListener('dblclick', (e) => {
+                const item = e.target.closest?.('.canvas-project-item');
+                if (!item || !item.dataset.id) return;
+                e.stopPropagation();
+                // 双击前单击可能已触发项目切换并重建列表 → 用 id 查当前 DOM 的实时元素
+                const live = list.querySelector(`.canvas-project-item[data-id="${item.dataset.id}"] .canvas-project-name`);
+                if (live) this._startProjectRename(item.dataset.id, live);
+            });
+        }
         const projects = this._projects().slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
         if (projects.length === 0) {
             list.innerHTML = '<div class="canvas-projects-empty">暂无项目</div>';
@@ -550,25 +563,6 @@ const CanvasModule = {
             info.appendChild(meta);
             item.appendChild(info);
 
-            // 双击行内重命名
-            nameEl.addEventListener('dblclick', (e) => {
-                e.stopPropagation();
-                if (info.querySelector('input')) return;
-                const input = document.createElement('input');
-                input.className = 'canvas-project-rename';
-                input.value = p.name;
-                nameEl.replaceWith(input);
-                input.focus();
-                input.select();
-                const commit = () => this._renameProject(p.id, input.value);
-                input.addEventListener('blur', commit);
-                input.addEventListener('keydown', (ev) => {
-                    ev.stopPropagation();
-                    if (ev.key === 'Enter') input.blur();
-                    if (ev.key === 'Escape') { input.removeEventListener('blur', commit); this._renderProjects(); }
-                });
-            });
-
             const actions = document.createElement('div');
             actions.className = 'canvas-project-actions';
             const mkBtn = (title, svg, fn) => {
@@ -589,9 +583,38 @@ const CanvasModule = {
                 }));
             item.appendChild(actions);
 
-            // 单击打开项目
-            item.addEventListener('click', () => this._loadProject(p.id));
+            // 单击打开项目（重命名输入框内的点击除外，避免编辑中被重渲染打断）
+            item.addEventListener('click', (e) => {
+                if (e.target.closest('.canvas-project-rename')) return;
+                this._loadProject(p.id);
+            });
             list.appendChild(item);
+        });
+    },
+
+    /** 项目名称行内重命名（由容器级 dblclick 委托触发，nameEl 为当前 DOM 中的实时元素） */
+    _startProjectRename(id, nameEl) {
+        const p = this._projects().find(x => x.id === id);
+        if (!p || !nameEl.isConnected) return;
+        const info = nameEl.parentElement;
+        if (!info || info.querySelector('input')) return;
+        const input = document.createElement('input');
+        input.className = 'canvas-project-rename';
+        input.value = p.name;
+        nameEl.replaceWith(input);
+        input.focus();
+        input.select();
+        const commit = () => {
+            if (!input.isConnected) return; // Enter 直接提交后再触发 blur 时防重复
+            input.removeEventListener('blur', commit);
+            this._renameProject(p.id, input.value);
+        };
+        input.addEventListener('blur', commit);
+        input.addEventListener('click', (e) => e.stopPropagation());
+        input.addEventListener('keydown', (ev) => {
+            ev.stopPropagation();
+            if (ev.key === 'Enter') commit();
+            if (ev.key === 'Escape') { input.removeEventListener('blur', commit); this._renderProjects(); }
         });
     },
 
@@ -1536,7 +1559,11 @@ const CanvasModule = {
                 if (!tag) return;
                 e.stopPropagation();
                 const src = this.getNode(tag.dataset.src);
-                if (src) this._selectNode(src.id);
+                if (!src) return;
+                // 选中来源节点，并用橘黄色高亮（区别于普通蓝色选中）
+                this._selectNode(src.id);
+                this._refPickId = src.id;
+                this._renderSelection();
             });
         }
         const sig = media.map(m => m.id).join(',');
@@ -1752,6 +1779,7 @@ const CanvasModule = {
             this.save();
         } else if (d.type === 'select' && d.cur) {
             const r = d.cur;
+            this._refPickId = null; // 框选清除标签点选的橘黄高亮
             this.selection.clear();
             this.nodes.forEach(n => {
                 const el = this._nodesLayer.querySelector(`.cnode[data-id="${n.id}"]`);
@@ -1768,6 +1796,7 @@ const CanvasModule = {
     // ===== 选择 =====
 
     _selectNode(id, additive) {
+        this._refPickId = null; // 普通选中路径清除橘黄高亮（标签点选会在随后重新设置）
         if (additive) {
             if (this.selection.has(id)) this.selection.delete(id); else this.selection.add(id);
         } else {
@@ -1780,6 +1809,8 @@ const CanvasModule = {
     _renderSelection() {
         this._nodesLayer.querySelectorAll('.cnode').forEach(el => {
             el.classList.toggle('selected', this.selection.has(el.dataset.id));
+            // 标签点选的来源节点用橘黄色高亮（_refPickId 在其他选中路径中被清除）
+            el.classList.toggle('ref-pick', el.dataset.id === this._refPickId && this.selection.has(el.dataset.id));
         });
     },
 
@@ -2502,28 +2533,22 @@ const CanvasModule = {
         const vp = this._viewport;
         if (!vp) return;
         const s = this._settings || {};
+        // 图案与底色解耦：点/网格图案叠在底色上，互不影响
+        const style = ['dots', 'grid', 'none'].includes(s.bgStyle) ? s.bgStyle : 'dots';
         vp.classList.remove('bg-dots', 'bg-grid', 'bg-none');
-        const style = s.bgStyle || 'default';
-        if (style === 'default') {
-            // 默认模式：纯色底随主题自动配色（深色=黑，浅色=R170 G200 B185）；
-            // 未自定义颜色时跟随主题，用户仍可用右侧色块在此底色上微调
-            vp.classList.add('bg-none');
-            vp.style.backgroundColor = s.bgColor || this._defaultBgColor();
-        } else {
-            vp.classList.add('bg-' + style);
-            // 自定义背景色（留空恢复主题默认表面色）
-            vp.style.backgroundColor = s.bgColor || '';
-        }
+        vp.classList.add('bg-' + style);
+        // 底色：自定义色优先；否则默认值（深色模式=黑，浅色模式=R170 G200 B185）
+        vp.style.backgroundColor = s.bgColor || this._defaultBgColor();
         const sel = document.getElementById('canvasBgStyle');
         const color = document.getElementById('canvasBgColor');
         if (sel && sel.value !== style) sel.value = style;
         if (color) {
-            const effective = style === 'default' ? (s.bgColor || this._defaultBgColor()) : (s.bgColor || '#aac8b9');
+            const effective = s.bgColor || this._defaultBgColor();
             if (color.value !== effective) color.value = effective;
             color.disabled = false;
-            color.title = style === 'default'
-                ? '当前为默认配色（深色模式=黑色，浅色模式=浅绿灰）；可在此调整，选回「默认」即恢复'
-                : '画布背景色自定义';
+            color.title = s.bgColor
+                ? '画布背景色自定义（点「默认」恢复随主题的默认色）'
+                : '当前为默认配色（深色模式=黑色，浅色模式=浅绿灰），可直接调整';
         }
     },
 
@@ -2538,11 +2563,16 @@ const CanvasModule = {
         const $ = id => document.getElementById(id);
 
         $('canvasBgStyle')?.addEventListener('change', (e) => {
-            this._settings.bgStyle = e.target.value;
-            // 选「默认」= 恢复默认值：清掉自定义颜色，重新跟随主题配色
-            if (e.target.value === 'default') this._settings.bgColor = '';
+            this._settings.bgStyle = ['dots', 'grid', 'none'].includes(e.target.value) ? e.target.value : 'dots';
             this._saveSettings();
             this._applyBackground();
+        });
+        // 「默认」按钮：仅重置背景色为主题默认值（深=黑/浅=浅绿灰），不影响点/网格图案设置
+        $('canvasBgDefaultBtn')?.addEventListener('click', () => {
+            this._settings.bgColor = '';
+            this._saveSettings();
+            this._applyBackground();
+            UI.toast('已恢复默认背景色（深色模式=黑色，浅色模式=浅绿灰）', 'success', 2200);
         });
         $('canvasBgColor')?.addEventListener('input', (e) => {
             this._settings.bgColor = e.target.value;

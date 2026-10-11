@@ -30,53 +30,55 @@ function assert(name, cond, extra) {
     })()`);
     await sleep(1500);
 
-    // ============ 1. 背景默认模式 ============
+    // ============ 1. 背景色默认值（默认按钮只重置颜色，不影响点/网格） ============
     const rBg = await win.webContents.executeJavaScript(`(async () => {
         const r = {};
         const vp = document.getElementById('canvasViewport');
         const sel = document.getElementById('canvasBgStyle');
         const color = document.getElementById('canvasBgColor');
+        const btn = document.getElementById('canvasBgDefaultBtn');
         const CM = CanvasModule;
-        // 默认模式 + 深色主题
+        // 深色主题 + 无自定义色 → 默认黑
         document.documentElement.setAttribute('data-theme', 'dark');
-        sel.value = 'default';
-        sel.dispatchEvent(new Event('change'));
-        await new Promise(res => setTimeout(res, 50));
+        await new Promise(res => setTimeout(res, 100));
         r.darkBg = getComputedStyle(vp).backgroundColor;
-        r.colorEnabledInDefault = !color.disabled;
-        r.selHasDefault = !!sel.querySelector('option[value="default"]');
-        // 默认模式 + 浅色主题（MutationObserver 应联动）
+        r.noDefaultOption = !sel.querySelector('option[value="default"]');
+        r.hasDefaultBtn = !!btn;
+        r.colorEnabled = !color.disabled;
+        // 浅色主题（MutationObserver 联动）→ 默认 R170 G200 B185
         document.documentElement.setAttribute('data-theme', 'light');
         await new Promise(res => setTimeout(res, 100));
         r.lightBg = getComputedStyle(vp).backgroundColor;
-        // 默认模式下可直接改色（不锁定）
-        color.value = '#ff8800';
-        color.dispatchEvent(new Event('input'));
-        await new Promise(res => setTimeout(res, 50));
-        r.customInDefault = getComputedStyle(vp).backgroundColor;
-        // 选回「默认」= 恢复默认值（清自定义色）
-        sel.value = 'default';
-        sel.dispatchEvent(new Event('change'));
-        await new Promise(res => setTimeout(res, 50));
-        r.restoredBg = getComputedStyle(vp).backgroundColor;
-        r.bgColorCleared = (JSON.parse(localStorage.getItem('aistudio_canvas_settings')).bgColor || '') === '';
-        // 自定义模式恢复
+        // 点阵图案 + 默认色共存（图案不影响底色默认值）
         sel.value = 'dots';
         sel.dispatchEvent(new Event('change'));
         await new Promise(res => setTimeout(res, 50));
-        r.dotsModeColorEnabled = !color.disabled;
+        r.dotsWithDefaultColor = getComputedStyle(vp).backgroundColor;
         r.dotsCls = vp.classList.contains('bg-dots');
+        // 自定义颜色
+        color.value = '#ff8800';
+        color.dispatchEvent(new Event('input'));
+        await new Promise(res => setTimeout(res, 50));
+        r.customColor = getComputedStyle(vp).backgroundColor;
+        // 点「默认」按钮 → 清自定义色，恢复主题默认，且图案设置保持 dots
+        btn.click();
+        await new Promise(res => setTimeout(res, 50));
+        r.restoredBg = getComputedStyle(vp).backgroundColor;
+        r.bgColorCleared = (JSON.parse(localStorage.getItem('aistudio_canvas_settings')).bgColor || '') === '';
+        r.styleKeptDots = vp.classList.contains('bg-dots') && sel.value === 'dots';
         return r;
     })()`);
     assert('bg.darkIsBlack', rBg.darkBg === 'rgb(0, 0, 0)', rBg.darkBg);
     assert('bg.lightIs170-200-185', rBg.lightBg === 'rgb(170, 200, 185)', rBg.lightBg);
-    assert('bg.defaultOptionExists', rBg.selHasDefault, rBg.selHasDefault);
-    assert('bg.colorEnabledInDefault', rBg.colorEnabledInDefault === true, rBg.colorEnabledInDefault);
-    assert('bg.customColorInDefault', rBg.customInDefault === 'rgb(255, 136, 0)', rBg.customInDefault);
+    assert('bg.noDefaultOption', rBg.noDefaultOption === true, rBg.noDefaultOption);
+    assert('bg.hasDefaultBtn', rBg.hasDefaultBtn === true, rBg.hasDefaultBtn);
+    assert('bg.colorEnabled', rBg.colorEnabled === true, rBg.colorEnabled);
+    assert('bg.dotsWithDefaultColor', rBg.dotsWithDefaultColor === 'rgb(170, 200, 185)', rBg.dotsWithDefaultColor);
+    assert('bg.dotsClassApplied', rBg.dotsCls === true, rBg.dotsCls);
+    assert('bg.customColor', rBg.customColor === 'rgb(255, 136, 0)', rBg.customColor);
     assert('bg.restoreClearsColor', rBg.restoredBg === 'rgb(170, 200, 185)', rBg.restoredBg);
     assert('bg.bgColorCleared', rBg.bgColorCleared === true, rBg.bgColorCleared);
-    assert('bg.colorEnabledInDots', rBg.dotsModeColorEnabled === true, rBg.dotsModeColorEnabled);
-    assert('bg.dotsClassApplied', rBg.dotsCls === true, rBg.dotsCls);
+    assert('bg.styleKeptDots', rBg.styleKeptDots === true, rBg.styleKeptDots);
 
     // ============ 2. 对齐与排列 ============
     const rAl = await win.webContents.executeJavaScript(`(async () => {
@@ -159,6 +161,15 @@ function assert(name, cond, extra) {
         r.clickSelectsSource = CM.selection.has(r.expectedSrc);
         // 按下标签不应触发节点拖拽状态
         r.noNodeDragOnMousedown = !CM._drag || CM._drag.type !== 'node';
+        // 标签点选 → 来源节点橘黄色高亮（ref-pick 类 + 橘色边框），普通选中仍是蓝色
+        const srcEl = document.querySelector('.cnode[data-id="' + r.expectedSrc + '"]');
+        r.srcHasRefPick = srcEl.classList.contains('ref-pick') && srcEl.classList.contains('selected');
+        r.orangeBorder = getComputedStyle(srcEl).borderTopColor;
+        // 普通点击其它节点 → 橘黄高亮清除，恢复蓝色（重渲染后需重新查询元素）
+        CM._selectNode(v.id);
+        const srcEl2 = document.querySelector('.cnode[data-id="' + r.expectedSrc + '"]');
+        r.refPickCleared = !srcEl2.classList.contains('ref-pick');
+        r.normalIsBlue = getComputedStyle(document.querySelector('.cnode[data-id="' + v.id + '"]')).borderTopColor;
         return r;
     })()`);
     assert('ref.labelsShown', rRef.labelsShown, rRef.labelsShown);
@@ -168,6 +179,8 @@ function assert(name, cond, extra) {
     assert('ref.singleNoLabels', rRef.singleNoLabels, rRef.singleNoLabels);
     assert('ref.clickSelectsSource', rRef.clickSelectsSource, { src: rRef.firstTagSrc, exp: rRef.expectedSrc, before: rRef.selBeforeClick, after: rRef.selAfterClick });
     assert('ref.noNodeDragOnMousedown', rRef.noNodeDragOnMousedown, rRef.noNodeDragOnMousedown);
+    assert('ref.orangeHighlight', rRef.srcHasRefPick === true && rRef.orangeBorder === 'rgb(249, 115, 22)', { pick: rRef.srcHasRefPick, border: rRef.orangeBorder });
+    assert('ref.pickClearedOnNormalSelect', rRef.refPickCleared === true && rRef.normalIsBlue === 'rgb(59, 130, 246)', { cleared: rRef.refPickCleared, border: rRef.normalIsBlue });
     // 标签文字显著性：字号≥11px、加粗、不透明
     rRef.labelStyle = await win.webContents.executeJavaScript(`(() => {
         const t = document.querySelector('.cnode-ref-label');
@@ -175,6 +188,71 @@ function assert(name, cond, extra) {
         return { fs: parseFloat(cs.fontSize), fw: cs.fontWeight, op: parseFloat(cs.opacity) };
     })()`);
     assert('ref.prominentStyle', rRef.labelStyle.fs >= 11 && parseInt(rRef.labelStyle.fw) >= 600 && rRef.labelStyle.op === 1, rRef.labelStyle);
+
+    // ============ 4. 固定按钮主题适配 + 项目重命名 ============
+    const rMisc = await win.webContents.executeJavaScript(`(async () => {
+        const r = {};
+        const CM = CanvasModule;
+        const pin = document.getElementById('canvasToolbarPinBtn');
+        // 浅色主题下固定 → 激活态应为浅色柔和底（rgba 黑 4%），而非深黑反色
+        document.documentElement.setAttribute('data-theme', 'light');
+        await new Promise(res => setTimeout(res, 400)); // 等主题过渡动画结束
+        pin.click();
+        await new Promise(res => setTimeout(res, 450)); // 等按钮背景 transition 结束
+        r.pinActive = pin.classList.contains('active');
+        r.pinBgLight = getComputedStyle(pin).backgroundColor;
+        // 深色主题下 → 深色柔和底（rgba 白 5%）
+        document.documentElement.setAttribute('data-theme', 'dark');
+        await new Promise(res => setTimeout(res, 450));
+        r.pinBgDark = getComputedStyle(pin).backgroundColor;
+        pin.click(); // 还原
+        document.documentElement.setAttribute('data-theme', 'light');
+        await new Promise(res => setTimeout(res, 50));
+
+        // 项目重命名：模拟真实双击序列（单击触发重渲染 → dblclick 落在新元素上）
+        const list = document.getElementById('canvasProjectsList');
+        if (CM._projects().length === 0) CM._createProject('重命名前的项目'); // setup 清过索引则重建
+        CM._renderProjects();
+        const pid = CM.currentProjectId;
+        const item = list.querySelector('.canvas-project-item[data-id="' + pid + '"]');
+        r.itemExists = !!item;
+        item.click(); // 单击（活动项目也会 _renderProjects 重建列表）
+        const item2 = list.querySelector('.canvas-project-item[data-id="' + pid + '"]');
+        item2.querySelector('.canvas-project-name').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+        await new Promise(res => setTimeout(res, 50));
+        const input = list.querySelector('.canvas-project-rename');
+        r.renameInputShown = !!input;
+        if (input) {
+            input.value = '重命名后的项目';
+            input.dispatchEvent(new Event('blur')); // 无头环境无窗口焦点，显式触发提交
+            await new Promise(res => setTimeout(res, 80));
+        }
+        r.renamed = CM._projects().find(x => x.id === pid)?.name === '重命名后的项目';
+        // 非活动项目重命名（委托按 id 查实时元素）
+        const pB = CM._createProject('待改名B');
+        await new Promise(res => setTimeout(res, 50));
+        const itemB = list.querySelector('.canvas-project-item[data-id="' + pB.id + '"]');
+        itemB.querySelector('.canvas-project-name').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+        await new Promise(res => setTimeout(res, 50));
+        const inputB = list.querySelector('.canvas-project-rename');
+        r.inactiveInputShown = !!inputB;
+        if (inputB) {
+            inputB.value = '改名B完成';
+            inputB.dispatchEvent(new Event('blur'));
+            await new Promise(res => setTimeout(res, 80));
+        }
+        r.inactiveRenamed = CM._projects().find(x => x.id === pB.id)?.name === '改名B完成';
+        CM._loadProject(pid); // 还原当前项目
+        return r;
+    })()`);
+    assert('pin.activeToggles', rMisc.pinActive === true, rMisc.pinActive);
+    assert('pin.lightThemeSoftBg', rMisc.pinBgLight === 'rgba(0, 0, 0, 0.04)', rMisc.pinBgLight);
+    assert('pin.darkThemeSoftBg', rMisc.pinBgDark === 'rgba(255, 255, 255, 0.05)', rMisc.pinBgDark);
+    assert('proj.itemExists', rMisc.itemExists, rMisc.itemExists);
+    assert('proj.renameInputShown', rMisc.renameInputShown, rMisc.renameInputShown);
+    assert('proj.renamed', rMisc.renamed === true, rMisc.renamed);
+    assert('proj.inactiveInputShown', rMisc.inactiveInputShown, rMisc.inactiveInputShown);
+    assert('proj.inactiveRenamed', rMisc.inactiveRenamed === true, rMisc.inactiveRenamed);
 
     // 控制台错误已在各场景隐含（页面崩溃会抛异常）
 
