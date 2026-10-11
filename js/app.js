@@ -443,6 +443,9 @@ const App = {
                             .forEach(input => TimelineModule._resizePrompt(input));
                     });
                 }
+                if (btn.dataset.tab === 'canvas' && typeof CanvasModule !== 'undefined') {
+                    CanvasModule.onShow();
+                }
                 // 对话类页面（故事 / Agent）隐藏底部历史记录和日志面板
                 const isChat = btn.dataset.tab === 'agent';
                 const histSection = document.querySelector('.history-section');
@@ -511,6 +514,11 @@ const App = {
         // 初始化 Agent 对话模块
         if (typeof AgentModule !== 'undefined') {
             AgentModule.init();
+        }
+
+        // 初始化无限画布模块
+        if (typeof CanvasModule !== 'undefined') {
+            CanvasModule.init();
         }
 
         // 初始化素材库
@@ -712,8 +720,9 @@ const App = {
         const i2vSel = document.getElementById('i2vModel');
         const i2iSel = document.getElementById('i2iModel');
         const agentSel = document.getElementById('agentModel');
+        const canvasSel = document.getElementById('canvasModel');
 
-        [t2iSel, t2vSel, i2vSel, i2iSel, agentSel].forEach(sel => {
+        [t2iSel, t2vSel, i2vSel, i2iSel, agentSel, canvasSel].forEach(sel => {
             if (sel) sel.innerHTML = '<option value="">加载中...</option>';
         });
 
@@ -722,6 +731,11 @@ const App = {
             Logger.success(`获取到 ${models.length} 个模型`);
             const classified = API.classifyModels(models);
             Logger.info(`分类结果: 图片模型=${classified.image.length}, 视频模型=${classified.video.length}, 文本模型=${classified.text.length}, 其他=${classified.other.length}`);
+
+            // 同步给无限画布模块（视频节点模型下拉）
+            if (typeof CanvasModule !== 'undefined') {
+                CanvasModule.setModels(classified);
+            }
 
             // 文生图模型（图生图共用）
             t2iSel.innerHTML = '';
@@ -765,6 +779,21 @@ const App = {
                 });
             } else {
                 i2vSel.innerHTML = '<option value="">无可用模型</option>';
+            }
+
+            // 画布视频模型（无限画布用）
+            if (canvasSel) {
+                canvasSel.innerHTML = '';
+                if (classified.video.length > 0) {
+                    classified.video.forEach(m => {
+                        const opt = document.createElement('option');
+                        opt.value = m.id;
+                        opt.textContent = m.id;
+                        canvasSel.appendChild(opt);
+                    });
+                } else {
+                    canvasSel.innerHTML = '<option value="">无可用模型</option>';
+                }
             }
 
             // 触发 change，让视频面板按当前模型刷新 30 秒时长选项的可见性
@@ -837,6 +866,19 @@ const App = {
                 t2vSel.appendChild(grp3);
                 i2vSel.appendChild(grp3.cloneNode(true));
 
+                // 画布视频下拉也追加未识别模型
+                if (canvasSel) {
+                    const grp5 = document.createElement('optgroup');
+                    grp5.label = '其他模型（部分可能不支持）';
+                    classified.other.forEach(m => {
+                        const opt = document.createElement('option');
+                        opt.value = m.id;
+                        opt.textContent = m.id;
+                        grp5.appendChild(opt);
+                    });
+                    canvasSel.appendChild(grp5);
+                }
+
                 // Agent 对话下拉也追加未识别模型，保证所有模型可见
                 const grp4 = document.createElement('optgroup');
                 grp4.label = '其他模型（部分可能不支持）';
@@ -858,7 +900,7 @@ const App = {
             } else {
                 UI.toast(err.message, 'error');
             }
-            [t2iSel, t2vSel, i2vSel, i2iSel, agentSel].forEach(sel => {
+            [t2iSel, t2vSel, i2vSel, i2iSel, agentSel, canvasSel].forEach(sel => {
                 if (sel) sel.innerHTML = '<option value="">加载失败</option>';
             });
         }

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Studio - AI创作工坊</title>
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/canvas.css">
     <!-- Markdown 渲染（Agent 对话用）；离线时 js/agent.js 自动降级为纯文本 -->
     <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js" onerror="window.__markedFailed=true"></script>
 </head>
@@ -236,6 +237,7 @@
             <button class="tab-btn" data-tab="t2v"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg> 文生视频</button>
             <button class="tab-btn" data-tab="i2v"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg> 图生视频</button>
             <button class="tab-btn" data-tab="timeline"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="8" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="11" cy="18" r="2"/></svg> H3 长视频</button>
+            <button class="tab-btn" data-tab="canvas"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="8" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M8 7.2l7.6 0.5"/><path d="M7 8.2l4 7.6"/><path d="M17 10.2l-4 5.6"/></svg> 无限画布</button>
         </nav>
 
         
@@ -696,6 +698,43 @@
                 </div>
             </div>
         </section>
+
+        <!-- ===== 无限画布面板 ===== -->
+        <section id="tab-canvas" class="tab-panel">
+            <!-- 工具栏 -->
+            <div class="canvas-toolbar">
+                <button class="canvas-btn" id="canvasAddTextBtn" title="添加提示词节点">T 文本</button>
+                <button class="canvas-btn" id="canvasAddImageBtn" title="上传图片创建图片节点">🖼 图片</button>
+                <button class="canvas-btn" id="canvasAddMaterialBtn" title="从素材库创建素材节点（asset:// 引用）">📦 素材库</button>
+                <button class="canvas-btn" id="canvasAddVideoBtn" title="添加视频生成节点">🎬 视频</button>
+                <div class="canvas-sep"></div>
+                <select id="canvasModel" class="select-input" title="画布视频生成使用的模型（与 AI Studio 同一 API）"><option value="">加载中...</option></select>
+                <div class="canvas-sep"></div>
+                <button class="canvas-btn" id="canvasUndoBtn" title="撤销 (Ctrl+Z)">↺</button>
+                <button class="canvas-btn" id="canvasRedoBtn" title="重做 (Ctrl+Y)">↻</button>
+                <div class="canvas-sep"></div>
+                <button class="canvas-btn" id="canvasZoomOutBtn" title="缩小">－</button>
+                <span class="canvas-zoom-label" id="canvasZoomLabel">100%</span>
+                <button class="canvas-btn" id="canvasZoomInBtn" title="放大">＋</button>
+                <button class="canvas-btn" id="canvasFitBtn" title="适应画布 (Ctrl+0)">⤢ 适应</button>
+                <div class="canvas-toolbar-spacer"></div>
+                <button class="canvas-btn" id="canvasClearBtn" title="清空画布">🗑 清空</button>
+            </div>
+
+            <!-- 画布主体 -->
+            <div class="canvas-wrap">
+                <div class="canvas-viewport" id="canvasViewport">
+                    <div class="canvas-world" id="canvasWorld">
+                        <svg class="canvas-edges-svg" id="canvasEdgesSvg"></svg>
+                        <div id="canvasNodesLayer" style="position:absolute;left:0;top:0;"></div>
+                    </div>
+                    <div class="canvas-hint" id="canvasHint">
+                        <span>拖拽节点端口连线：文本/图片/素材 → 视频；滚轮缩放，<kbd>Shift</kbd>+拖拽框选，<kbd>Del</kbd> 删除，右键更多操作</span>
+                        <button class="canvas-hint-close" id="canvasHintClose">×</button>
+                    </div>
+                </div>
+            </div>
+        </section>
     </main>
 
     <!-- 历史记录 -->
@@ -763,6 +802,7 @@
     <script src="js/history.js"></script>
     <script src="js/redraw.js"></script>
     <script src="js/agent.js"></script>
+    <script src="js/canvas.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>
