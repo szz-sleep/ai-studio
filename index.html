@@ -720,13 +720,17 @@
                 <div class="canvas-toolbar-spacer"></div>
                 <button class="canvas-btn" id="canvasClearBtn" title="清空画布"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> 清空</button>
                 <div class="canvas-sep"></div>
-                <select id="canvasBgStyle" class="canvas-bg-select" title="画布背景样式：点阵 / 网格线 / 无">
-                    <option value="dots">点阵</option>
-                    <option value="grid">网格线</option>
-                    <option value="none">无</option>
-                </select>
-                <input type="color" id="canvasBgColor" class="canvas-bg-color" value="#ffffff" title="画布背景色自定义（浅色模式下可用它调整底色）">
-                <button class="canvas-btn canvas-pin-btn" id="canvasToolbarPinBtn" title="固定工具栏"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z"/></svg></button>
+                <div class="canvas-bg-group" title="画布背景样式与底色">
+                    <span class="canvas-bg-group-label"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><circle cx="4" cy="4" r="2"/><circle cx="20" cy="4" r="2"/><circle cx="4" cy="20" r="2"/><circle cx="20" cy="20" r="2"/></svg>背景</span>
+                    <select id="canvasBgStyle" class="canvas-bg-select" title="画布背景样式：点阵 / 网格线 / 无">
+                        <option value="dots">点阵</option>
+                        <option value="grid">网格线</option>
+                        <option value="none">无</option>
+                    </select>
+                    <input type="color" id="canvasBgColor" class="canvas-bg-color" value="#ffffff" title="画布背景色自定义（浅色模式下可用它调整底色）">
+                </div>
+                <div class="canvas-sep"></div>
+                <button class="canvas-btn canvas-pin-btn" id="canvasToolbarPinBtn" title="固定工具栏"><svg class="pin-icon pin-on" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z"/></svg><svg class="pin-icon pin-off" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><g transform="rotate(45 12 12)"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z"/></g><line x1="3" y1="3" x2="21" y2="21"/></svg></button>
             </div>
 
             <!-- 画布主体 -->

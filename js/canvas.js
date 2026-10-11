@@ -514,6 +514,8 @@ const CanvasModule = {
         if (n.type === 'video') this._updateVideoNodeStatus(el, n);
         // 动态更新图片节点状态区
         if (n.type === 'image') this._updateImageNodeStatus(el, n);
+        // 参数折叠区状态同步（撤销/重做/恢复后 body 不重建，需要手动对齐）
+        if (n.type === 'image' || n.type === 'video') this._applyNodeOpts(el, n);
         // 撤销/重做/恢复后：把节点数据同步回 DOM 输入控件（body 不会重建）
         if (n.type === 'image') {
             const ta = el.querySelector('.cnode-image-prompt');
@@ -610,9 +612,10 @@ const CanvasModule = {
                 <div class="cnode-body">
                     <div class="cnode-img-wrap empty">
                         <img class="cnode-img" draggable="false" alt="">
-                        <div class="cnode-img-placeholder">双击上传图片<br>或拖拽图片文件到画布<br>或直接用下方按钮生成</div>
+                        <div class="cnode-img-placeholder">双击上传图片<br>或拖拽图片文件到画布<br>或展开下方参数直接生成</div>
                     </div>
                     <div class="cnode-sub">${this._escape(n.data.name || '')}</div>
+                    ${this._optsToggleHTML(n, '参数与生成')}
                     <textarea class="cnode-image-prompt" rows="2" placeholder="生图提示词（留空则用相连的文本节点）">${this._escape(n.data.promptOwn || '')}</textarea>
                     <select class="cnode-image-model" title="生图模型"><option value="">加载中...</option></select>
                     <div class="cnode-params">
@@ -631,6 +634,7 @@ const CanvasModule = {
                     <div class="cnode-btn-row">
                         <button class="cnode-btn cnode-act-replace" title="从本机选择图片替换">替换图片</button>
                         <button class="cnode-btn cnode-act-sync" title="上传到火山素材库，获得 asset:// 引用">同步素材库</button>
+                    </div>
                     </div>
                 </div>
                 <div class="cnode-port cnode-port-in" data-port="in" title="接收提示词/参考图"></div>
@@ -662,6 +666,8 @@ const CanvasModule = {
                             <button class="cnode-btn cnode-act-download">下载</button>
                         </div>
                     </div>
+                    <div class="cnode-video-wrap"><div class="cnode-video-placeholder">视频预览区<br>生成后在此显示</div></div>
+                    ${this._optsToggleHTML(n, '参数与生成')}
                     <textarea class="cnode-video-prompt" rows="2" placeholder="视频提示词（留空则用相连的文本节点）">${this._escape(n.data.promptOwn || '')}</textarea>
                     <select class="cnode-video-model" title="视频模型"><option value="">加载中...</option></select>
                     <div class="cnode-params">
@@ -683,10 +689,29 @@ const CanvasModule = {
                     </div>
                     <div class="cnode-video-status"></div>
                     <button class="cnode-btn cnode-generate-btn">${this._ICONS.zap} 生成视频</button>
+                    </div>
                 </div>
                 <div class="cnode-port cnode-port-in" data-port="in" title="接收图片/素材/文本"></div>`;
         }
         return head();
+    },
+
+    /** 图片/视频节点「参数与生成」折叠区：折叠开关 + 参数容器（打开一个 .cnode-opts） */
+    _optsToggleHTML(n, label) {
+        const open = !!n.data.optsOpen;
+        return `<button class="cnode-opts-toggle${open ? ' open' : ''}" title="展开/收起参数与操作">
+                    <span>${label}</span>
+                    <svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="cnode-opts${open ? ' open' : ''}">`;
+    },
+
+    /** 把节点数据的折叠状态同步到 DOM（新建/撤销重做后都会调用） */
+    _applyNodeOpts(el, n) {
+        if (n.type !== 'image' && n.type !== 'video') return;
+        const open = !!n.data.optsOpen;
+        el.querySelector('.cnode-opts')?.classList.toggle('open', open);
+        el.querySelector('.cnode-opts-toggle')?.classList.toggle('open', open);
     },
 
     _bindNodeEvents(el, n) {
@@ -723,6 +748,15 @@ const CanvasModule = {
         el.querySelector('.cnode-x')?.addEventListener('click', (e) => {
             e.stopPropagation();
             this.deleteNodes([el.dataset.id]);
+        });
+
+        // 参数折叠开关（图片/视频节点）
+        el.querySelector('.cnode-opts-toggle')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const nn = node(); if (!nn) return;
+            nn.data.optsOpen = !nn.data.optsOpen;
+            this._applyNodeOpts(el, nn);
+            this.save();
         });
 
         // 文本输入
@@ -871,12 +905,15 @@ const CanvasModule = {
         if (!statusEl) return;
 
         const videoEl = resultEl?.querySelector('video');
+        const phEl = el.querySelector('.cnode-video-wrap');
         if (n.data.videoUrl && videoEl && videoEl.dataset.src !== n.data.videoUrl) {
             videoEl.src = n.data.videoUrl;
             videoEl.dataset.src = n.data.videoUrl;
             resultEl.style.display = '';
+            if (phEl) phEl.style.display = 'none';
         } else if (!n.data.videoUrl && resultEl) {
             resultEl.style.display = 'none';
+            if (phEl) phEl.style.display = '';
         }
 
         let html = '';
@@ -893,6 +930,14 @@ const CanvasModule = {
             html = `<div class="cnode-status-line ok">✓ 生成完成（${this._escape(n.data.model || '')}）</div>`;
         }
         statusEl.innerHTML = html;
+        // 生成中/出错时自动展开参数区，让进度与错误信息可见
+        if (busy || n.data.status === 'error') {
+            const opts = el.querySelector('.cnode-opts');
+            if (opts && !opts.classList.contains('open')) {
+                n.data.optsOpen = true;
+                this._applyNodeOpts(el, n);
+            }
+        }
         if (btn) {
             btn.disabled = busy;
             btn.innerHTML = busy ? '生成中...' : `${this._ICONS.zap} 生成视频`;
@@ -978,6 +1023,14 @@ const CanvasModule = {
             html = `<div class="cnode-status-line error">${this._escape(n.data.error || '生成失败')}</div>`;
         }
         statusEl.innerHTML = html;
+        // 生成中/出错时自动展开参数区，让进度与错误信息可见
+        if (busy || n.data.status === 'error') {
+            const opts = el.querySelector('.cnode-opts');
+            if (opts && !opts.classList.contains('open')) {
+                n.data.optsOpen = true;
+                this._applyNodeOpts(el, n);
+            }
+        }
         if (btn) {
             btn.disabled = busy;
             btn.innerHTML = busy ? '生成中' : `${this._ICONS.zap} 生图`;

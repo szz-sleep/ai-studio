@@ -22,12 +22,13 @@
 .canvas-toolbar {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     padding: 8px 14px;
     border-bottom: 1px solid var(--border);
     background: var(--bg-surface);
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     flex-shrink: 0;
+    white-space: nowrap;
 }
 .canvas-toolbar .canvas-sep {
     width: 1px;
@@ -58,10 +59,12 @@
     cursor: not-allowed;
 }
 .canvas-toolbar .select-input {
-    max-width: 260px;
+    max-width: 190px;
+    min-width: 110px;
     font-size: 12.5px;
     padding: 5px 8px;
     height: auto;
+    flex-shrink: 1;
 }
 .canvas-zoom-label {
     font-size: 12px;
@@ -380,6 +383,8 @@
     justify-content: center;
 }
 .cnode-img-wrap:not(.empty) { border-style: solid; }
+/* 空节点时隐藏 img（空 src 会渲染成残破图标，占位文案已足够表达） */
+.cnode-img-wrap.empty .cnode-img { display: none; }
 .cnode-img {
     width: 100%;
     height: 100%;
@@ -629,27 +634,113 @@
     background-image: none;
 }
 
-/* 背景样式下拉与颜色选择器 */
-.canvas-bg-select {
+/* 背景样式下拉与颜色选择器：组合成一个带标签的分组，与工具栏同行 */
+.canvas-bg-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 8px 0 9px;
     border: 1px solid var(--border);
     border-radius: 7px;
     background: var(--bg-surface);
+    flex-shrink: 0;
+}
+.canvas-bg-group:hover { border-color: var(--border-hover); }
+.canvas-bg-group-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    user-select: none;
+}
+.canvas-bg-select {
+    border: none;
+    background: transparent;
     color: var(--text-primary);
-    font-size: 12.5px;
-    padding: 5px 8px;
-    height: auto;
+    font-size: 12px;
+    padding: 0 2px;
+    height: 24px;
+    max-width: 74px;
     cursor: pointer;
+    outline: none;
 }
 .canvas-bg-color {
-    width: 34px;
-    height: 28px;
-    padding: 2px 3px;
+    width: 22px;
+    height: 20px;
+    padding: 0;
     border: 1px solid var(--border);
-    border-radius: 7px;
+    border-radius: 5px;
     background: var(--bg-surface);
     cursor: pointer;
+    flex-shrink: 0;
 }
 .canvas-bg-color:hover { border-color: var(--border-hover); }
+
+/* 固定工具栏按钮：图标随状态切换（竖直图钉=已固定 / 斜图钉+斜线=自动隐藏） */
+.canvas-pin-btn { padding: 5px 7px; flex-shrink: 0; }
+.canvas-pin-btn .pin-off { display: none; }
+.canvas-pin-btn.active .pin-on { display: none; }
+.canvas-pin-btn.active .pin-off { display: inline-block; }
+.canvas-pin-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--text-on-accent, #fff);
+}
+.canvas-pin-btn.active:hover {
+    background: var(--accent-hover, var(--accent));
+}
+
+/* ===== 节点内参数区折叠 ===== */
+.cnode-opts-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    border: none;
+    border-top: 1px dashed var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 11.5px;
+    padding: 6px 2px 2px;
+    cursor: pointer;
+    user-select: none;
+}
+.cnode-opts-toggle:hover { color: var(--text-primary); }
+.cnode-opts-toggle .chev {
+    transition: transform .18s ease;
+    flex-shrink: 0;
+}
+.cnode-opts-toggle.open .chev { transform: rotate(180deg); }
+.cnode-opts {
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+}
+.cnode-opts.open { display: flex; }
+
+/* 视频节点空预览占位（与图片节点缩略图风格一致） */
+.cnode-video-wrap {
+    position: relative;
+    width: 100%;
+    height: 120px;
+    border-radius: 7px;
+    overflow: hidden;
+    background: var(--bg-surface-2);
+    border: 1px dashed var(--border-hover);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.cnode-video-placeholder {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    text-align: center;
+    line-height: 1.6;
+    padding: 8px;
+    pointer-events: none;
+}
 
 /* ===== 工具栏悬浮化 + 自动隐藏 ===== */
 #tab-canvas {
@@ -681,13 +772,5 @@
     transform: translateY(-140%);
     opacity: 0;
     pointer-events: none;
-}
-.canvas-pin-btn.active {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--text-on-accent, #fff);
-}
-.canvas-pin-btn.active:hover {
-    background: var(--accent-hover, var(--accent));
 }
 
