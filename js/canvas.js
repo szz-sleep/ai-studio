@@ -468,8 +468,8 @@ const CanvasModule = {
                         <div class="cnode-img-placeholder">双击上传图片<br>或拖拽图片文件到画布<br>或直接用下方按钮生成</div>
                     </div>
                     <div class="cnode-sub">${this._escape(n.data.name || '')}</div>
-                    <select class="cnode-image-model" title="生图模型"><option value="">加载中...</option></select>
                     <textarea class="cnode-image-prompt" rows="2" placeholder="生图提示词（留空则用相连的文本节点）">${this._escape(n.data.promptOwn || '')}</textarea>
+                    <select class="cnode-image-model" title="生图模型"><option value="">加载中...</option></select>
                     <div class="cnode-params">
                         <select class="cnode-img-ratio" title="画面比例">
                             <option value="21:9">21:9</option><option value="16:9">16:9</option>
@@ -510,8 +510,15 @@ const CanvasModule = {
         if (n.type === 'video') {
             return `${head()}
                 <div class="cnode-body">
-                    <select class="cnode-video-model" title="视频模型"><option value="">加载中...</option></select>
+                    <div class="cnode-video-result" style="display:none;">
+                        <video controls preload="metadata"></video>
+                        <div class="cnode-btn-row">
+                            <button class="cnode-btn cnode-act-preview">🔍 查看</button>
+                            <button class="cnode-btn cnode-act-download">下载</button>
+                        </div>
+                    </div>
                     <textarea class="cnode-video-prompt" rows="2" placeholder="视频提示词（留空则用相连的文本节点）">${this._escape(n.data.promptOwn || '')}</textarea>
+                    <select class="cnode-video-model" title="视频模型"><option value="">加载中...</option></select>
                     <div class="cnode-params">
                         <select class="cnode-p-ratio" title="画面比例">
                             <option value="21:9">21:9</option><option value="16:9" selected>16:9</option>
@@ -531,13 +538,6 @@ const CanvasModule = {
                     </div>
                     <div class="cnode-video-status"></div>
                     <button class="cnode-btn cnode-generate-btn">⚡ 生成视频</button>
-                    <div class="cnode-video-result" style="display:none;">
-                        <video controls preload="metadata"></video>
-                        <div class="cnode-btn-row">
-                            <button class="cnode-btn cnode-act-preview">🔍 查看</button>
-                            <button class="cnode-btn cnode-act-download">下载</button>
-                        </div>
-                    </div>
                 </div>
                 <div class="cnode-port cnode-port-in" data-port="in" title="接收图片/素材/文本"></div>`;
         }
@@ -619,6 +619,30 @@ const CanvasModule = {
         };
         durSlider?.addEventListener('input', (e) => applyDuration(e.target.value));
         durNum?.addEventListener('change', (e) => applyDuration(e.target.value));
+        // 兜底：用 Pointer Events 手动接管拖动。
+        // 原生 range 在 user-select:none 的节点容器里会出现"点击轨道跳值、按住拖动不跟手"的
+        // Chromium 怪癖；手动捕获指针后按横坐标换算数值，任何容器下都能拖。
+        durSlider?.addEventListener('pointerdown', (e) => {
+            if (e.button !== 0) return;
+            e.preventDefault();  // 取消原生拖动/兼容鼠标事件，完全接管
+            try { durSlider.setPointerCapture(e.pointerId); } catch (err) { /* 忽略 */ }
+            const rect = durSlider.getBoundingClientRect();
+            const min = Number(durSlider.min) || 4, max = Number(durSlider.max) || 30;
+            const setFromX = (clientX) => {
+                const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(rect.width, 1)));
+                applyDuration(Math.round(min + ratio * (max - min)));
+            };
+            setFromX(e.clientX);
+            const onMove = (ev) => setFromX(ev.clientX);
+            const onUp = () => {
+                durSlider.removeEventListener('pointermove', onMove);
+                durSlider.removeEventListener('pointerup', onUp);
+                durSlider.removeEventListener('pointercancel', onUp);
+            };
+            durSlider.addEventListener('pointermove', onMove);
+            durSlider.addEventListener('pointerup', onUp);
+            durSlider.addEventListener('pointercancel', onUp);
+        });
         el.querySelector('.cnode-p-fps')?.addEventListener('change', (e) => {
             const nn = node(); if (!nn) return;
             nn.data.fps = parseInt(e.target.value, 10) || 30; this.save();

@@ -256,22 +256,55 @@
     gap: 6px;
 }
 
-/* 视频节点时长：滑块 + 数字输入（对齐 infinite-canvas 4~30s） */
+/* 视频节点时长：滑块 + 数字输入（对齐 infinite-canvas 4~30s）
+   注意：全局 style.css 的 input[type="number"] 特异性 (0,1,1) 高于单类名，
+   会把数字框撑到 width:100% 吃掉整行、滑块被压成 0px，
+   因此这里必须用 .cnode-dur-row 后代选择器 (0,2,0) 压过它 */
 .cnode-dur-row {
     display: flex;
     align-items: center;
     gap: 8px;
 }
-.cnode-dur-slider {
-    flex: 1;
-    min-width: 0;
-    height: 4px;
-    accent-color: var(--accent, #6366f1);
+.cnode-dur-row .cnode-dur-slider {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 40px;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 5px;
+    border-radius: 3px;
+    background: var(--bg-surface-2, #d4d4d8);
+    outline: none;
+    cursor: pointer;
+    padding: 0;
+    border: none;
+    user-select: text;
+    -webkit-user-select: text;
+    touch-action: none;
+}
+.cnode-dur-row .cnode-dur-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--accent, #6366f1);
+    border: 2px solid var(--bg-surface, #fff);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.25);
     cursor: pointer;
 }
-.cnode-dur-num {
+.cnode-dur-row .cnode-dur-slider::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--accent, #6366f1);
+    border: 2px solid var(--bg-surface, #fff);
+    cursor: pointer;
+}
+.cnode-dur-row .cnode-dur-num {
     width: 46px;
     flex-shrink: 0;
+    min-height: 0;
     border: 1px solid var(--border);
     border-radius: 6px;
     background: var(--bg-input);
@@ -282,12 +315,12 @@
     -moz-appearance: textfield;
     appearance: textfield;
 }
-.cnode-dur-num::-webkit-outer-spin-button,
-.cnode-dur-num::-webkit-inner-spin-button {
+.cnode-dur-row .cnode-dur-num::-webkit-outer-spin-button,
+.cnode-dur-row .cnode-dur-num::-webkit-inner-spin-button {
     -webkit-appearance: none;
     margin: 0;
 }
-.cnode-dur-num:focus {
+.cnode-dur-row .cnode-dur-num:focus {
     outline: none;
     border-color: var(--border-strong);
 }

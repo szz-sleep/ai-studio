@@ -446,8 +446,8 @@ const App = {
                 if (btn.dataset.tab === 'canvas' && typeof CanvasModule !== 'undefined') {
                     CanvasModule.onShow();
                 }
-                // 对话类页面（故事 / Agent）隐藏底部历史记录和日志面板
-                const isChat = btn.dataset.tab === 'agent';
+                // 对话类页面和画布页隐藏底部历史记录和日志面板
+                const isChat = btn.dataset.tab === 'agent' || btn.dataset.tab === 'canvas';
                 const histSection = document.querySelector('.history-section');
                 const logPanel = document.getElementById('logPanel');
                 if (histSection) histSection.style.display = isChat ? 'none' : '';
