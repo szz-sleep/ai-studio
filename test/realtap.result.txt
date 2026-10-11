@@ -1,0 +1,27 @@
+ALL PASS
+{
+  "pos1": {
+    "x": 1202,
+    "y": 509,
+    "id": "pmv4106q6a6sh"
+  },
+  "st1": {
+    "hasInput": true,
+    "value": "项目甲",
+    "focused": true
+  },
+  "st3": {
+    "pick": 1,
+    "clicks": 1
+  },
+  "st4": {
+    "x": 403,
+    "y": 392,
+    "hasSync": true
+  },
+  "st5": {
+    "assetId": "asset_audio_1",
+    "url": "https://host.example/demo.mp3",
+    "uploadedType": "audio/mpeg"
+  }
+}

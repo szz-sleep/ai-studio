@@ -3,6 +3,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 // 安全地暴露给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
+  // 原生音频文件选择对话框，返回 { ok, name, ext, base64 } 或 { ok:false }
+  pickAudio: () => ipcRenderer.invoke('dialog:pick-audio'),
   // 保存远程资源到本地历史目录，返回 { ok, path, fileUrl } 或 { ok:false, error }
   saveToLocal: (payload) => ipcRenderer.invoke('history:save', payload),
   saveHistoryVideo: (payload) => ipcRenderer.invoke('history:save-video-bytes', payload),

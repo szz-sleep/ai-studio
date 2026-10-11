@@ -362,6 +362,27 @@ app.whenReady().then(() => {
   // 拉起 Agent 对话后端（异步，不阻塞窗口创建）
   startAgentBackend();
 
+  // 原生音频文件选择对话框（模态、永远置前；返回 base64 供渲染进程构造 dataURL）
+  ipcMain.handle('dialog:pick-audio', async () => {
+    try {
+      const { dialog } = require('electron');
+      const r = await dialog.showOpenDialog(mainWindow, {
+        title: '选择音频文件',
+        properties: ['openFile'],
+        filters: [
+          { name: '音频文件', extensions: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'wma'] },
+          { name: '所有文件', extensions: ['*'] },
+        ],
+      });
+      if (r.canceled || !r.filePaths || !r.filePaths[0]) return { ok: false, canceled: true };
+      const p = r.filePaths[0];
+      const buf = await fsp.readFile(p);
+      return { ok: true, name: path.basename(p), ext: path.extname(p).replace('.', '').toLowerCase(), base64: buf.toString('base64') };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
   ipcMain.handle('history:save-video-bytes', async (event, { bytes, filename }) => {
     try {
       const data = Buffer.from(bytes);

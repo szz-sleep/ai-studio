@@ -595,10 +595,26 @@ const CanvasModule = {
                 }));
             item.appendChild(actions);
 
-            // 单击打开项目（重命名输入框内的点击除外，避免编辑中被重渲染打断）
+            // 单击切换项目（280ms 延迟执行，给双击重命名让路）；350ms 内再次点击
+            // 同一项目视为双击 → 取消切换、直接进入重命名。不依赖 dblclick 事件：
+            // 单击会重建列表，浏览器对换了元素的两次点击不产生 dblclick。
             item.addEventListener('click', (e) => {
                 if (e.target.closest('.canvas-project-rename')) return;
-                this._loadProject(p.id);
+                const now = Date.now();
+                const last = this._projClick || null;
+                if (last && last.id === p.id && now - last.t < 350) {
+                    this._projClick = null;
+                    clearTimeout(this._projSwitchTimer);
+                    const live = list.querySelector(`.canvas-project-item[data-id="${p.id}"] .canvas-project-name`);
+                    if (live) this._startProjectRename(p.id, live);
+                } else {
+                    this._projClick = { id: p.id, t: now };
+                    clearTimeout(this._projSwitchTimer);
+                    this._projSwitchTimer = setTimeout(() => {
+                        this._projClick = null;
+                        this._loadProject(p.id);
+                    }, 280);
+                }
             });
             list.appendChild(item);
         });
@@ -1856,7 +1872,9 @@ const CanvasModule = {
             this.selection = new Set([id]);
         }
         this._clearEdgeSelect();
-        this.renderNodes();
+        // 只切类名，不重建节点 DOM —— 整体重建会让浏览器认为 mousedown/mouseup 目标
+        // 无共同祖先，click/dblclick 事件不再产生（双击上传/双击选中失效的根因）
+        this._renderSelection();
     },
 
     _renderSelection() {
@@ -2028,6 +2046,9 @@ const CanvasModule = {
                 }
                 if (n && n.type === 'audio') {
                     items.unshift({ label: '重新选择音频', action: () => this._pickLocalAudio(n) });
+                    if (!n.data.assetId) {
+                        items.unshift({ label: '同步到素材库', action: () => this._syncAudioToLib(n) });
+                    }
                 }
                 this._showContextMenu(e.clientX, e.clientY, items);
             } else {
@@ -2081,6 +2102,18 @@ const CanvasModule = {
 
     _pickLocalAudio(node) {
         if (!node) return;
+        // 首选原生对话框（模态、永远置前，规避 input.click() 的手势/焦点兼容问题）；
+        // 无 preload 的环境（无头测试）回退到 input.click()
+        if (window.electronAPI && typeof window.electronAPI.pickAudio === 'function') {
+            window.electronAPI.pickAudio().then(async (r) => {
+                if (!r || !r.ok) {
+                    if (r && r.error) UI.toast('选择音频失败: ' + r.error, 'error');
+                    return;
+                }
+                await this._applyAudioData(node, `data:${this._audioMime(r.ext)};base64,${r.base64}`, r.name);
+            });
+            return;
+        }
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = 'audio/*';
@@ -2094,6 +2127,21 @@ const CanvasModule = {
         input.click();
     },
 
+    _audioMime(ext) {
+        return ({ mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4', aac: 'audio/aac', flac: 'audio/flac', ogg: 'audio/ogg', oga: 'audio/ogg', wma: 'audio/x-ms-wma' })[ext] || 'audio/mpeg';
+    },
+
+    /** 音频节点数据落地 + 界面刷新（原生对话框与 file input 两条路径共用） */
+    async _applyAudioData(node, dataUrl, name) {
+        node.data.url = dataUrl;
+        node.data.name = name;
+        node.data.assetId = null;
+        node.data.error = '';
+        this.renderAll();
+        this.save();
+        Logger.info(`[画布] 音频节点已设置: ${name}`);
+    },
+
     async _setAudioFromFile(node, file) {
         if (!file.type.startsWith('audio/')) {
             UI.toast('只支持音频文件', 'warn');
@@ -2101,13 +2149,7 @@ const CanvasModule = {
         }
         try {
             const dataUrl = await API.fileToBase64(file);
-            node.data.url = dataUrl;
-            node.data.name = file.name;
-            node.data.assetId = null;
-            node.data.error = '';
-            this.renderAll();
-            this.save();
-            Logger.info(`[画布] 音频节点已设置: ${file.name}`);
+            await this._applyAudioData(node, dataUrl, file.name);
         } catch (e) {
             UI.toast('读取音频失败: ' + e.message, 'error');
         }
@@ -2251,6 +2293,37 @@ const CanvasModule = {
         const resp = await fetch(dataUrl);
         const blob = await resp.blob();
         return new File([blob], filename, { type: blob.type || 'image/png' });
+    },
+
+    /** 音频节点同步到素材库（托管公网 + 火山素材库审核，成功后用 asset:// 引用生成） */
+    async _syncAudioToLib(node) {
+        if (!node || !node.data.url) { UI.toast('请先给音频节点上传音频', 'warn'); return; }
+        if (node.data.assetId) { UI.toast('该音频已在素材库中', 'info'); return; }
+        try {
+            UI.showLoading('正在同步音频到素材库...');
+            const file = await this._dataUrlToFile(node.data.url, node.data.name || 'canvas-audio.mp3');
+            const httpUrl = await MaterialLib.uploadFile(file);
+            const rec = MaterialLib.getAll().find(i => i.url === httpUrl || i.sourceUrl === httpUrl);
+            if (rec && VideoModule._validAssetId(rec.id)) {
+                node.data.assetId = rec.id;
+                node.data.name = rec.name || node.data.name;
+                node.data.url = httpUrl; // 换托管 URL：展示不受影响，生成可直接引用，且节省本地存储
+                this.renderAll();
+                this.save();
+                UI.toast('音频已同步到素材库，生成时将用 asset:// 引用', 'success');
+                Logger.success(`[画布] 音频已入库: ${rec.id}`);
+            } else {
+                if (httpUrl && httpUrl.startsWith('http')) node.data.url = httpUrl;
+                this.renderAll();
+                this.save();
+                UI.toast('音频已上传，火山审核通过后即可用 asset:// 引用（当前仍可宽松模式直接生成）', 'info', 5000);
+            }
+        } catch (e) {
+            UI.toast('同步音频素材库失败: ' + e.message, 'error');
+        } finally {
+            UI.hideLoading();
+            this.renderAll();
+        }
     },
 
     /** 打开素材库选择素材（图片类型） */

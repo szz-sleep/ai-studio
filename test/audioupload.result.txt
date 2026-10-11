@@ -1,0 +1,30 @@
+ALL PASS
+{
+  "rDbl": {
+    "called": 1,
+    "inputClicks": 1,
+    "targetInfo": {
+      "hasWrap": true,
+      "tag": "body-exists"
+    }
+  },
+  "rCtx": {
+    "menuFound": true,
+    "itemCount": 4,
+    "items": [
+      "同步到素材库",
+      "重新选择音频",
+      "复制节点",
+      "删除节点"
+    ],
+    "hasReItem": true,
+    "called": 1
+  },
+  "rSet": {
+    "url": "data:audio/mp3;base64,NEWDATA",
+    "name": "new-song.mp3",
+    "playerShown": true,
+    "playerSrc": "data:audio/mp3;base64,NEWDATA",
+    "wrapEmpty": false
+  }
+}
