@@ -1,0 +1,6 @@
+PASS agent.bothHidden
+PASS canvas.histHidden+logShown
+PASS canvas.panelHeightOK
+PASS t2v.bothShown
+PASS t2i.bothShown
+ALL PASS

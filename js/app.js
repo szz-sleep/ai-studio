@@ -446,12 +446,12 @@ const App = {
                 if (btn.dataset.tab === 'canvas' && typeof CanvasModule !== 'undefined') {
                     CanvasModule.onShow();
                 }
-                // 对话类页面和画布页隐藏底部历史记录和日志面板
-                const isChat = btn.dataset.tab === 'agent' || btn.dataset.tab === 'canvas';
+                // 对话页隐藏底部历史记录和日志面板；画布页只隐藏历史记录（保留运行日志窗口）
+                const tab = btn.dataset.tab;
                 const histSection = document.querySelector('.history-section');
                 const logPanel = document.getElementById('logPanel');
-                if (histSection) histSection.style.display = isChat ? 'none' : '';
-                if (logPanel) logPanel.style.display = isChat ? 'none' : '';
+                if (histSection) histSection.style.display = (tab === 'agent' || tab === 'canvas') ? 'none' : '';
+                if (logPanel) logPanel.style.display = tab === 'agent' ? 'none' : '';
             });
         });
         // 初始：默认 Agent 对话页隐藏历史记录和日志面板
