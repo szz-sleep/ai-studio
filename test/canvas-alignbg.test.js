@@ -43,12 +43,23 @@ function assert(name, cond, extra) {
         sel.dispatchEvent(new Event('change'));
         await new Promise(res => setTimeout(res, 50));
         r.darkBg = getComputedStyle(vp).backgroundColor;
-        r.colorDisabled = color.disabled;
+        r.colorEnabledInDefault = !color.disabled;
         r.selHasDefault = !!sel.querySelector('option[value="default"]');
         // 默认模式 + 浅色主题（MutationObserver 应联动）
         document.documentElement.setAttribute('data-theme', 'light');
         await new Promise(res => setTimeout(res, 100));
         r.lightBg = getComputedStyle(vp).backgroundColor;
+        // 默认模式下可直接改色（不锁定）
+        color.value = '#ff8800';
+        color.dispatchEvent(new Event('input'));
+        await new Promise(res => setTimeout(res, 50));
+        r.customInDefault = getComputedStyle(vp).backgroundColor;
+        // 选回「默认」= 恢复默认值（清自定义色）
+        sel.value = 'default';
+        sel.dispatchEvent(new Event('change'));
+        await new Promise(res => setTimeout(res, 50));
+        r.restoredBg = getComputedStyle(vp).backgroundColor;
+        r.bgColorCleared = (JSON.parse(localStorage.getItem('aistudio_canvas_settings')).bgColor || '') === '';
         // 自定义模式恢复
         sel.value = 'dots';
         sel.dispatchEvent(new Event('change'));
@@ -60,7 +71,10 @@ function assert(name, cond, extra) {
     assert('bg.darkIsBlack', rBg.darkBg === 'rgb(0, 0, 0)', rBg.darkBg);
     assert('bg.lightIs170-200-185', rBg.lightBg === 'rgb(170, 200, 185)', rBg.lightBg);
     assert('bg.defaultOptionExists', rBg.selHasDefault, rBg.selHasDefault);
-    assert('bg.colorDisabledInDefault', rBg.colorDisabled === true, rBg.colorDisabled);
+    assert('bg.colorEnabledInDefault', rBg.colorEnabledInDefault === true, rBg.colorEnabledInDefault);
+    assert('bg.customColorInDefault', rBg.customInDefault === 'rgb(255, 136, 0)', rBg.customInDefault);
+    assert('bg.restoreClearsColor', rBg.restoredBg === 'rgb(170, 200, 185)', rBg.restoredBg);
+    assert('bg.bgColorCleared', rBg.bgColorCleared === true, rBg.bgColorCleared);
     assert('bg.colorEnabledInDots', rBg.dotsModeColorEnabled === true, rBg.dotsModeColorEnabled);
     assert('bg.dotsClassApplied', rBg.dotsCls === true, rBg.dotsCls);
 
@@ -138,9 +152,13 @@ function assert(name, cond, extra) {
         // 标签序号必须与生成时的上游媒体顺序一致（upstream 即 referenceImages 顺序）
         r.expectedSrc = CM.upstream(v.id).filter(m => m.type === 'image' || m.type === 'material')[0]?.id;
         r.selBeforeClick = Array.from(CM.selection);
+        // 模拟真实鼠标序列：mousedown（曾被视频节点抢走选中）→ click
+        firstTag.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
         firstTag.click();
         r.selAfterClick = Array.from(CM.selection);
         r.clickSelectsSource = CM.selection.has(r.expectedSrc);
+        // 按下标签不应触发节点拖拽状态
+        r.noNodeDragOnMousedown = !CM._drag || CM._drag.type !== 'node';
         return r;
     })()`);
     assert('ref.labelsShown', rRef.labelsShown, rRef.labelsShown);
@@ -149,6 +167,14 @@ function assert(name, cond, extra) {
     assert('ref.titleHasName', rRef.firstLabelTitle.includes('第一张'), rRef.firstLabelTitle);
     assert('ref.singleNoLabels', rRef.singleNoLabels, rRef.singleNoLabels);
     assert('ref.clickSelectsSource', rRef.clickSelectsSource, { src: rRef.firstTagSrc, exp: rRef.expectedSrc, before: rRef.selBeforeClick, after: rRef.selAfterClick });
+    assert('ref.noNodeDragOnMousedown', rRef.noNodeDragOnMousedown, rRef.noNodeDragOnMousedown);
+    // 标签文字显著性：字号≥11px、加粗、不透明
+    rRef.labelStyle = await win.webContents.executeJavaScript(`(() => {
+        const t = document.querySelector('.cnode-ref-label');
+        const cs = getComputedStyle(t);
+        return { fs: parseFloat(cs.fontSize), fw: cs.fontWeight, op: parseFloat(cs.opacity) };
+    })()`);
+    assert('ref.prominentStyle', rRef.labelStyle.fs >= 11 && parseInt(rRef.labelStyle.fw) >= 600 && rRef.labelStyle.op === 1, rRef.labelStyle);
 
     // 控制台错误已在各场景隐含（页面崩溃会抛异常）
 

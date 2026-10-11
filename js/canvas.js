@@ -965,7 +965,7 @@ const CanvasModule = {
         // 拖拽移动（头部/body 空白处按下）
         el.addEventListener('mousedown', (e) => {
             const target = e.target;
-            if (target.closest('textarea, select, input, button, video, .cnode-port')) return;
+            if (target.closest('textarea, select, input, button, video, .cnode-port, .cnode-ref-labels')) return;
             e.stopPropagation();
             this._selectNode(el.dataset.id, e.shiftKey || e.ctrlKey || e.metaKey);
             const world = this._screenToWorld(e.clientX, e.clientY);
@@ -1529,6 +1529,8 @@ const CanvasModule = {
             box = document.createElement('div');
             box.className = 'cnode-ref-labels';
             el.appendChild(box);
+            // 拦截按下事件，避免触发视频节点的选中/拖拽
+            box.addEventListener('mousedown', (e) => e.stopPropagation());
             box.addEventListener('click', (e) => {
                 const tag = e.target.closest('.cnode-ref-label');
                 if (!tag) return;
@@ -2503,22 +2505,24 @@ const CanvasModule = {
         vp.classList.remove('bg-dots', 'bg-grid', 'bg-none');
         const style = s.bgStyle || 'default';
         if (style === 'default') {
-            // 默认模式：纯色底随主题自动配色（深色=黑，浅色=R170 G200 B185）
+            // 默认模式：纯色底随主题自动配色（深色=黑，浅色=R170 G200 B185）；
+            // 未自定义颜色时跟随主题，用户仍可用右侧色块在此底色上微调
             vp.classList.add('bg-none');
-            vp.style.backgroundColor = this._defaultBgColor();
+            vp.style.backgroundColor = s.bgColor || this._defaultBgColor();
         } else {
             vp.classList.add('bg-' + style);
-            // 自定义背景色（浅色模式下用户可自定底色；留空恢复主题默认）
+            // 自定义背景色（留空恢复主题默认表面色）
             vp.style.backgroundColor = s.bgColor || '';
         }
         const sel = document.getElementById('canvasBgStyle');
         const color = document.getElementById('canvasBgColor');
         if (sel && sel.value !== style) sel.value = style;
         if (color) {
-            if (color.value !== (s.bgColor || '#aac8b9')) color.value = s.bgColor || '#aac8b9';
-            color.disabled = style === 'default';
+            const effective = style === 'default' ? (s.bgColor || this._defaultBgColor()) : (s.bgColor || '#aac8b9');
+            if (color.value !== effective) color.value = effective;
+            color.disabled = false;
             color.title = style === 'default'
-                ? '默认模式下背景色随主题自动配色（深色=黑色，浅色=浅绿灰），切换到点阵/网格/无后可自定义'
+                ? '当前为默认配色（深色模式=黑色，浅色模式=浅绿灰）；可在此调整，选回「默认」即恢复'
                 : '画布背景色自定义';
         }
     },
@@ -2535,6 +2539,8 @@ const CanvasModule = {
 
         $('canvasBgStyle')?.addEventListener('change', (e) => {
             this._settings.bgStyle = e.target.value;
+            // 选「默认」= 恢复默认值：清掉自定义颜色，重新跟随主题配色
+            if (e.target.value === 'default') this._settings.bgColor = '';
             this._saveSettings();
             this._applyBackground();
         });
