@@ -218,7 +218,8 @@
 
 /* 节点内输入 */
 .cnode-text-input,
-.cnode-video-prompt {
+.cnode-video-prompt,
+.cnode-image-prompt {
     width: 100%;
     border: 1px solid var(--border);
     border-radius: 7px;
@@ -232,11 +233,13 @@
     font-family: inherit;
 }
 .cnode-text-input:focus,
-.cnode-video-prompt:focus {
+.cnode-video-prompt:focus,
+.cnode-image-prompt:focus {
     outline: none;
     border-color: var(--border-strong);
 }
 .cnode-video-model,
+.cnode-image-model,
 .cnode-params select {
     width: 100%;
     border: 1px solid var(--border);
@@ -328,7 +331,7 @@
 }
 
 /* 视频节点状态 */
-.cnode-video-status { min-height: 0; }
+.cnode-video-status, .cnode-img-status { min-height: 0; }
 .cnode-status-line {
     font-size: 11.5px;
     line-height: 1.5;
@@ -404,6 +407,7 @@
     background: var(--border);
     margin: 4px 6px;
 }
+.canvas-context-menu.hidden { display: none; }
 
 /* ===== 使用提示 ===== */
 .canvas-hint {

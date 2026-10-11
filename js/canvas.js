@@ -38,13 +38,14 @@ const CanvasModule = {
     _selectBox: null,
 
     // 模型列表（由 App.loadModels 注入）
-    _models: { video: [], other: [] },
+    _models: { video: [], image: [], other: [] },
+    _clipboard: [],            // Ctrl+C 复制的节点快照
 
     // 允许的连线：from 类型 → 允许的 to 类型
     _EDGE_RULES: {
-        text: ['video'],
-        image: ['video'],
-        material: ['video'],
+        text: ['video', 'image'],
+        image: ['video', 'image'],
+        material: ['video', 'image'],
     },
 
     // 节点标题/图标
@@ -83,13 +84,15 @@ const CanvasModule = {
         this.renderEdges();
     },
 
-    /** App.loadModels 注入视频模型分类 */
+    /** App.loadModels 注入模型分类 */
     setModels(classified) {
         this._models = {
             video: (classified && classified.video) || [],
+            image: (classified && classified.image) || [],
             other: (classified && classified.other) || [],
         };
         this.populateVideoModelSelects();
+        this.populateImageModelSelects();
     },
 
     // ================================================================
@@ -182,11 +185,15 @@ const CanvasModule = {
             this.nodes = Array.isArray(s.nodes) ? s.nodes : [];
             this.edges = Array.isArray(s.edges) ? s.edges : [];
             if (s.viewport && typeof s.viewport.k === 'number') this.viewport = s.viewport;
-            // 恢复生成中节点为 idle（轮询不跨会话恢复）
+            // 恢复生成中节点为 idle（轮询/长请求不跨会话恢复）
             this.nodes.forEach(n => {
                 if (n.type === 'video' && (n.data.status === 'generating' || n.data.status === 'uploading')) {
                     n.data.status = 'error';
                     n.data.error = '上次会话中断，请重新生成';
+                }
+                if (n.type === 'image' && (n.data.status === 'generating' || n.data.status === 'uploading')) {
+                    n.data.status = 'idle';
+                    n.data.error = '';
                 }
             });
             let maxId = 0;
@@ -209,7 +216,7 @@ const CanvasModule = {
     addNode(type, wx, wy, data) {
         this._pushHistory();
         const defaults = {
-            w: type === 'video' ? 320 : type === 'text' ? 240 : 220,
+            w: type === 'video' ? 320 : type === 'text' ? 240 : 260,
         };
         const base = {
             id: this._uid(type),
@@ -221,13 +228,24 @@ const CanvasModule = {
             data: {},
         };
         if (type === 'text') base.data = { text: '' };
-        if (type === 'image') base.data = { url: '', name: '', assetId: null };
+        if (type === 'image') {
+            base.data = {
+                url: '', name: '', assetId: null,
+                model: '', promptOwn: '', ratio: '1:1', resolution: '720p',
+                status: 'idle', error: '',
+            };
+            // 新建图片节点默认用工具栏下方图片模型（若已加载）
+            if (this._models.image.length > 0) base.data.model = this._models.image[0].id;
+        }
         if (type === 'material') base.data = { assetId: '', url: '', name: '', mtype: 'image' };
         if (type === 'video') {
             base.data = {
                 model: '', ratio: '16:9', resolution: '720p', duration: 5, fps: 30,
                 status: 'idle', progress: 0, videoUrl: '', error: '',
             };
+            // 新建视频节点默认用工具栏选择的模型
+            const toolbarModel = document.getElementById('canvasModel')?.value;
+            if (toolbarModel) base.data.model = toolbarModel;
         }
         base.data = Object.assign(base.data, data || {});
         this.nodes.push(base);
@@ -337,10 +355,39 @@ const CanvasModule = {
                     }
                 }
             }
+            // 图片节点创建时立即填充生图模型下拉
+            if (n.type === 'image') {
+                const sel = el.querySelector('.cnode-image-model');
+                if (sel) {
+                    this._fillImageModelSelect(sel);
+                    if (n.data.model && sel.querySelector(`option[value="${CSS.escape(n.data.model)}"]`)) {
+                        sel.value = n.data.model;
+                    }
+                }
+            }
         }
         // 动态更新视频节点状态区
         if (n.type === 'video') this._updateVideoNodeStatus(el, n);
+        // 动态更新图片节点状态区
+        if (n.type === 'image') this._updateImageNodeStatus(el, n);
         // 撤销/重做/恢复后：把节点数据同步回 DOM 输入控件（body 不会重建）
+        if (n.type === 'image') {
+            const ta = el.querySelector('.cnode-image-prompt');
+            if (ta && ta.value !== (n.data.promptOwn || '')) ta.value = n.data.promptOwn || '';
+            const pairs = [
+                ['.cnode-img-ratio', n.data.ratio],
+                ['.cnode-img-res', n.data.resolution],
+            ];
+            pairs.forEach(([selCls, val]) => {
+                const sel = el.querySelector(selCls);
+                if (sel && val && sel.value !== String(val)) sel.value = String(val);
+            });
+            const mSel = el.querySelector('.cnode-image-model');
+            if (mSel && n.data.model && mSel.value !== n.data.model
+                && mSel.querySelector(`option[value="${CSS.escape(n.data.model)}"]`)) {
+                mSel.value = n.data.model;
+            }
+        }
         if (n.type === 'text') {
             const ta = el.querySelector('.cnode-text-input');
             if (ta && ta.value !== n.data.text) ta.value = n.data.text || '';
@@ -411,16 +458,31 @@ const CanvasModule = {
                 <div class="cnode-body">
                     <div class="cnode-img-wrap empty">
                         <img class="cnode-img" draggable="false" alt="">
-                        <div class="cnode-img-placeholder">双击上传图片<br>或拖拽图片文件到画布</div>
+                        <div class="cnode-img-placeholder">双击上传图片<br>或拖拽图片文件到画布<br>或直接用下方按钮生成</div>
                     </div>
                     <div class="cnode-sub">${this._escape(n.data.name || '')}</div>
+                    <select class="cnode-image-model" title="生图模型"><option value="">加载中...</option></select>
+                    <textarea class="cnode-image-prompt" rows="2" placeholder="生图提示词（留空则用相连的文本节点）">${this._escape(n.data.promptOwn || '')}</textarea>
+                    <div class="cnode-params">
+                        <select class="cnode-img-ratio" title="画面比例">
+                            <option value="21:9">21:9</option><option value="16:9">16:9</option>
+                            <option value="4:3">4:3</option><option value="1:1" selected>1:1</option>
+                            <option value="3:4">3:4</option><option value="9:16">9:16</option>
+                        </select>
+                        <select class="cnode-img-res" title="分辨率">
+                            <option value="480p">480p</option><option value="720p" selected>720p</option>
+                            <option value="1080p">1080p</option><option value="4K">4K</option>
+                        </select>
+                        <button class="cnode-btn cnode-img-generate-btn" title="生成图片（有上游图片时为图生图）">⚡ 生图</button>
+                    </div>
+                    <div class="cnode-img-status"></div>
                     <div class="cnode-btn-row">
-                        <button class="cnode-btn cnode-act-replace">替换图片</button>
+                        <button class="cnode-btn cnode-act-replace" title="从本机选择图片替换">替换图片</button>
                         <button class="cnode-btn cnode-act-sync" title="上传到火山素材库，获得 asset:// 引用">同步素材库</button>
                     </div>
                 </div>
-                <div class="cnode-port cnode-port-in" data-port="in" title="输入"></div>
-                <div class="cnode-port cnode-port-out" data-port="out" title="拖拽连线到视频节点"></div>`;
+                <div class="cnode-port cnode-port-in" data-port="in" title="接收提示词/参考图"></div>
+                <div class="cnode-port cnode-port-out" data-port="out" title="拖拽连线到视频/图片节点"></div>`;
         }
 
         if (n.type === 'material') {
@@ -537,6 +599,30 @@ const CanvasModule = {
             nn.data.duration = parseInt(e.target.value, 10) || 5; this.save();
         });
 
+        // 图片节点生图参数
+        el.querySelector('.cnode-image-prompt')?.addEventListener('input', (e) => {
+            const nn = node(); if (!nn) return;
+            nn.data.promptOwn = e.target.value;
+            this.save();
+        });
+        el.querySelector('.cnode-image-model')?.addEventListener('change', (e) => {
+            const nn = node(); if (!nn) return;
+            nn.data.model = e.target.value;
+            this.save();
+        });
+        el.querySelector('.cnode-img-ratio')?.addEventListener('change', (e) => {
+            const nn = node(); if (!nn) return;
+            nn.data.ratio = e.target.value; this.save();
+        });
+        el.querySelector('.cnode-img-res')?.addEventListener('change', (e) => {
+            const nn = node(); if (!nn) return;
+            nn.data.resolution = e.target.value; this.save();
+        });
+        el.querySelector('.cnode-img-generate-btn')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.generateImage(el.dataset.id);
+        });
+
         // 生成按钮
         el.querySelector('.cnode-generate-btn')?.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -642,6 +728,172 @@ const CanvasModule = {
         });
     },
 
+    /** 填充图片节点的生图模型下拉 */
+    _fillImageModelSelect(sel) {
+        const opts = [];
+        if (this._models.image.length > 0) {
+            this._models.image.forEach(m => opts.push(`<option value="${this._escape(m.id)}">${this._escape(m.id)}</option>`));
+        } else if (this._models.other.length > 0) {
+            opts.push(`<optgroup label="其他模型（部分可能不支持）">`);
+            this._models.other.forEach(m => opts.push(`<option value="${this._escape(m.id)}">${this._escape(m.id)}</option>`));
+            opts.push(`</optgroup>`);
+        }
+        if (opts.length === 0) opts.push('<option value="">无可用生图模型</option>');
+        sel.innerHTML = opts.join('');
+    },
+
+    /** 把模型列表填充到所有图片节点的生图模型下拉 */
+    populateImageModelSelects() {
+        document.querySelectorAll('.cnode-image-model').forEach(sel => {
+            const cur = sel.value;
+            this._fillImageModelSelect(sel);
+            if (cur && sel.querySelector(`option[value="${CSS.escape(cur)}"]`)) sel.value = cur;
+        });
+    },
+
+    /** 图片节点实际像素尺寸（复用文生图页的 RESOLUTION_SIZE_MAP） */
+    _imageSize(node) {
+        try {
+            const map = (typeof RESOLUTION_SIZE_MAP !== 'undefined') ? RESOLUTION_SIZE_MAP : null;
+            const size = map && map[node.data.resolution] && map[node.data.resolution][node.data.ratio];
+            return size || '1920x1920';
+        } catch (e) { return '1920x1920'; }
+    },
+
+    _updateImageNodeStatus(el, n) {
+        const statusEl = el.querySelector('.cnode-img-status');
+        const btn = el.querySelector('.cnode-img-generate-btn');
+        if (!statusEl) return;
+        let html = '';
+        let busy = false;
+        if (n.data.status === 'generating') {
+            busy = true;
+            html = `<div class="cnode-status-line generating">图片生成中...</div>`;
+        } else if (n.data.status === 'uploading') {
+            busy = true;
+            html = `<div class="cnode-status-line uploading">上传参考图中...</div>`;
+        } else if (n.data.status === 'error') {
+            html = `<div class="cnode-status-line error">${this._escape(n.data.error || '生成失败')}</div>`;
+        }
+        statusEl.innerHTML = html;
+        if (btn) {
+            btn.disabled = busy;
+            btn.textContent = busy ? '生成中' : '⚡ 生图';
+        }
+    },
+
+    // ================================================================
+    // 图片生成（复用 AI Studio 文生图 / 图生图 API 链路）
+    // ================================================================
+
+    /**
+     * 图片节点生成：
+     *  - 无上游参考图 → 文生图 API.generateImage（纯文生图）
+     *  - 有上游参考图 → 图生图 API.generateImageEdit（参考图可为 asset:// 引用 / 公网 URL / 自动托管）
+     *  - 提示词 = 节点自身提示词 + 相连文本节点
+     *  - 结果写回节点图片，可继续连线到视频节点做图生视频
+     */
+    async generateImage(nodeId) {
+        const node = this.getNode(nodeId);
+        if (!node || node.type !== 'image') return;
+        if (node.data.status === 'generating' || node.data.status === 'uploading') return;
+
+        const el = this._nodesLayer.querySelector(`.cnode[data-id="${nodeId}"]`);
+        const modelSel = el?.querySelector('.cnode-image-model');
+        const model = (modelSel && modelSel.value) || node.data.model || '';
+        if (!model) { UI.toast('没有可用的生图模型，请到设置页检查 API 配置', 'error'); return; }
+        node.data.model = model;
+        if (modelSel && modelSel.value !== model) modelSel.value = model;
+
+        const ups = this.upstream(nodeId);
+        const textNodes = ups.filter(n => n.type === 'text');
+        const mediaNodes = ups.filter(n => n.type === 'image' || n.type === 'material');
+
+        const promptParts = [];
+        if ((node.data.promptOwn || '').trim()) promptParts.push(node.data.promptOwn.trim());
+        textNodes.forEach(t => { if ((t.data.text || '').trim()) promptParts.push(t.data.text.trim()); });
+        const prompt = promptParts.join('\n\n');
+
+        if (mediaNodes.length === 0 && !prompt) {
+            UI.toast('请先填写生图提示词，或连线文本/图片节点', 'warn');
+            return;
+        }
+
+        const abort = new AbortController();
+        node._abort = abort;
+        const setStatus = (status, extra) => {
+            node.data.status = status;
+            Object.assign(node.data, extra || {});
+            this._updateImageNodeStatus(el, node);
+        };
+
+        try {
+            // —— 收集参考图（宽松模式，与图生图页面同规则） ——
+            const refs = [];
+            for (const m of mediaNodes) {
+                let v = null;
+                if (VideoModule._validAssetId(m.data.assetId)) {
+                    v = 'asset://' + m.data.assetId;
+                } else if (m.data.url && m.data.url.startsWith('http')) {
+                    v = m.data.url;
+                } else if (m.data.url) {
+                    setStatus('uploading');
+                    v = await VideoModule._uploadToTempHost(m.data.url, m.data.name || 'canvas-image');
+                    if (!v || v.startsWith('data:')) {
+                        throw new Error(`参考图「${m.data.name || '未命名'}」上传公网托管失败，建议同步到素材库后重试`);
+                    }
+                }
+                if (v) refs.push(v);
+            }
+
+            setStatus('generating');
+            Logger.req(`[画布] 图片生成: 模型=${model}, 模式=${refs.length > 0 ? '图生图(' + refs.length + '图)' : '文生图'}, 尺寸=${this._imageSize(node)}`);
+
+            let result;
+            if (refs.length > 0) {
+                result = await API.generateImageEdit({
+                    prompt, model,
+                    size: this._imageSize(node),
+                    images: refs,
+                    ratio: node.data.ratio || '1:1',
+                    qualityLabel: node.data.resolution || '720p',
+                    signal: abort.signal,
+                });
+            } else {
+                result = await API.generateImage({
+                    prompt, model,
+                    size: this._imageSize(node),
+                    n: 1,
+                    signal: abort.signal,
+                });
+            }
+
+            const item = result?.data && result.data[0];
+            const url = item && (item.url || (item.b64_json ? `data:image/png;base64,${item.b64_json}` : ''));
+            if (!url) throw new Error('API 未返回图片数据');
+
+            node.data.url = url;
+            node.data.assetId = null;   // 新图未入库
+            node.data.name = `生成的图片-${new Date().toLocaleTimeString()}`;
+            setStatus('idle', { error: '' });
+            this.renderAll();
+            this.save();
+            UI.toast('图片生成成功！可继续连线到视频节点', 'success');
+            Logger.success('[画布] 图片生成完成');
+        } catch (err) {
+            if (err.name === 'AbortError') {
+                setStatus('idle', { error: '' });
+                Logger.warn('[画布] 用户取消图片生成');
+            } else {
+                Logger.error(`[画布] 图片生成失败: ${err.message}`);
+                setStatus('error', { error: err.message, progress: 0 });
+                UI.toast('图片生成失败: ' + err.message, 'error', 5000);
+            }
+        } finally {
+            node._abort = null;
+        }
+    },
+
     // ================================================================
     // 连线渲染
     // ================================================================
@@ -690,6 +942,15 @@ const CanvasModule = {
                 this.selection.clear();
                 this._renderSelection();
                 this.renderEdges();
+            });
+            hit.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.selectedEdge = edge.id;
+                this.renderEdges();
+                this._showContextMenu(e.clientX, e.clientY, [
+                    { label: '删除连线', danger: true, action: () => this.deleteEdge(edge.id) },
+                ]);
             });
             svg.appendChild(hit);
             const vis = document.createElementNS(ns, 'path');
@@ -983,6 +1244,31 @@ const CanvasModule = {
                 e.preventDefault();
                 this.nodes.forEach(n => this.selection.add(n.id));
                 this.renderNodes();
+            } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+                // 复制选中节点
+                if (this.selection.size > 0) {
+                    this._clipboard = this.nodes
+                        .filter(n => this.selection.has(n.id))
+                        .map(n => JSON.parse(JSON.stringify(n)));
+                    UI.toast(`已复制 ${this._clipboard.length} 个节点`, 'info', 1500);
+                }
+            } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+                if (this._clipboard.length > 0) {
+                    this._pushHistory();
+                    const newIds = [];
+                    this._clipboard.forEach(src => {
+                        const copy = JSON.parse(JSON.stringify(src));
+                        copy.id = this._uid(copy.type);
+                        copy.x += 40; copy.y += 40;
+                        if (copy.type === 'video') { copy.data.status = 'idle'; copy.data.videoUrl = ''; copy.data.error = ''; copy.data.progress = 0; }
+                        if (copy.type === 'image') { copy.data.status = 'idle'; copy.data.error = ''; }
+                        this.nodes.push(copy);
+                        newIds.push(copy.id);
+                    });
+                    this.selection = new Set(newIds);
+                    this.renderAll();
+                    this.save();
+                }
             } else if (e.key === 'Escape') {
                 this.selection.clear();
                 this._clearEdgeSelect();
@@ -1063,7 +1349,7 @@ const CanvasModule = {
                 const world = this._screenToWorld(e.clientX, e.clientY);
                 this._showContextMenu(e.clientX, e.clientY, [
                     { label: '添加提示词节点', action: () => this.addNode('text', world.x, world.y) },
-                    { label: '添加图片节点', action: () => { const n = this.addNode('image', world.x, world.y); this._pickLocalImage(n); } },
+                    { label: '添加图片节点', action: () => this.addNode('image', world.x, world.y) },
                     { label: '从素材库添加', action: () => { const n = this.addNode('material', world.x, world.y); this._pickMaterial(n); } },
                     { label: '添加视频节点', action: () => this.addNode('video', world.x, world.y) },
                     '-',

@@ -708,7 +708,7 @@
                 <button class="canvas-btn" id="canvasAddMaterialBtn" title="从素材库创建素材节点（asset:// 引用）">📦 素材库</button>
                 <button class="canvas-btn" id="canvasAddVideoBtn" title="添加视频生成节点">🎬 视频</button>
                 <div class="canvas-sep"></div>
-                <select id="canvasModel" class="select-input" title="画布视频生成使用的模型（与 AI Studio 同一 API）"><option value="">加载中...</option></select>
+                <select id="canvasModel" class="select-input" title="视频模型：新建视频节点时默认选中的模型（生成仍可在每个视频节点内单独更改）"><option value="">加载中...</option></select>
                 <div class="canvas-sep"></div>
                 <button class="canvas-btn" id="canvasUndoBtn" title="撤销 (Ctrl+Z)">↺</button>
                 <button class="canvas-btn" id="canvasRedoBtn" title="重做 (Ctrl+Y)">↻</button>
@@ -729,7 +729,7 @@
                         <div id="canvasNodesLayer" style="position:absolute;left:0;top:0;"></div>
                     </div>
                     <div class="canvas-hint" id="canvasHint">
-                        <span>拖拽节点端口连线：文本/图片/素材 → 视频；滚轮缩放，<kbd>Shift</kbd>+拖拽框选，<kbd>Del</kbd> 删除，右键更多操作</span>
+                        <span>连线：文本/图片/素材 → 图片或视频节点；图片节点可直接生图；滚轮缩放，<kbd>Shift</kbd>+拖拽框选，<kbd>Ctrl+C/V</kbd> 复制粘贴，<kbd>Del</kbd> 删除，右键更多操作</span>
                         <button class="canvas-hint-close" id="canvasHintClose">×</button>
                     </div>
                 </div>
