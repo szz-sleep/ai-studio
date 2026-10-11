@@ -47,10 +47,13 @@ const CanvasModule = {
 
     // 允许的连线：from 类型 → 允许的 to 类型
     // image → material：图片入库通道（素材节点自动上传火山素材库并跟踪审核状态）
+    // audio/video → video：音频/视频参考生成
     _EDGE_RULES: {
         text: ['video', 'image'],
         image: ['video', 'image', 'material'],
         material: ['video', 'image'],
+        audio: ['video'],
+        video: ['video'],
     },
 
     // 节点标题/图标
@@ -58,6 +61,7 @@ const CanvasModule = {
         text:     { title: '提示词' },
         image:    { title: '图片' },
         material: { title: '素材库' },
+        audio:    { title: '音频' },
         video:    { title: '视频' },
     },
 
@@ -67,6 +71,7 @@ const CanvasModule = {
         image: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>',
         material: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>',
         video: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>',
+        audio: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
         zap: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
         search: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
     },
@@ -214,7 +219,7 @@ const CanvasModule = {
         });
 
         // 节点（按类型着色，选中高亮）
-        const colors = { text: '#94a3b8', image: '#5b9cf6', material: '#f5a623', video: '#a86cf6' };
+        const colors = { text: '#94a3b8', image: '#5b9cf6', material: '#f5a623', audio: '#34d399', video: '#a86cf6' };
         this.nodes.forEach(n => {
             const el = this._nodesLayer.querySelector(`.cnode[data-id="${n.id}"]`);
             const h = el ? el.offsetHeight : 120;
@@ -632,7 +637,7 @@ const CanvasModule = {
     addNode(type, wx, wy, data) {
         this._pushHistory();
         const defaults = {
-            w: type === 'video' ? 320 : type === 'text' ? 240 : 260,
+            w: type === 'video' ? 320 : type === 'text' ? 240 : type === 'audio' ? 260 : 260,
         };
         const base = {
             id: this._uid(type),
@@ -654,6 +659,12 @@ const CanvasModule = {
             if (this._models.image.length > 0) base.data.model = this._models.image[0].id;
         }
         if (type === 'material') base.data = { assetId: '', url: '', name: '', mtype: 'image' };
+        if (type === 'audio') {
+            base.data = {
+                url: '', name: '', assetId: null,
+                status: 'idle', error: '',
+            };
+        }
         if (type === 'video') {
             base.data = {
                 model: '', ratio: '16:9', resolution: '720p', duration: 5, fps: 30,
@@ -847,6 +858,19 @@ const CanvasModule = {
             const sub = el.querySelector('.cnode-sub');
             if (sub && sub.textContent !== (n.data.name || '')) sub.textContent = n.data.name || '';
         }
+        // 音频节点播放器/名称
+        if (n.type === 'audio' && el.querySelector('.cnode-audio-player')) {
+            const player = el.querySelector('.cnode-audio-player');
+            if (player.dataset.src !== (n.data.url || '')) {
+                player.dataset.src = n.data.url || '';
+                player.src = n.data.url || '';
+            }
+            player.style.display = n.data.url ? '' : 'none';
+            const wrap = el.querySelector('.cnode-audio-wrap');
+            if (wrap) wrap.classList.toggle('empty', !n.data.url);
+            const sub = el.querySelector('.cnode-sub');
+            if (sub && sub.textContent !== (n.data.name || '')) sub.textContent = n.data.name || '';
+        }
         // 素材徽标（含火山审核状态）
         if (n.type === 'image' || n.type === 'material') {
             const badge = el.querySelector('.cnode-lib-badge');
@@ -871,7 +895,7 @@ const CanvasModule = {
 
         const meta = this._ICONS;
         function meta_icon(t) { return meta[t] || '·'; }
-        function meta_title(t) { return { text: '提示词', image: '图片', material: '素材库', video: '视频' }[t] || t; }
+        function meta_title(t) { return { text: '提示词', image: '图片', material: '素材库', audio: '音频', video: '视频' }[t] || t; }
 
         if (n.type === 'text') {
             return `${head()}
@@ -931,6 +955,18 @@ const CanvasModule = {
                 <div class="cnode-port cnode-port-out" data-port="out" title="拖拽连线到视频节点"></div>`;
         }
 
+        if (n.type === 'audio') {
+            return `${head()}
+                <div class="cnode-body">
+                    <div class="cnode-audio-wrap empty">
+                        <audio class="cnode-audio-player" controls preload="metadata" style="display:none;"></audio>
+                        <div class="cnode-audio-placeholder">双击上传音频<br>（mp3 / wav / m4a…）<br>连线到视频节点作为参考音频</div>
+                    </div>
+                    <div class="cnode-sub">${this._escape(n.data.name || '')}</div>
+                </div>
+                <div class="cnode-port cnode-port-out" data-port="out" title="拖拽连线到视频节点（参考音频）"></div>`;
+        }
+
         if (n.type === 'video') {
             return `${head()}
                 <div class="cnode-body">
@@ -966,7 +1002,8 @@ const CanvasModule = {
                     <button class="cnode-btn cnode-generate-btn">${this._ICONS.zap} 生成视频</button>
                     </div>
                 </div>
-                <div class="cnode-port cnode-port-in" data-port="in" title="接收图片/素材/文本"></div>`;
+                <div class="cnode-port cnode-port-in" data-port="in" title="接收图片/素材/音频/视频/文本"></div>
+                <div class="cnode-port cnode-port-out" data-port="out" title="拖拽连线到视频节点（参考视频）"></div>`;
         }
         return head();
     },
@@ -995,7 +1032,7 @@ const CanvasModule = {
         // 拖拽移动（头部/body 空白处按下）
         el.addEventListener('mousedown', (e) => {
             const target = e.target;
-            if (target.closest('textarea, select, input, button, video, .cnode-port, .cnode-ref-labels')) return;
+            if (target.closest('textarea, select, input, button, video, audio, .cnode-port, .cnode-ref-labels')) return;
             e.stopPropagation();
             this._selectNode(el.dataset.id, e.shiftKey || e.ctrlKey || e.metaKey);
             const world = this._screenToWorld(e.clientX, e.clientY);
@@ -1010,13 +1047,14 @@ const CanvasModule = {
             };
         });
 
-        // 双击：图片节点上传 / 素材节点选择
+        // 双击：图片节点上传 / 素材节点选择 / 音频节点上传
         el.addEventListener('dblclick', (e) => {
-            if (e.target.closest('textarea, select, input, button, video')) return;
+            if (e.target.closest('textarea, select, input, button, video, audio')) return;
             const nn = node();
             if (!nn) return;
             if (nn.type === 'image') this._pickLocalImage(nn);
             if (nn.type === 'material') this._pickMaterial(nn);
+            if (nn.type === 'audio') this._pickLocalAudio(nn);
         });
 
         // 删除按钮
@@ -1542,15 +1580,15 @@ const CanvasModule = {
     },
 
     /**
-     * 视频节点左侧的参考图序号标签：上游媒体 ≥2 个时显示 图片1/图片2/…（竖向贴左排列），
-     * 顺序与 generateVideo 的 referenceImages 顺序一致，方便用户在提示词里按序号引用。
+     * 视频节点左侧的参考素材序号标签：上游媒体 ≥2 个时显示 图片1/音频1/视频1/…（竖向贴左排列），
+     * 同类素材按上游顺序编号，与 generateVideo 的参考顺序一致，方便用户在提示词里按序号引用。
      * 点击标签可选中对应来源节点。
      */
     _updateRefLabels(n) {
         const el = this._nodesLayer.querySelector(`.cnode[data-id="${n.id}"]`);
         if (!el) return;
         let box = el.querySelector('.cnode-ref-labels');
-        const media = this.upstream(n.id).filter(m => m.type === 'image' || m.type === 'material');
+        const media = this.upstream(n.id).filter(m => ['image', 'material', 'audio', 'video'].includes(m.type));
         if (media.length < 2) {
             if (box) box.remove();
             return;
@@ -1573,12 +1611,17 @@ const CanvasModule = {
                 this._renderSelection();
             });
         }
+        const typeNames = { image: '图片', material: '图片', audio: '音频', video: '视频' };
+        // 同类素材按上游顺序编号（与 generateVideo 的参考数组顺序一致）
+        const counters = { image: 0, material: 0, audio: 0, video: 0 };
         const sig = media.map(m => m.id).join(',');
         if (box.dataset.sig === sig) return;
         box.dataset.sig = sig;
-        box.innerHTML = media.map((m, i) => {
+        box.innerHTML = media.map((m) => {
+            counters[m.type]++;
+            const label = `${typeNames[m.type] || m.type}${counters[m.type]}`;
             const name = this._escape(m.data.name || '未命名');
-            return `<span class="cnode-ref-label" data-src="${m.id}" title="图片${i + 1}：${name} —— 在提示词中可用「图片${i + 1}」引用这张图">图片${i + 1}</span>`;
+            return `<span class="cnode-ref-label" data-src="${m.id}" title="${label}：${name} —— 在提示词中可用「${label}」引用这个素材">${label}</span>`;
         }).join('');
     },
 
@@ -1983,6 +2026,9 @@ const CanvasModule = {
                 if (n && n.type === 'material') {
                     items.unshift({ label: '重新选择素材', action: () => this._pickMaterial(n) });
                 }
+                if (n && n.type === 'audio') {
+                    items.unshift({ label: '重新选择音频', action: () => this._pickLocalAudio(n) });
+                }
                 this._showContextMenu(e.clientX, e.clientY, items);
             } else {
                 const world = this._screenToWorld(e.clientX, e.clientY);
@@ -1990,6 +2036,7 @@ const CanvasModule = {
                     { label: '添加提示词节点', action: () => this.addNode('text', world.x, world.y) },
                     { label: '添加图片节点', action: () => this.addNode('image', world.x, world.y) },
                     { label: '从素材库添加', action: () => { const n = this.addNode('material', world.x, world.y); this._pickMaterial(n); } },
+                    { label: '添加音频节点', action: () => { const n = this.addNode('audio', world.x, world.y); this._pickLocalAudio(n); } },
                     { label: '添加视频节点', action: () => this.addNode('video', world.x, world.y) },
                     '-',
                     { label: '全选', action: () => { this.nodes.forEach(n => this.selection.add(n.id)); this.renderNodes(); } },
@@ -2030,6 +2077,40 @@ const CanvasModule = {
             if (file) await this._setImageFromFile(node, file);
         };
         input.click();
+    },
+
+    _pickLocalAudio(node) {
+        if (!node) return;
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'audio/*';
+        input.style.display = 'none';
+        document.body.appendChild(input);
+        input.onchange = async () => {
+            const file = input.files && input.files[0];
+            document.body.removeChild(input);
+            if (file) await this._setAudioFromFile(node, file);
+        };
+        input.click();
+    },
+
+    async _setAudioFromFile(node, file) {
+        if (!file.type.startsWith('audio/')) {
+            UI.toast('只支持音频文件', 'warn');
+            return;
+        }
+        try {
+            const dataUrl = await API.fileToBase64(file);
+            node.data.url = dataUrl;
+            node.data.name = file.name;
+            node.data.assetId = null;
+            node.data.error = '';
+            this.renderAll();
+            this.save();
+            Logger.info(`[画布] 音频节点已设置: ${file.name}`);
+        } catch (e) {
+            UI.toast('读取音频失败: ' + e.message, 'error');
+        }
     },
 
     async _setImageFromFile(node, file) {
@@ -2244,6 +2325,8 @@ const CanvasModule = {
         const ups = this.upstream(nodeId);
         const textNodes = ups.filter(n => n.type === 'text');
         const mediaNodes = ups.filter(n => n.type === 'image' || n.type === 'material');
+        const audioNodes = ups.filter(n => n.type === 'audio');
+        const videoRefNodes = ups.filter(n => n.type === 'video');
 
         // 提示词：节点自身提示词 + 相连文本节点内容
         const promptParts = [];
@@ -2251,8 +2334,8 @@ const CanvasModule = {
         textNodes.forEach(t => { if ((t.data.text || '').trim()) promptParts.push(t.data.text.trim()); });
         const prompt = promptParts.join('\n\n');
 
-        if (mediaNodes.length === 0 && !prompt) {
-            UI.toast('请先连线图片/素材节点，或填写提示词', 'warn');
+        if (mediaNodes.length === 0 && audioNodes.length === 0 && videoRefNodes.length === 0 && !prompt) {
+            UI.toast('请先连线图片/素材/音频/视频节点，或填写提示词', 'warn');
             return;
         }
 
@@ -2321,11 +2404,70 @@ const CanvasModule = {
                 }
                 if (value) mediaValues.push(value);
             }
+
+            // 上传中状态提示（音频/参考视频走公网托管时展示）
+            const setUploading = (text) => {
+                node.data.status = 'uploading';
+                node.data.progress = 0;
+                node.data.statusText = text;
+                this._updateVideoNodeStatus(
+                    this._nodesLayer.querySelector(`.cnode[data-id="${node.id}"]`), node);
+            };
+
+            // —— 参考音频（audio 节点）——
+            const refAudioValues = [];
+            for (const a of audioNodes) {
+                let value = null;
+                if (VideoModule._validAssetId(a.data.assetId)) {
+                    value = 'asset://' + a.data.assetId;
+                } else if (a.data.url) {
+                    if (isLocalModel) {
+                        value = a.data.url; // base64 直传
+                    } else if (a.data.url.startsWith('http')) {
+                        value = a.data.url;
+                    } else {
+                        setUploading(`正在上传参考音频「${a.data.name || '未命名'}」...`);
+                        value = await VideoModule._uploadToTempHost(a.data.url, a.data.name || 'canvas-audio');
+                        if (!value || value.startsWith('data:')) {
+                            throw new Error(`音频「${a.data.name || '未命名'}」上传公网托管失败，无法作为参考音频`);
+                        }
+                    }
+                }
+                if (value) refAudioValues.push(value);
+            }
+
+            // —— 参考视频（video 节点，取其成片 URL）——
+            const refVideoValues = [];
+            for (const v of videoRefNodes) {
+                let value = null;
+                if (v.data.videoUrl) {
+                    if (isLocalModel) {
+                        value = v.data.videoUrl;
+                    } else if (v.data.videoUrl.startsWith('http')) {
+                        value = v.data.videoUrl;
+                    } else if (v.data.videoUrl.startsWith('data:')) {
+                        setUploading(`正在上传参考视频「${v.data.name || '视频'}」...`);
+                        value = await VideoModule._uploadToTempHost(v.data.videoUrl, 'canvas-ref-video');
+                        if (!value || value.startsWith('data:')) {
+                            throw new Error('参考视频上传公网托管失败，无法作为参考视频');
+                        }
+                    }
+                }
+                if (value) refVideoValues.push(value);
+                else UI.toast(`视频节点「${v.data.name || '未命名'}」还没有生成结果，已跳过`, 'warn', 4000);
+            }
+
+            // —— 模式约束（与图生视频页多模态分支同规则）——
+            // 火山约束：首帧模式与参考图/参考视频不能混用（400）。因此：
+            //  - 仅 1 个图片/素材且无音频/视频参考 → 首帧模式
+            //  - 其余（多图 / 有音频 / 有视频参考）→ 多模态参考模式（不设首帧）
             let firstFrameUrl = null;
             const refImages = [];
-            if (mediaValues.length === 1) {
+            const refVideos = refVideoValues;
+            const refAudios = refAudioValues;
+            if (mediaValues.length === 1 && refVideos.length === 0 && refAudios.length === 0) {
                 firstFrameUrl = mediaValues[0];
-            } else if (mediaValues.length > 1) {
+            } else {
                 refImages.push(...mediaValues);
             }
 
@@ -2335,7 +2477,7 @@ const CanvasModule = {
             node.data.error = '';
             this._updateVideoNodeStatus(
                 this._nodesLayer.querySelector(`.cnode[data-id="${node.id}"]`), node);
-            Logger.req(`[画布] 创建视频任务: 模型=${model}, 首帧=${firstFrameUrl ? '有' : '无'}, 参考图=${refImages.length}, 提示词="${(prompt || '').substring(0, 50)}..."`);
+            Logger.req(`[画布] 创建视频任务: 模型=${model}, 首帧=${firstFrameUrl ? '有' : '无'}, 参考图=${refImages.length}, 参考视频=${refVideos.length}, 参考音频=${refAudios.length}, 提示词="${(prompt || '').substring(0, 50)}..."`);
 
             const duration = this._clampDuration(node.data.duration);
             node.data.duration = duration;
@@ -2360,6 +2502,8 @@ const CanvasModule = {
                 firstFrameUrl,
                 lastFrameUrl: null,
                 referenceImages: refImages.length > 0 ? refImages : null,
+                referenceVideos: refVideos.length > 0 ? refVideos : null,
+                referenceAudios: refAudios.length > 0 ? refAudios : null,
             };
 
             const task = await API.createVideoTask(params);
@@ -2436,6 +2580,11 @@ const CanvasModule = {
             this._pickMaterial(node);
         });
         $('canvasAddVideoBtn')?.addEventListener('click', () => { const w = centerWorld(); this.addNode('video', w.x, w.y); });
+        $('canvasAddAudioBtn')?.addEventListener('click', () => {
+            const w = centerWorld();
+            const node = this.addNode('audio', w.x, w.y);
+            this._pickLocalAudio(node);
+        });
 
         $('canvasUndoBtn')?.addEventListener('click', () => this.undo());
         $('canvasRedoBtn')?.addEventListener('click', () => this.redo());
