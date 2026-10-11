@@ -692,6 +692,54 @@
     flex-shrink: 0;
 }
 .canvas-bg-color:hover { border-color: var(--border-hover); }
+.canvas-bg-color:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* 对齐与排列按钮组 */
+.canvas-align-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0 4px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: var(--bg-surface);
+    height: 28px;
+    flex-shrink: 0;
+}
+.canvas-align-btn {
+    padding: 4px 5px;
+    line-height: 0;
+    border: none;
+    background: transparent;
+}
+.canvas-align-btn:hover { background: var(--bg-surface-2, rgba(128,128,128,0.12)); }
+
+/* 视频节点左侧参考图序号标签（多图参考） */
+.cnode-ref-labels {
+    position: absolute;
+    right: 100%;
+    top: 30px;
+    margin-right: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    align-items: flex-end;
+    z-index: 2;
+    user-select: none;
+}
+.cnode-ref-label {
+    font-size: 10.5px;
+    line-height: 1;
+    padding: 3px 7px;
+    border-radius: 9px;
+    background: var(--accent, #5b9cf6);
+    color: #fff;
+    white-space: nowrap;
+    cursor: pointer;
+    opacity: 0.88;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.18);
+}
+.cnode-ref-label:hover { opacity: 1; }
 
 /* 固定工具栏按钮：图标随状态切换（竖直图钉=已固定 / 斜图钉+斜线=自动隐藏） */
 .canvas-pin-btn { padding: 5px 7px; flex-shrink: 0; }

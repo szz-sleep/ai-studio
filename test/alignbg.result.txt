@@ -1,0 +1,19 @@
+ALL=PASS
+PASS bg.darkIsBlack :: "rgb(0, 0, 0)"
+PASS bg.lightIs170-200-185 :: "rgb(170, 200, 185)"
+PASS bg.defaultOptionExists :: true
+PASS bg.colorDisabledInDefault :: true
+PASS bg.colorEnabledInDots :: true
+PASS bg.dotsClassApplied :: true
+PASS align.buttonsPresent :: 8
+PASS align.left :: {"after":[-20,-20,-20],"before":{"a":{"x":-20,"y":260,"w":240},"b":{"x":280,"y":60},"c":{"x":580,"y":160},"sel":3}}
+PASS align.top :: true
+PASS align.distXEven :: [500,500]
+PASS align.singleNoop :: true
+PASS align.ctrlBoxSelect :: true
+PASS ref.labelsShown :: true
+PASS ref.twoLabels :: ["图片1","图片2"]
+PASS ref.labelText :: ["图片1","图片2"]
+PASS ref.titleHasName :: "图片1：第一张 —— 在提示词中可用「图片1」引用这张图"
+PASS ref.singleNoLabels :: true
+PASS ref.clickSelectsSource :: {"src":"image_mv3x3m3t_5","exp":"image_mv3x3m3t_5","before":["text_mv3x3m3n_1"],"after":["image_mv3x3m3t_5"]}

@@ -967,7 +967,7 @@ const CanvasModule = {
             const target = e.target;
             if (target.closest('textarea, select, input, button, video, .cnode-port')) return;
             e.stopPropagation();
-            this._selectNode(el.dataset.id, e.shiftKey);
+            this._selectNode(el.dataset.id, e.shiftKey || e.ctrlKey || e.metaKey);
             const world = this._screenToWorld(e.clientX, e.clientY);
             this._drag = {
                 type: 'node',
@@ -1496,6 +1496,9 @@ const CanvasModule = {
 
         this.edges.forEach(e => drawEdge(e, this.selectedEdge === e.id));
 
+        // 视频节点左侧参考图序号标签（多图参考时可按 图片1/图片2… 在提示词中引用）
+        this.nodes.forEach(n => { if (n.type === 'video') this._updateRefLabels(n); });
+
         // 临时连线
         if (this._tempEdge) {
             const p1 = this._portPos(this._tempEdge.fromId, 'out');
@@ -1508,8 +1511,42 @@ const CanvasModule = {
         }
     },
 
-    /** 判断 from 节点能否连到 to 节点 */
-    _canConnect(fromId, toId) {
+    /**
+     * 视频节点左侧的参考图序号标签：上游媒体 ≥2 个时显示 图片1/图片2/…（竖向贴左排列），
+     * 顺序与 generateVideo 的 referenceImages 顺序一致，方便用户在提示词里按序号引用。
+     * 点击标签可选中对应来源节点。
+     */
+    _updateRefLabels(n) {
+        const el = this._nodesLayer.querySelector(`.cnode[data-id="${n.id}"]`);
+        if (!el) return;
+        let box = el.querySelector('.cnode-ref-labels');
+        const media = this.upstream(n.id).filter(m => m.type === 'image' || m.type === 'material');
+        if (media.length < 2) {
+            if (box) box.remove();
+            return;
+        }
+        if (!box) {
+            box = document.createElement('div');
+            box.className = 'cnode-ref-labels';
+            el.appendChild(box);
+            box.addEventListener('click', (e) => {
+                const tag = e.target.closest('.cnode-ref-label');
+                if (!tag) return;
+                e.stopPropagation();
+                const src = this.getNode(tag.dataset.src);
+                if (src) this._selectNode(src.id);
+            });
+        }
+        const sig = media.map(m => m.id).join(',');
+        if (box.dataset.sig === sig) return;
+        box.dataset.sig = sig;
+        box.innerHTML = media.map((m, i) => {
+            const name = this._escape(m.data.name || '未命名');
+            return `<span class="cnode-ref-label" data-src="${m.id}" title="图片${i + 1}：${name} —— 在提示词中可用「图片${i + 1}」引用这张图">图片${i + 1}</span>`;
+        }).join('');
+    },
+
+    /** 判断 from 节点能否连到 to 节点 */    _canConnect(fromId, toId) {
         const from = this.getNode(fromId);
         const to = this.getNode(toId);
         if (!from || !to || from.id === to.id) return false;
@@ -1601,14 +1638,14 @@ const CanvasModule = {
             // 背景按下：pan / 框选 / 取消连线
             if (e.target.closest('.cnode')) return;
             this._clearEdgeSelect();
-            if (!e.shiftKey && (e.button === 0 || e.button === 1)) {
+            if ((e.shiftKey || e.ctrlKey || e.metaKey) && e.button === 0) {
+                // 框选（Shift 或 Ctrl 均可）
+                const world = this._screenToWorld(e.clientX, e.clientY);
+                this._drag = { type: 'select', startWx: world.x, startWy: world.y };
+            } else if (e.button === 0 || e.button === 1) {
                 // 拖拽平移
                 this._drag = { type: 'pan', sx: e.clientX, sy: e.clientY, ox: this.viewport.x, oy: this.viewport.y };
                 vp.classList.add('panning');
-            } else if (e.shiftKey && e.button === 0) {
-                // 框选
-                const world = this._screenToWorld(e.clientX, e.clientY);
-                this._drag = { type: 'select', startWx: world.x, startWy: world.y };
             }
             if (this._tempEdge) {
                 // 点击空白取消连线
@@ -2370,6 +2407,11 @@ const CanvasModule = {
         $('canvasFitBtn')?.addEventListener('click', () => this.fitView());
         $('canvasClearBtn')?.addEventListener('click', () => this.clearAll());
 
+        // 对齐与排列：Ctrl/Shift 框选或 Ctrl+点击多选后点击使用
+        document.querySelectorAll('.canvas-align-btn').forEach(btn => {
+            btn.addEventListener('click', () => this._alignSelected(btn.dataset.align));
+        });
+
         // 画布使用提示关闭
         $('canvasHintClose')?.addEventListener('click', () => {
             $('canvasHint')?.classList.add('hidden');
@@ -2378,6 +2420,67 @@ const CanvasModule = {
         if (localStorage.getItem('aistudio_canvas_hint_closed') === '1') {
             $('canvasHint')?.classList.add('hidden');
         }
+    },
+
+    /**
+     * 对齐/排列选中的节点（≥2 个；等距分布需 ≥3 个）
+     * mode: left | centerX | right | top | centerY | bottom | distX | distY
+     */
+    _alignSelected(mode) {
+        const ids = Array.from(this.selection);
+        if (ids.length < 2) {
+            UI.toast('请先选中至少 2 个节点（Ctrl+拖拽框选或 Ctrl+点击）', 'warn');
+            return;
+        }
+        const items = ids.map(id => {
+            const n = this.getNode(id);
+            const el = this._nodesLayer.querySelector(`.cnode[data-id="${id}"]`);
+            return n ? { n, w: el?.offsetWidth || n.w || 200, h: el?.offsetHeight || 120 } : null;
+        }).filter(Boolean);
+        if (items.length < 2) return;
+
+        if (mode === 'distX' || mode === 'distY') {
+            if (items.length < 3) {
+                UI.toast('等距分布至少需要 3 个节点', 'warn');
+                return;
+            }
+            const key = mode === 'distX' ? 'x' : 'y';
+            const sizeKey = mode === 'distX' ? 'w' : 'h';
+            items.sort((a, b) => a.n[key] - b.n[key]);
+            const first = items[0], last = items[items.length - 1];
+            const total = (last.n[key] + last[sizeKey]) - first.n[key];
+            const sum = items.reduce((acc, it) => acc + it[sizeKey], 0);
+            const gap = (total - sum) / (items.length - 1);
+            let cursor = first.n[key];
+            items.forEach(it => {
+                it.n[key] = Math.round(cursor);
+                cursor += it[sizeKey] + gap;
+            });
+        } else {
+            const minX = Math.min(...items.map(it => it.n.x));
+            const maxX = Math.max(...items.map(it => it.n.x + it.w));
+            const minY = Math.min(...items.map(it => it.n.y));
+            const maxY = Math.max(...items.map(it => it.n.y + it.h));
+            items.forEach(it => {
+                switch (mode) {
+                    case 'left': it.n.x = minX; break;
+                    case 'right': it.n.x = maxX - it.w; break;
+                    case 'centerX': it.n.x = Math.round((minX + maxX) / 2 - it.w / 2); break;
+                    case 'top': it.n.y = minY; break;
+                    case 'bottom': it.n.y = maxY - it.h; break;
+                    case 'centerY': it.n.y = Math.round((minY + maxY) / 2 - it.h / 2); break;
+                }
+            });
+        }
+
+        this._pushHistory();
+        items.forEach(({ n }) => {
+            const el = this._nodesLayer.querySelector(`.cnode[data-id="${n.id}"]`);
+            if (el) { el.style.left = n.x + 'px'; el.style.top = n.y + 'px'; }
+        });
+        this.renderEdges();
+        this._minimapSchedule();
+        this.save();
     },
 
     // ================================================================
@@ -2398,13 +2501,32 @@ const CanvasModule = {
         if (!vp) return;
         const s = this._settings || {};
         vp.classList.remove('bg-dots', 'bg-grid', 'bg-none');
-        vp.classList.add('bg-' + (s.bgStyle || 'dots'));
-        // 自定义背景色（浅色模式下用户可自定底色；留空恢复主题默认）
-        vp.style.backgroundColor = s.bgColor || '';
+        const style = s.bgStyle || 'default';
+        if (style === 'default') {
+            // 默认模式：纯色底随主题自动配色（深色=黑，浅色=R170 G200 B185）
+            vp.classList.add('bg-none');
+            vp.style.backgroundColor = this._defaultBgColor();
+        } else {
+            vp.classList.add('bg-' + style);
+            // 自定义背景色（浅色模式下用户可自定底色；留空恢复主题默认）
+            vp.style.backgroundColor = s.bgColor || '';
+        }
         const sel = document.getElementById('canvasBgStyle');
         const color = document.getElementById('canvasBgColor');
-        if (sel && sel.value !== (s.bgStyle || 'dots')) sel.value = s.bgStyle || 'dots';
-        if (color && color.value !== (s.bgColor || '')) color.value = s.bgColor || '';
+        if (sel && sel.value !== style) sel.value = style;
+        if (color) {
+            if (color.value !== (s.bgColor || '#aac8b9')) color.value = s.bgColor || '#aac8b9';
+            color.disabled = style === 'default';
+            color.title = style === 'default'
+                ? '默认模式下背景色随主题自动配色（深色=黑色，浅色=浅绿灰），切换到点阵/网格/无后可自定义'
+                : '画布背景色自定义';
+        }
+    },
+
+    /** 默认背景色：随主题 */
+    _defaultBgColor() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        return isDark ? '#000000' : '#aac8b9'; // 浅色 R170 G200 B185
     },
 
     _bindCanvasSettings() {
@@ -2423,6 +2545,10 @@ const CanvasModule = {
         });
         $('canvasBgColor')?.addEventListener('change', () => this.save());
         this._applyBackground();
+
+        // 主题切换时，默认背景模式需要跟随重配色
+        this._themeObserver = new MutationObserver(() => this._applyBackground());
+        this._themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
         this._bindToolbarAutoHide();
     },
