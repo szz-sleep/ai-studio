@@ -327,9 +327,42 @@ const CanvasModule = {
         if (isNew) {
             el.innerHTML = this._nodeBodyHTML(n);
             this._bindNodeEvents(el, n);
+            // 视频节点创建时立即填充模型下拉（模型可能在节点创建前就已加载完成）
+            if (n.type === 'video') {
+                const sel = el.querySelector('.cnode-video-model');
+                if (sel) {
+                    this._fillModelSelect(sel);
+                    if (n.data.model && sel.querySelector(`option[value="${CSS.escape(n.data.model)}"]`)) {
+                        sel.value = n.data.model;
+                    }
+                }
+            }
         }
         // 动态更新视频节点状态区
         if (n.type === 'video') this._updateVideoNodeStatus(el, n);
+        // 撤销/重做/恢复后：把节点数据同步回 DOM 输入控件（body 不会重建）
+        if (n.type === 'text') {
+            const ta = el.querySelector('.cnode-text-input');
+            if (ta && ta.value !== n.data.text) ta.value = n.data.text || '';
+        }
+        if (n.type === 'video') {
+            const ta = el.querySelector('.cnode-video-prompt');
+            if (ta && ta.value !== (n.data.promptOwn || '')) ta.value = n.data.promptOwn || '';
+            const pairs = [
+                ['.cnode-p-ratio', n.data.ratio],
+                ['.cnode-p-res', n.data.resolution],
+                ['.cnode-p-dur', String(n.data.duration || 5)],
+            ];
+            pairs.forEach(([selCls, val]) => {
+                const sel = el.querySelector(selCls);
+                if (sel && val && sel.value !== String(val)) sel.value = String(val);
+            });
+            const mSel = el.querySelector('.cnode-video-model');
+            if (mSel && n.data.model && mSel.value !== n.data.model
+                && mSel.querySelector(`option[value="${CSS.escape(n.data.model)}"]`)) {
+                mSel.value = n.data.model;
+            }
+        }
         // 图片/素材节点缩略图
         if ((n.type === 'image' || n.type === 'material') && el.querySelector('.cnode-img')) {
             const img = el.querySelector('.cnode-img');
@@ -585,8 +618,8 @@ const CanvasModule = {
         }
     },
 
-    /** 把当前模型列表填充到所有视频节点的模型下拉 */
-    populateVideoModelSelects() {
+    /** 把当前模型列表生成为下拉选项 HTML */
+    _fillModelSelect(sel) {
         const opts = [];
         if (this._models.video.length > 0) {
             this._models.video.forEach(m => opts.push(`<option value="${this._escape(m.id)}">${this._escape(m.id)}</option>`));
@@ -597,10 +630,14 @@ const CanvasModule = {
             opts.push(`</optgroup>`);
         }
         if (opts.length === 0) opts.push('<option value="">无可用模型</option>');
-        const html = opts.join('');
+        sel.innerHTML = opts.join('');
+    },
+
+    /** 把当前模型列表填充到所有视频节点的模型下拉 */
+    populateVideoModelSelects() {
         document.querySelectorAll('.cnode-video-model').forEach(sel => {
             const cur = sel.value;
-            sel.innerHTML = html;
+            this._fillModelSelect(sel);
             if (cur && sel.querySelector(`option[value="${CSS.escape(cur)}"]`)) sel.value = cur;
         });
     },
@@ -1095,18 +1132,23 @@ const CanvasModule = {
         try {
             UI.showLoading('正在同步到素材库...');
             const file = await this._dataUrlToFile(node.data.url, node.data.name || 'canvas-image.png');
-            await MaterialLib.uploadFile(file);
-            // uploadFile 返回 httpUrl；用 URL 反查本地缓存拿到真实 assetId
-            const list = MaterialLib.getAll();
-            const rec = list.find(i => i.url === node.data.url || i.sourceUrl === node.data.url);
+            // uploadFile 返回托管后的 httpUrl；本地缓存里的记录也是以 httpUrl 为键，必须用它反查
+            const httpUrl = await MaterialLib.uploadFile(file);
+            const rec = MaterialLib.getAll().find(i => i.url === httpUrl || i.sourceUrl === httpUrl);
             if (rec && VideoModule._validAssetId(rec.id)) {
                 node.data.assetId = rec.id;
                 node.data.name = rec.name || node.data.name;
+                // 用托管 URL 替换 base64：展示不受影响，生成可直接引用，也节省本地存储
+                node.data.url = httpUrl;
                 this.renderAll();
                 this.save();
                 UI.toast('已同步到素材库，可使用 asset:// 引用', 'success');
                 Logger.success(`[画布] 图片已入库: ${rec.id}`);
             } else {
+                // 托管成功但没拿到有效 assetId（审核中/同步失败）：仍然换用 httpUrl，宽松模式可继续用
+                if (httpUrl && httpUrl.startsWith('http')) node.data.url = httpUrl;
+                this.renderAll();
+                this.save();
                 UI.toast('素材已上传，火山审核通过后即可用 asset:// 引用（当前仍可宽松模式直接生成）', 'info', 5000);
             }
         } catch (e) {
@@ -1181,11 +1223,15 @@ const CanvasModule = {
         if (!node || node.type !== 'video') return;
         if (node.data.status === 'generating' || node.data.status === 'uploading') return;
 
-        const model = node.data.model
+        // 模型优先级：节点下拉当前显示值 > 节点存储值 > 工具栏选择
+        const nodeModelSel = this._nodesLayer.querySelector(`.cnode[data-id="${nodeId}"] .cnode-video-model`);
+        const model = (nodeModelSel && nodeModelSel.value)
+            || node.data.model
             || document.getElementById('canvasModel')?.value
             || '';
         if (!model) { UI.toast('请先选择视频模型', 'error'); return; }
         node.data.model = model;
+        if (nodeModelSel && nodeModelSel.value !== model) nodeModelSel.value = model;
 
         const ups = this.upstream(nodeId);
         const textNodes = ups.filter(n => n.type === 'text');
