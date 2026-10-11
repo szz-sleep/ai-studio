@@ -270,9 +270,15 @@ const CanvasModule = {
         return div.innerHTML;
     },
 
+    /** 撤销/重做各保留 5 步 */
+    _HISTORY_MAX: 5,
+
     _pushHistory() {
-        this._undoStack.push(JSON.stringify({ nodes: this.nodes, edges: this.edges }));
-        if (this._undoStack.length > 50) this._undoStack.shift();
+        const snap = JSON.stringify({ nodes: this.nodes, edges: this.edges });
+        // 与栈顶快照相同则不入栈（避免"点了撤销却看不出变化"的无效步）
+        if (this._undoStack.length > 0 && this._undoStack[this._undoStack.length - 1] === snap) return;
+        this._undoStack.push(snap);
+        while (this._undoStack.length > this._HISTORY_MAX) this._undoStack.shift();
         this._redoStack.length = 0;
     },
 
@@ -282,8 +288,9 @@ const CanvasModule = {
 
     undo() {
         if (this._undoStack.length === 0) return;
-        // 当前状态入 redo 栈
+        // 当前状态入 redo 栈（同样最多保留 5 步）
         this._redoStack.push(this._snapshotNow());
+        while (this._redoStack.length > this._HISTORY_MAX) this._redoStack.shift();
         const snap = this._undoStack.pop();
         this._applySnapshot(snap);
     },
@@ -1715,17 +1722,20 @@ const CanvasModule = {
         } else if (d.type === 'node') {
             const world = this._screenToWorld(e.clientX, e.clientY);
             const dx = world.x - d.startWx, dy = world.y - d.startWy;
-            if (Math.abs(dx) > 1 || Math.abs(dy) > 1) d.moved = true;
-            d.origins.forEach(o => {
-                const nn = this.getNode(o.id);
-                if (nn) {
-                    nn.x = Math.round(o.x + dx);
-                    nn.y = Math.round(o.y + dy);
-                    const el = this._nodesLayer.querySelector(`.cnode[data-id="${o.id}"]`);
-                    if (el) { el.style.left = nn.x + 'px'; el.style.top = nn.y + 'px'; }
-                }
-            });
-            this.renderEdges();
+            if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+                // 首次真正移动前记录历史（此刻节点坐标仍为拖动前的原始位置）
+                if (!d.moved) { d.moved = true; this._pushHistory(); }
+                d.origins.forEach(o => {
+                    const nn = this.getNode(o.id);
+                    if (nn) {
+                        nn.x = Math.round(o.x + dx);
+                        nn.y = Math.round(o.y + dy);
+                        const el = this._nodesLayer.querySelector(`.cnode[data-id="${o.id}"]`);
+                        if (el) { el.style.left = nn.x + 'px'; el.style.top = nn.y + 'px'; }
+                    }
+                });
+                this.renderEdges();
+            }
         } else if (d.type === 'select') {
             const world = this._screenToWorld(e.clientX, e.clientY);
             const x = Math.min(d.startWx, world.x), y = Math.min(d.startWy, world.y);
@@ -2471,6 +2481,8 @@ const CanvasModule = {
             return n ? { n, w: el?.offsetWidth || n.w || 200, h: el?.offsetHeight || 120 } : null;
         }).filter(Boolean);
         if (items.length < 2) return;
+        // 必须在修改坐标之前压栈，否则快照里已是排列后的状态，撤销会失效
+        this._pushHistory();
 
         if (mode === 'distX' || mode === 'distY') {
             if (items.length < 3) {
@@ -2506,7 +2518,6 @@ const CanvasModule = {
             });
         }
 
-        this._pushHistory();
         items.forEach(({ n }) => {
             const el = this._nodesLayer.querySelector(`.cnode[data-id="${n.id}"]`);
             if (el) { el.style.left = n.x + 'px'; el.style.top = n.y + 'px'; }
