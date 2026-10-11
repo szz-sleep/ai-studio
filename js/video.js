@@ -701,6 +701,15 @@ const VideoModule = {
                         }
                     }
                 }
+                // 火山约束：首/尾帧与参考图/视频不能混用（400: first/last frame content cannot
+                // be mixed with reference media content）。用户显式标记了首/尾帧 → 保留帧模式，
+                // 忽略其余参考图/视频；否则维持纯参考模式。
+                if ((firstFrameUrl || lastFrameUrl) && ((refImages && refImages.length > 0) || (refVideos && refVideos.length > 0))) {
+                    Logger.warn(`[图生视频·多模态] 首/尾帧与参考图/视频不能混用，已忽略 ${refImages?.length || 0} 张参考图 / ${refVideos?.length || 0} 段参考视频，仅使用首尾帧模式`);
+                    UI.toast('首尾帧与参考图/视频不能同时使用，已忽略未标记的参考素材', 'warn', 5000);
+                    refImages = null;
+                    refVideos = null;
+                }
                 if (refAudios.length > 0 && (firstFrameUrl || lastFrameUrl)) {
                     Logger.info('[图生视频·多模态] 同时存在首/尾帧标记和参考音频，将忽略首尾帧，使用多模态参考模式');
                     firstFrameUrl = null;

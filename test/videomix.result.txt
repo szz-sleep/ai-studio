@@ -1,0 +1,12 @@
+ALL=PASS
+PASS A.videoDone :: {"status":"done","hasFirstFrameKey":true,"firstFrameUrl":null,"refImages":["https://example.com/a.jpg","https://example.com/b.jpg"],"prompt":"测试提示词","err":""}
+PASS A.noFirstFrame :: null
+PASS A.bothAsRefImages :: ["https://example.com/a.jpg","https://example.com/b.jpg"]
+PASS A.promptKept :: "测试提示词"
+PASS B.videoDone :: {"status":"done","firstFrameUrl":"https://example.com/single.jpg","refImages":null}
+PASS B.firstFrameSet :: "https://example.com/single.jpg"
+PASS B.noRefImages :: null
+PASS C.videoDone :: {"status":"done","firstFrameUrl":null,"refImages":["https://example.com/c.jpg","https://example.com/d.jpg","asset://asset-mock-1"],"err":""}
+PASS C.noFirstFrame :: null
+PASS C.threeAsRefImages :: ["https://example.com/c.jpg","https://example.com/d.jpg","asset://asset-mock-1"]
+PASS C.assetRefKept :: ["https://example.com/c.jpg","https://example.com/d.jpg","asset://asset-mock-1"]

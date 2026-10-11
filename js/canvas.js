@@ -2208,8 +2208,10 @@ const CanvasModule = {
 
         try {
             // —— 解析媒体输入 ——
-            let firstFrameUrl = null;
-            const refImages = [];
+            // 火山约束：首帧模式与参考图模式不能混用（400: first/last frame content cannot be
+            // mixed with reference media content）。因此：单个媒体 → 首帧模式；多个媒体 →
+            // 全部走参考图模式（不设首帧）。
+            const mediaValues = [];
             for (let i = 0; i < mediaNodes.length; i++) {
                 const m = mediaNodes[i];
                 let value = null;
@@ -2237,9 +2239,14 @@ const CanvasModule = {
                         }
                     }
                 }
-                if (!value) continue;
-                if (firstFrameUrl === null) firstFrameUrl = value;
-                else refImages.push(value);
+                if (value) mediaValues.push(value);
+            }
+            let firstFrameUrl = null;
+            const refImages = [];
+            if (mediaValues.length === 1) {
+                firstFrameUrl = mediaValues[0];
+            } else if (mediaValues.length > 1) {
+                refImages.push(...mediaValues);
             }
 
             node.data.status = 'generating';
