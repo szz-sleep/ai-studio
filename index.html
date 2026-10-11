@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Studio - AI创作工坊</title>
+    <title>云镜AI Studio - AI创作工坊</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/canvas.css">
     <!-- Markdown 渲染（Agent 对话用）；离线时 js/agent.js 自动降级为纯文本 -->
@@ -15,7 +15,7 @@
     <header class="top-bar">
         <div class="logo">
             <span class="logo-icon"><img src="assets/icon.png" width="34" height="34" alt="AI Studio" style="display:block;border-radius:6px;"></span>
-            <span class="logo-text">AI Studio</span>
+            <span class="logo-text">云镜AI Studio</span>
             <span class="logo-sub">湖北生而为一科技有限公司</span>
         </div>
         <div class="top-right">
@@ -703,22 +703,22 @@
         <section id="tab-canvas" class="tab-panel">
             <!-- 工具栏 -->
             <div class="canvas-toolbar">
-                <button class="canvas-btn" id="canvasAddTextBtn" title="添加提示词节点">T 文本</button>
-                <button class="canvas-btn" id="canvasAddImageBtn" title="上传图片创建图片节点">🖼 图片</button>
-                <button class="canvas-btn" id="canvasAddMaterialBtn" title="从素材库创建素材节点（asset:// 引用）">📦 素材库</button>
-                <button class="canvas-btn" id="canvasAddVideoBtn" title="添加视频生成节点">🎬 视频</button>
+                <button class="canvas-btn" id="canvasAddTextBtn" title="添加提示词节点"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg> 文本</button>
+                <button class="canvas-btn" id="canvasAddImageBtn" title="上传图片创建图片节点"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> 图片</button>
+                <button class="canvas-btn" id="canvasAddMaterialBtn" title="从素材库创建素材节点（asset:// 引用）"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg> 素材库</button>
+                <button class="canvas-btn" id="canvasAddVideoBtn" title="添加视频生成节点"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg> 视频</button>
                 <div class="canvas-sep"></div>
                 <select id="canvasModel" class="select-input" title="视频模型：新建视频节点时默认选中的模型（生成仍可在每个视频节点内单独更改）"><option value="">加载中...</option></select>
                 <div class="canvas-sep"></div>
-                <button class="canvas-btn" id="canvasUndoBtn" title="撤销 (Ctrl+Z)">↺</button>
-                <button class="canvas-btn" id="canvasRedoBtn" title="重做 (Ctrl+Y)">↻</button>
+                <button class="canvas-btn" id="canvasUndoBtn" title="撤销 (Ctrl+Z)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
+                <button class="canvas-btn" id="canvasRedoBtn" title="重做 (Ctrl+Y)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
                 <div class="canvas-sep"></div>
-                <button class="canvas-btn" id="canvasZoomOutBtn" title="缩小">－</button>
+                <button class="canvas-btn" id="canvasZoomOutBtn" title="缩小"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
                 <span class="canvas-zoom-label" id="canvasZoomLabel">100%</span>
-                <button class="canvas-btn" id="canvasZoomInBtn" title="放大">＋</button>
-                <button class="canvas-btn" id="canvasFitBtn" title="适应画布 (Ctrl+0)">⤢ 适应</button>
+                <button class="canvas-btn" id="canvasZoomInBtn" title="放大"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+                <button class="canvas-btn" id="canvasFitBtn" title="适应画布 (Ctrl+0)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/></svg> 适应</button>
                 <div class="canvas-toolbar-spacer"></div>
-                <button class="canvas-btn" id="canvasClearBtn" title="清空画布">🗑 清空</button>
+                <button class="canvas-btn" id="canvasClearBtn" title="清空画布"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> 清空</button>
             </div>
 
             <!-- 画布主体 -->
@@ -731,6 +731,18 @@
                     <div class="canvas-hint" id="canvasHint">
                         <span>连线：文本/图片/素材 → 图片或视频节点；图片节点可直接生图；滚轮缩放，<kbd>Shift</kbd>+拖拽框选，<kbd>Ctrl+C/V</kbd> 复制粘贴，<kbd>Del</kbd> 删除，右键更多操作</span>
                         <button class="canvas-hint-close" id="canvasHintClose">×</button>
+                    </div>
+                </div>
+
+                <!-- 左下角全局预览（小地图） -->
+                <div class="canvas-minimap" id="canvasMinimap">
+                    <div class="canvas-minimap-head">
+                        <span>全局预览</span>
+                        <button class="canvas-minimap-toggle" id="canvasMinimapToggle" title="收起/展开预览"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button>
+                    </div>
+                    <div class="canvas-minimap-body" id="canvasMinimapBody">
+                        <canvas id="canvasMinimapCanvas"></canvas>
+                        <div class="canvas-minimap-rect" id="canvasMinimapRect"></div>
                     </div>
                 </div>
             </div>
@@ -761,7 +773,7 @@
     </div>
 
     <!-- 版本号 -->
-    <div id="appVersion" class="app-version">AI Studio V1.0.22</div>
+    <div id="appVersion" class="app-version">云镜AI Studio V2.0.1</div>
 
     <!-- 运行日志面板 -->
     <div id="logPanel" class="log-panel" style="display:none;">

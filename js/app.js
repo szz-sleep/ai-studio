@@ -500,7 +500,7 @@ const App = {
         });
         document.getElementById('logClearBtn').addEventListener('click', () => Logger.clear());
 
-        Logger.info('AI Studio 已启动');
+        Logger.info('云镜AI Studio 已启动');
         Logger.info('日志面板位于右下角');
 
         // 初始化各模块

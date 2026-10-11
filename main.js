@@ -7,6 +7,9 @@ const http = require('http');
 const os = require('os');
 const { spawn } = require('child_process');
 
+// 更名为「云镜AI Studio」后，固定用户数据目录，避免 localStorage（API 配置/会话）丢失
+app.setPath('userData', path.join(app.getPath('appData'), 'ai-studio'));
+
 /**
  * 下载远程文件到本地硬盘
  * @param {string} url - 远程资源地址（http/https 或 blob:）
@@ -269,7 +272,7 @@ function createWindow() {
     minWidth: 960,
     minHeight: 680,
     show: true,
-  title: 'AI Studio - AI创作工坊',
+  title: '云镜AI Studio - AI创作工坊',
     icon: path.join(__dirname, 'assets', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -340,14 +343,14 @@ const menuTemplate = [
     label: '帮助',
     submenu: [
       {
-        label: '关于 AI Studio',
+        label: '关于 云镜AI Studio',
         click: () => {
           const { dialog } = require('electron');
           dialog.showMessageBox(mainWindow, {
             type: 'info',
-            title: '关于 AI Studio',
-            message: 'AI Studio - AI创作工坊',
-            detail: '版本 V1.0.22\n湖北生而为一科技有限公司'
+            title: '关于 云镜AI Studio',
+            message: '云镜AI Studio - AI创作工坊',
+            detail: '版本 V2.0.1\n湖北生而为一科技有限公司'
           });
         }
       }

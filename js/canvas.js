@@ -50,10 +50,20 @@ const CanvasModule = {
 
     // 节点标题/图标
     _META: {
-        text:     { title: '提示词', icon: 'T' },
-        image:    { title: '图片',   icon: '🖼' },
-        material: { title: '素材库', icon: '📦' },
-        video:    { title: '视频',   icon: '🎬' },
+        text:     { title: '提示词' },
+        image:    { title: '图片' },
+        material: { title: '素材库' },
+        video:    { title: '视频' },
+    },
+
+    // 节点内联 SVG 图标（与 AI Studio 顶栏同款 feather 风格）
+    _ICONS: {
+        text: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>',
+        image: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>',
+        material: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>',
+        video: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>',
+        zap: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
+        search: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
     },
 
     // ================================================================
@@ -73,6 +83,7 @@ const CanvasModule = {
         this._bindViewport();
         this._bindKeyboard();
         this._bindContextMenu();
+        this._bindMinimap();
         this.renderAll();
 
         Logger.info('[画布] 初始化完成');
@@ -82,6 +93,137 @@ const CanvasModule = {
     onShow() {
         // DOM 已就绪，无需特殊处理；预留给未来按需刷新
         this.renderEdges();
+        this._minimapSchedule();
+    },
+
+    // ================================================================
+    // 全局预览（小地图）：左下角，展示全部节点/连线与当前视口，
+    // 点击/拖拽可导航视口
+    // ================================================================
+
+    /** rAF 合并调度的小地图重绘 */
+    _minimapSchedule() {
+        if (this._mmRaf) return;
+        this._mmRaf = requestAnimationFrame(() => {
+            this._mmRaf = null;
+            this._renderMinimap();
+        });
+    },
+
+    _bindMinimap() {
+        this._mmWrap = document.getElementById('canvasMinimap');
+        this._mmBody = document.getElementById('canvasMinimapBody');
+        this._mmCanvas = document.getElementById('canvasMinimapCanvas');
+        this._mmRect = document.getElementById('canvasMinimapRect');
+        if (!this._mmBody || !this._mmCanvas) return;
+
+        // 点击/拖拽小地图：把视口中心移到对应世界坐标
+        const panTo = (e) => {
+            if (!this._mmView) return;
+            const rect = this._mmBody.getBoundingClientRect();
+            const v = this._mmView;
+            const wx = v.minX + (e.clientX - rect.left - v.ox) / v.scale;
+            const wy = v.minY + (e.clientY - rect.top - v.oy) / v.scale;
+            this.viewport.x = this._viewport.clientWidth / 2 - wx * this.viewport.k;
+            this.viewport.y = this._viewport.clientHeight / 2 - wy * this.viewport.k;
+            this._applyViewport();
+        };
+        this._mmBody.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            try { this._mmBody.setPointerCapture(e.pointerId); } catch (err) { /* 忽略 */ }
+            panTo(e);
+            const move = (ev) => panTo(ev);
+            const up = () => {
+                this._mmBody.removeEventListener('pointermove', move);
+                this._mmBody.removeEventListener('pointerup', up);
+                this.save();
+            };
+            this._mmBody.addEventListener('pointermove', move);
+            this._mmBody.addEventListener('pointerup', up);
+        });
+
+        // 折叠/展开
+        document.getElementById('canvasMinimapToggle')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._mmWrap.classList.toggle('collapsed');
+            if (!this._mmWrap.classList.contains('collapsed')) this._minimapSchedule();
+        });
+    },
+
+    _renderMinimap() {
+        if (!this._mmCanvas || !this._mmBody || !this._viewport) return;
+        const cw = this._mmBody.clientWidth, ch = this._mmBody.clientHeight;
+        if (cw < 10 || ch < 10) return;
+
+        // 当前视口对应的世界矩形
+        const k = this.viewport.k;
+        const vx = -this.viewport.x / k, vy = -this.viewport.y / k;
+        const vw = this._viewport.clientWidth / k, vh = this._viewport.clientHeight / k;
+
+        // 世界范围 = 节点包围盒 ∪ 视口矩形
+        let minX = vx, minY = vy, maxX = vx + vw, maxY = vy + vh;
+        this.nodes.forEach(n => {
+            const el = this._nodesLayer.querySelector(`.cnode[data-id="${n.id}"]`);
+            const h = el ? el.offsetHeight : 120;
+            minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
+            maxX = Math.max(maxX, n.x + n.w); maxY = Math.max(maxY, n.y + h);
+        });
+        const pad = Math.max(maxX - minX, maxY - minY) * 0.06;
+        minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+
+        const scale = Math.min(cw / (maxX - minX), ch / (maxY - minY));
+        const ox = (cw - (maxX - minX) * scale) / 2;
+        const oy = (ch - (maxY - minY) * scale) / 2;
+        this._mmView = { minX, minY, scale, ox, oy };
+        const toX = x => ox + (x - minX) * scale;
+        const toY = y => oy + (y - minY) * scale;
+
+        // Canvas 绘制（DPR 适配）
+        const dpr = window.devicePixelRatio || 1;
+        const cv = this._mmCanvas;
+        if (cv.width !== Math.round(cw * dpr) || cv.height !== Math.round(ch * dpr)) {
+            cv.width = Math.round(cw * dpr);
+            cv.height = Math.round(ch * dpr);
+        }
+        const ctx = cv.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, cw, ch);
+
+        // 连线
+        ctx.strokeStyle = 'rgba(128,128,144,0.45)';
+        ctx.lineWidth = 1;
+        this.edges.forEach(e => {
+            const a = this.getNode(e.from), b = this.getNode(e.to);
+            if (!a || !b) return;
+            ctx.beginPath();
+            ctx.moveTo(toX(a.x + a.w / 2), toY(a.y + 30));
+            ctx.lineTo(toX(b.x + b.w / 2), toY(b.y + 30));
+            ctx.stroke();
+        });
+
+        // 节点（按类型着色，选中高亮）
+        const colors = { text: '#94a3b8', image: '#5b9cf6', material: '#f5a623', video: '#a86cf6' };
+        this.nodes.forEach(n => {
+            const el = this._nodesLayer.querySelector(`.cnode[data-id="${n.id}"]`);
+            const h = el ? el.offsetHeight : 120;
+            const x = toX(n.x), y = toY(n.y);
+            const w = Math.max(3, n.w * scale), hh = Math.max(3, h * scale);
+            ctx.fillStyle = colors[n.type] || '#94a3b8';
+            ctx.globalAlpha = this.selection.has(n.id) ? 1 : 0.78;
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(x, y, w, hh, 2); else ctx.rect(x, y, w, hh);
+            ctx.fill();
+        });
+        ctx.globalAlpha = 1;
+
+        // 视口矩形（DOM overlay，便于样式跟随主题）
+        if (this._mmRect) {
+            this._mmRect.style.left = toX(vx) + 'px';
+            this._mmRect.style.top = toY(vy) + 'px';
+            this._mmRect.style.width = Math.max(8, vw * scale) + 'px';
+            this._mmRect.style.height = Math.max(8, vh * scale) + 'px';
+        }
     },
 
     /** App.loadModels 注入模型分类 */
@@ -308,6 +450,7 @@ const CanvasModule = {
         this.renderEdges();
         this._renderSelection();
         this._updateZoomLabel();
+        this._minimapSchedule();
     },
 
     renderNodes() {
@@ -448,7 +591,8 @@ const CanvasModule = {
                 <button class="cnode-x" title="删除节点">×</button>
             </div>`;
 
-        function meta_icon(t) { return { text: 'T', image: '🖼', material: '📦', video: '🎬' }[t] || '·'; }
+        const meta = this._ICONS;
+        function meta_icon(t) { return meta[t] || '·'; }
         function meta_title(t) { return { text: '提示词', image: '图片', material: '素材库', video: '视频' }[t] || t; }
 
         if (n.type === 'text') {
@@ -480,7 +624,7 @@ const CanvasModule = {
                             <option value="480p">480p</option><option value="720p" selected>720p</option>
                             <option value="1080p">1080p</option><option value="4K">4K</option>
                         </select>
-                        <button class="cnode-btn cnode-img-generate-btn" title="生成图片（有上游图片时为图生图）">⚡ 生图</button>
+                        <button class="cnode-btn cnode-img-generate-btn" title="生成图片（有上游图片时为图生图）">${this._ICONS.zap} 生图</button>
                     </div>
                     <div class="cnode-img-status"></div>
                     <div class="cnode-btn-row">
@@ -513,7 +657,7 @@ const CanvasModule = {
                     <div class="cnode-video-result" style="display:none;">
                         <video controls preload="metadata"></video>
                         <div class="cnode-btn-row">
-                            <button class="cnode-btn cnode-act-preview">🔍 查看</button>
+                            <button class="cnode-btn cnode-act-preview">${this._ICONS.search} 查看</button>
                             <button class="cnode-btn cnode-act-download">下载</button>
                         </div>
                     </div>
@@ -537,7 +681,7 @@ const CanvasModule = {
                         <span class="cnode-dur-unit">s</span>
                     </div>
                     <div class="cnode-video-status"></div>
-                    <button class="cnode-btn cnode-generate-btn">⚡ 生成视频</button>
+                    <button class="cnode-btn cnode-generate-btn">${this._ICONS.zap} 生成视频</button>
                 </div>
                 <div class="cnode-port cnode-port-in" data-port="in" title="接收图片/素材/文本"></div>`;
         }
@@ -749,7 +893,7 @@ const CanvasModule = {
         statusEl.innerHTML = html;
         if (btn) {
             btn.disabled = busy;
-            btn.textContent = busy ? '生成中...' : '⚡ 生成视频';
+            btn.innerHTML = busy ? '生成中...' : `${this._ICONS.zap} 生成视频`;
         }
     },
 
@@ -833,7 +977,7 @@ const CanvasModule = {
         statusEl.innerHTML = html;
         if (btn) {
             btn.disabled = busy;
-            btn.textContent = busy ? '生成中' : '⚡ 生图';
+            btn.innerHTML = busy ? '生成中' : `${this._ICONS.zap} 生图`;
         }
     },
 
@@ -1060,6 +1204,7 @@ const CanvasModule = {
     _applyViewport() {
         this._world.style.transform = `translate(${this.viewport.x}px, ${this.viewport.y}px) scale(${this.viewport.k})`;
         this._updateZoomLabel();
+        this._minimapSchedule();
     },
 
     _updateZoomLabel() {

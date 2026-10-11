@@ -474,7 +474,7 @@ const AgentModule = {
         }
         el.classList.remove('connecting');
         el.classList.add('down');
-        txt.textContent = 'Agent 服务未启动，请重启 AI Studio';
+        txt.textContent = 'Agent 服务未启动，请重启 云镜AI Studio';
         return false;
     },
 
