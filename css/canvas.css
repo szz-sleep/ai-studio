@@ -518,8 +518,10 @@
     border-color: var(--blue, #3b82f6);
     transform: scale(1.25);
 }
-.cnode-port-in { left: -7px; top: 50%; margin-top: -6px; }
-.cnode-port-out { right: -7px; top: 50%; margin-top: -6px; }
+/* 端口锚定标题栏垂直中心（头部 padding 7px + 图标 18px + 节点边框 1px ≈ 17px 处），
+   不用 top:50% —— 节点生成中自动展开选项面板变高时，端口位置保持稳定，连线不会跟着跳动 */
+.cnode-port-in { left: -7px; top: 11px; }
+.cnode-port-out { right: -7px; top: 11px; }
 
 /* ===== 右键菜单 ===== */
 .canvas-context-menu {
@@ -677,6 +679,13 @@
 .canvas-edge.edge-done-video {
     stroke: rgba(168, 108, 246, 0.5);
     stroke-width: 2.5;
+}
+/* 选中态必须压过上面的彩色状态类（同为 0,2,0 时按源码顺序后者胜，选中色会被吞掉，
+   用户点线看不到任何反馈以为选不中）——这里用更高特异性 + 加粗发光让反馈明确 */
+.canvas-edges-svg .canvas-edge.selected {
+    stroke: var(--blue, #3b82f6);
+    stroke-width: 3;
+    filter: drop-shadow(0 0 3px rgba(59, 130, 246, 0.65));
 }
 
 /* ===== 画布背景样式切换 ===== */
