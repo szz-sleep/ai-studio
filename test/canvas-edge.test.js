@@ -54,6 +54,30 @@ setTimeout(() => { fs.writeFileSync(path.join(__dirname, 'edge.result.txt'), 'TI
     assert('S0.edgesCreated', ids.n === 3, ids);
     await sleep(400);
 
+    // —— S0b：蚂蚁线只随终点生成而动，生成中节点输出线不动画 ——
+    // 场景：v3(生成中) 从输出点连线到新视频节点 v4；e3(v3为终点)应有蚂蚁线，e4(v3为起点)不应有
+    const animCls = await win.webContents.executeJavaScript(`(() => {
+        const CM = CanvasModule;
+        const v4 = CM.addNode('video', 950, 700, { status: 'idle', model: 'doubao-seedance-v4' });
+        const v3 = CM.nodes.find(n => n.type === 'video' && n.data.status === 'generating');
+        CM._connect(v3.id, v4.id);
+        CM.renderEdges();
+        const clsOf = (eid) => {
+            const e = CM.edges.find(x => x.id === eid);
+            const p1 = CM._portPos(e.from, 'out'), p2 = CM._portPos(e.to, 'in');
+            // 通过端点匹配找出对应可视路径
+            const paths = Array.from(document.querySelectorAll('.canvas-edge:not(.canvas-edge-hit)'));
+            const target = paths.find(p => {
+                const g = CM._edgePath(p1.x, p1.y, p2.x, p2.y);
+                return p.getAttribute('d') === g;
+            });
+            return target ? target.getAttribute('class') : null;
+        };
+        return { v3out: clsOf(CM.edges[CM.edges.length - 1].id), inToGen: clsOf(CM.edges.find(e => e.to === v3.id).id) };
+    })()`);
+    assert('S0b.outgoingEdgeOfGeneratingNoAnim', animCls.v3out !== null && !animCls.v3out.includes('edge-anim'), animCls);
+    assert('S0b.incomingEdgeToGeneratingHasAnim', animCls.inToGen !== null && animCls.inToGen.includes('edge-anim-video'), animCls);
+
     // 计算每条线中点的屏幕坐标（三阶贝塞尔 t=0.5：(P0+3P1+3P2+P3)/8）
     const pts = await win.webContents.executeJavaScript(`(() => {
         const CM = CanvasModule;

@@ -1536,13 +1536,12 @@ const CanvasModule = {
             if (!p1 || !p2) return;
             const d = this._edgePath(p1.x, p1.y, p2.x, p2.y);
             // 生成状态可视化：生成中=动态蚂蚁线（图=蓝/视频=紫），完成=对应色半透明实线
+            // 蚂蚁线只看终点：只有"流向正在生成的节点"的入线才播放动画；
+            // 生成中节点自己从输出点牵出去的线不动画（否则输出端连线会跟着一起动）
             const from = this.getNode(edge.from), to = this.getNode(edge.to);
             let stateCls = '';
-            for (const n of [from, to]) {
-                if (n && n.data && (n.data.status === 'generating' || n.data.status === 'uploading')) {
-                    stateCls = n.type === 'video' ? ' edge-anim-video' : ' edge-anim-image';
-                    break;
-                }
+            if (to && to.data && (to.data.status === 'generating' || to.data.status === 'uploading')) {
+                stateCls = to.type === 'video' ? ' edge-anim-video' : ' edge-anim-image';
             }
             if (!stateCls) {
                 for (const n of [from, to]) {
