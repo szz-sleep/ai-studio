@@ -433,7 +433,14 @@
 .cnode-status-line.uploading { background: rgba(59,130,246,0.08); color: var(--blue, #3b82f6); }
 .cnode-status-line.generating { background: rgba(59,130,246,0.08); color: var(--blue, #3b82f6); }
 .cnode-status-line.ok { background: rgba(34,197,94,0.10); color: #22c55e; }
-.cnode-status-line.error { background: rgba(239,68,68,0.08); color: var(--red, #ef4444); }
+.cnode-status-line.error {
+    background: rgba(239,68,68,0.08);
+    color: var(--red, #ef4444);
+    user-select: text;
+    -webkit-user-select: text;
+    cursor: pointer;
+}
+.cnode-status-line.error:hover { background: rgba(239,68,68,0.16); }
 .cnode-progress {
     height: 4px;
     border-radius: 2px;

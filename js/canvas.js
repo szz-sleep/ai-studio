@@ -995,6 +995,24 @@ const CanvasModule = {
             this.deleteNodes([el.dataset.id]);
         });
 
+        // 错误信息：点击整行复制完整内容（状态行由 innerHTML 重建，故用事件委托绑定在持久容器上）
+        el.querySelectorAll('.cnode-video-status, .cnode-img-status').forEach(box => {
+            box.addEventListener('mousedown', (e) => {
+                if (e.target?.closest?.('.cnode-status-line.error')) e.stopPropagation(); // 防止触发节点拖拽/选框
+            });
+            box.addEventListener('click', (e) => {
+                const line = e.target?.closest?.('.cnode-status-line.error');
+                if (!line) return;
+                e.stopPropagation();
+                const text = line.textContent || '';
+                if (!text) return;
+                navigator.clipboard.writeText(text).then(
+                    () => UI.toast('错误信息已复制到剪贴板', 'success', 2000),
+                    () => UI.toast('复制失败，请手动选中复制', 'warn', 2500),
+                );
+            });
+        });
+
         // 参数折叠开关（图片/视频节点）
         el.querySelector('.cnode-opts-toggle')?.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1170,7 +1188,7 @@ const CanvasModule = {
             busy = true;
             html = `<div class="cnode-status-line generating">${this._escape(n.data.statusText || '视频生成中...')} ${n.data.progress ? n.data.progress + '%' : ''}</div><div class="cnode-progress"><div style="width:${n.data.progress || 0}%"></div></div>`;
         } else if (n.data.status === 'error') {
-            html = `<div class="cnode-status-line error">${this._escape(n.data.error || '生成失败')}</div>`;
+            html = `<div class="cnode-status-line error" title="点击复制完整错误信息">${this._escape(n.data.error || '生成失败')}</div>`;
         } else if (n.data.status === 'done') {
             html = `<div class="cnode-status-line ok">✓ 生成完成（${this._escape(n.data.model || '')}）</div>`;
         }
@@ -1265,7 +1283,7 @@ const CanvasModule = {
             busy = true;
             html = `<div class="cnode-status-line uploading">上传参考图中...</div>`;
         } else if (n.data.status === 'error') {
-            html = `<div class="cnode-status-line error">${this._escape(n.data.error || '生成失败')}</div>`;
+            html = `<div class="cnode-status-line error" title="点击复制完整错误信息">${this._escape(n.data.error || '生成失败')}</div>`;
         }
         statusEl.innerHTML = html;
         // 生成中/出错时自动展开参数区，让进度与错误信息可见

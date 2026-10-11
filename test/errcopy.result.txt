@@ -1,0 +1,12 @@
+ALL=PASS
+PASS video.errorLineExists :: true
+PASS video.lineConnected :: true
+PASS video.titleHint :: "点击复制完整错误信息"
+PASS video.errorTextIntact :: "API 请求失败 (500)：{\"error\":{\"message\":\"duration 30s only supported by MiniMax-H3, got doubao-seedance-v4\"}}"
+PASS video.errorVisibleWhenError :: true
+PASS image.errorLineExists :: true
+PASS image.titleHint :: "点击复制完整错误信息"
+PASS css.selectable :: {"us":"text","cur":"pointer"}
+PASS css.cursorPointer :: {"us":"text","cur":"pointer"}
+PASS click.copiedToClipboard :: "API 请求失败 (500)：{\"error\":{\"message\":\"duration 30s only supported by MiniMax-H3, got doubao-seedance-v4\"}}"
+PASS click.noDragStarted :: {"dragging":false,"selecting":false}
