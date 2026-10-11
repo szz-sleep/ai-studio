@@ -188,6 +188,20 @@ function assert(name, cond, extra) {
         return { fs: parseFloat(cs.fontSize), fw: cs.fontWeight, op: parseFloat(cs.opacity) };
     })()`);
     assert('ref.prominentStyle', rRef.labelStyle.fs >= 11 && parseInt(rRef.labelStyle.fw) >= 600 && rRef.labelStyle.op === 1, rRef.labelStyle);
+    // 两种主题下标签都为鲜蓝底白字（不再随 --accent 反转导致深色模式下看不清）
+    rRef.labelTheme = await win.webContents.executeJavaScript(`(async () => {
+        const out = {};
+        const t = document.querySelector('.cnode-ref-label');
+        for (const th of ['light', 'dark']) {
+            document.documentElement.setAttribute('data-theme', th);
+            await new Promise(res => setTimeout(res, 350)); // 等主题过渡
+            const cs = getComputedStyle(t);
+            out[th] = { bg: cs.backgroundColor, color: cs.color };
+        }
+        return out;
+    })()`);
+    assert('ref.lightThemeBlueChip', rRef.labelTheme.light.bg === 'rgb(59, 130, 246)' && rRef.labelTheme.light.color === 'rgb(255, 255, 255)', rRef.labelTheme.light);
+    assert('ref.darkThemeBlueChip', rRef.labelTheme.dark.bg === 'rgb(59, 130, 246)' && rRef.labelTheme.dark.color === 'rgb(255, 255, 255)', rRef.labelTheme.dark);
 
     // ============ 4. 固定按钮主题适配 + 项目重命名 ============
     const rMisc = await win.webContents.executeJavaScript(`(async () => {

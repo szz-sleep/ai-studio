@@ -733,23 +733,26 @@
     user-select: none;
 }
 .cnode-ref-label {
+    /* 固定鲜蓝色，不随主题反转（--accent 在浅色=近黑、深色=浅灰，白字会看不清）：
+       黑色画布（深色模式）与浅绿灰画布（浅色模式）上都有足够对比度 */
     font-size: 11.5px;
     line-height: 1;
-    font-weight: 600;
-    letter-spacing: 0.3px;
-    padding: 4px 9px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    padding: 4px 10px;
     border-radius: 10px;
-    background: var(--accent, #5b9cf6);
+    background: #3b82f6;
     color: #fff;
     white-space: nowrap;
     cursor: pointer;
     opacity: 1;
-    border: 1px solid rgba(255,255,255,0.55);
-    box-shadow: 0 1px 4px rgba(0,0,0,0.32), 0 0 0 1px rgba(0,0,0,0.1);
+    border: 1px solid rgba(255,255,255,0.75);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.35), 0 0 0 1.5px rgba(59,130,246,0.30);
+    text-shadow: 0 1px 1.5px rgba(0,0,0,0.45);
 }
 .cnode-ref-label:hover {
-    background: var(--accent-hover, #4a8ce6);
-    transform: scale(1.06);
+    background: #2563eb;
+    transform: scale(1.07);
 }
 
 /* 固定工具栏按钮：图标随状态切换（竖直图钉=已固定 / 斜图钉+斜线=自动隐藏） */
