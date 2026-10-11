@@ -54,13 +54,17 @@ setTimeout(() => { fs.writeFileSync(path.join(__dirname, 'edge.result.txt'), 'TI
     assert('S0.edgesCreated', ids.n === 3, ids);
     await sleep(400);
 
-    // —— S0b：蚂蚁线只随终点生成而动，生成中节点输出线不动画 ——
-    // 场景：v3(生成中) 从输出点连线到新视频节点 v4；e3(v3为终点)应有蚂蚁线，e4(v3为起点)不应有
+    // —— S0b：生成中节点出线不出蚂蚁线；有旧成片时保持原彩色线 ——
+    // 场景1：v3(生成中,无旧成片) → v4：出线应为普通样式
+    // 场景2：v5(生成中,保留旧成片videoUrl) → v4：出线应保持 edge-done-video 彩色
+    // 入线 a3→v3：应为蚂蚁线
     const animCls = await win.webContents.executeJavaScript(`(() => {
         const CM = CanvasModule;
         const v4 = CM.addNode('video', 950, 700, { status: 'idle', model: 'doubao-seedance-v4' });
-        const v3 = CM.nodes.find(n => n.type === 'video' && n.data.status === 'generating');
+        const v5 = CM.addNode('video', 950, 950, { status: 'generating', videoUrl: 'https://e.com/old.mp4', model: 'doubao-seedance-v4' });
+        const v3 = CM.nodes.find(n => n.type === 'video' && n.data.status === 'generating' && !n.data.videoUrl);
         CM._connect(v3.id, v4.id);
+        CM._connect(v5.id, v4.id);
         CM.renderEdges();
         const clsOf = (eid) => {
             const e = CM.edges.find(x => x.id === eid);
@@ -73,10 +77,28 @@ setTimeout(() => { fs.writeFileSync(path.join(__dirname, 'edge.result.txt'), 'TI
             });
             return target ? target.getAttribute('class') : null;
         };
-        return { v3out: clsOf(CM.edges[CM.edges.length - 1].id), inToGen: clsOf(CM.edges.find(e => e.to === v3.id).id) };
+        return {
+            v3out: clsOf(CM.edges[CM.edges.length - 2].id),
+            v5out: clsOf(CM.edges[CM.edges.length - 1].id),
+            inToGen: clsOf(CM.edges.find(e => e.to === v3.id).id),
+        };
     })()`);
-    assert('S0b.outgoingEdgeOfGeneratingNoAnim', animCls.v3out !== null && !animCls.v3out.includes('edge-anim'), animCls);
+    assert('S0b.outgoingNoOldResultPlain', animCls.v3out !== null && !animCls.v3out.includes('edge-anim') && !animCls.v3out.includes('edge-done'), animCls);
+    assert('S0b.outgoingWithOldResultKeptColor', animCls.v5out !== null && animCls.v5out.includes('edge-done-video') && !animCls.v5out.includes('edge-anim'), animCls);
     assert('S0b.incomingEdgeToGeneratingHasAnim', animCls.inToGen !== null && animCls.inToGen.includes('edge-anim-video'), animCls);
+    // 出线的几何位置必须稳定：端口锚定标题栏后，节点高度变化不牵动端口 y（用生成展开场景验证）
+    const portY = await win.webContents.executeJavaScript(`(() => {
+        const CM = CanvasModule;
+        const v4 = CM.nodes.find(n => n.type === 'video' && n.data.status === 'idle' && CM.edges.some(e => e.to === n.id || e.from === n.id));
+        const before = CM._portPos(v4.id, 'in');
+        // 模拟生成时选项面板展开：节点被撑高
+        const el = CM._nodesLayer.querySelector('.cnode[data-id="' + v4.id + '"]');
+        el.style.height = '500px';
+        const after = CM._portPos(v4.id, 'in');
+        el.style.height = '';
+        return { before: before.y, after: after.y };
+    })()`);
+    assert('S0b.portYStableWhenNodeGrows', portY.before === portY.after, portY);
 
     // 计算每条线中点的屏幕坐标（三阶贝塞尔 t=0.5：(P0+3P1+3P2+P3)/8）
     const pts = await win.webContents.executeJavaScript(`(() => {

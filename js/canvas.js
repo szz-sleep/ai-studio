@@ -1423,7 +1423,7 @@ const CanvasModule = {
 
         const abort = new AbortController();
         node._abort = abort;
-        node.data.done = false;   // 生成开始：清除完成态（连线恢复普通样式）
+        // 注意：生成开始不清除 done 标志——重新生成时节点仍显示旧图，出线保持原来的彩色线
         const setStatus = (status, extra) => {
             node.data.status = status;
             Object.assign(node.data, extra || {});
@@ -1489,7 +1489,7 @@ const CanvasModule = {
                 Logger.warn('[画布] 用户取消图片生成');
             } else {
                 Logger.error(`[画布] 图片生成失败: ${err.message}`);
-                setStatus('error', { error: err.message, progress: 0, done: false });
+                setStatus('error', { error: err.message, progress: 0 });
                 UI.toast('图片生成失败: ' + err.message, 'error', 5000);
             }
         } finally {
@@ -1537,7 +1537,8 @@ const CanvasModule = {
             const d = this._edgePath(p1.x, p1.y, p2.x, p2.y);
             // 生成状态可视化：生成中=动态蚂蚁线（图=蓝/视频=紫），完成=对应色半透明实线
             // 蚂蚁线只看终点：只有"流向正在生成的节点"的入线才播放动画；
-            // 生成中节点自己从输出点牵出去的线不动画（否则输出端连线会跟着一起动）
+            // 生成中节点自己牵出去的线不出蚂蚁线——若节点仍保留旧成图/成片（status done 或
+            // generating 但 videoUrl 尚在 / done 标志未清），出线保持原来的彩色线
             const from = this.getNode(edge.from), to = this.getNode(edge.to);
             let stateCls = '';
             if (to && to.data && (to.data.status === 'generating' || to.data.status === 'uploading')) {
@@ -1546,7 +1547,7 @@ const CanvasModule = {
             if (!stateCls) {
                 for (const n of [from, to]) {
                     if (!n || !n.data) continue;
-                    if (n.type === 'video' && n.data.status === 'done') { stateCls = ' edge-done-video'; break; }
+                    if (n.type === 'video' && (n.data.status === 'done' || (n.data.status === 'generating' && n.data.videoUrl))) { stateCls = ' edge-done-video'; break; }
                     if (n.type === 'image' && n.data.done) { stateCls = ' edge-done-image'; break; }
                 }
             }
