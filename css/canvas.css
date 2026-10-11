@@ -256,6 +256,47 @@
     gap: 6px;
 }
 
+/* 视频节点时长：滑块 + 数字输入（对齐 infinite-canvas 4~30s） */
+.cnode-dur-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.cnode-dur-slider {
+    flex: 1;
+    min-width: 0;
+    height: 4px;
+    accent-color: var(--accent, #6366f1);
+    cursor: pointer;
+}
+.cnode-dur-num {
+    width: 46px;
+    flex-shrink: 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-input);
+    color: var(--text-primary);
+    font-size: 12px;
+    padding: 4px 6px;
+    text-align: center;
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+.cnode-dur-num::-webkit-outer-spin-button,
+.cnode-dur-num::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+.cnode-dur-num:focus {
+    outline: none;
+    border-color: var(--border-strong);
+}
+.cnode-dur-unit {
+    flex-shrink: 0;
+    font-size: 11.5px;
+    color: var(--text-secondary);
+}
+
 /* 节点按钮 */
 .cnode-btn {
     border: 1px solid var(--border);

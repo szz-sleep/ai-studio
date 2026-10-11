@@ -398,12 +398,19 @@ const CanvasModule = {
             const pairs = [
                 ['.cnode-p-ratio', n.data.ratio],
                 ['.cnode-p-res', n.data.resolution],
-                ['.cnode-p-dur', String(n.data.duration || 5)],
             ];
             pairs.forEach(([selCls, val]) => {
                 const sel = el.querySelector(selCls);
                 if (sel && val && sel.value !== String(val)) sel.value = String(val);
             });
+            // 时长滑块/数字输入同步
+            const dur = String(this._clampDuration(n.data.duration));
+            const dSlider = el.querySelector('.cnode-dur-slider');
+            const dNum = el.querySelector('.cnode-dur-num');
+            if (dSlider && dSlider.value !== dur) dSlider.value = dur;
+            if (dNum && dNum.value !== dur) dNum.value = dur;
+            const fpsSel = el.querySelector('.cnode-p-fps');
+            if (fpsSel && n.data.fps && fpsSel.value !== String(n.data.fps)) fpsSel.value = String(n.data.fps);
             const mSel = el.querySelector('.cnode-video-model');
             if (mSel && n.data.model && mSel.value !== n.data.model
                 && mSel.querySelector(`option[value="${CSS.escape(n.data.model)}"]`)) {
@@ -513,9 +520,14 @@ const CanvasModule = {
                         <select class="cnode-p-res" title="分辨率">
                             <option value="480p">480p</option><option value="720p" selected>720p</option><option value="1080p">1080p</option>
                         </select>
-                        <select class="cnode-p-dur" title="时长(秒)">
-                            <option value="5" selected>5s</option><option value="10">10s</option>
+                        <select class="cnode-p-fps" title="帧率">
+                            <option value="24">24fps</option><option value="30" selected>30fps</option><option value="60">60fps</option>
                         </select>
+                    </div>
+                    <div class="cnode-dur-row" title="时长：4~30 秒（普通模型最长 15 秒，30 秒仅 MiniMax-H3 支持）">
+                        <input type="range" class="cnode-dur-slider" min="4" max="30" step="1" value="${parseInt(n.data.duration, 10) || 5}">
+                        <input type="number" class="cnode-dur-num" min="4" max="30" step="1" value="${parseInt(n.data.duration, 10) || 5}">
+                        <span class="cnode-dur-unit">s</span>
                     </div>
                     <div class="cnode-video-status"></div>
                     <button class="cnode-btn cnode-generate-btn">⚡ 生成视频</button>
@@ -594,9 +606,22 @@ const CanvasModule = {
             const nn = node(); if (!nn) return;
             nn.data.resolution = e.target.value; this.save();
         });
-        el.querySelector('.cnode-p-dur')?.addEventListener('change', (e) => {
+        // 时长：滑块与数字输入双向同步（4~30 秒，对齐 infinite-canvas）
+        const durSlider = el.querySelector('.cnode-dur-slider');
+        const durNum = el.querySelector('.cnode-dur-num');
+        const applyDuration = (v) => {
+            const secs = this._clampDuration(v);
             const nn = node(); if (!nn) return;
-            nn.data.duration = parseInt(e.target.value, 10) || 5; this.save();
+            nn.data.duration = secs;
+            if (durSlider) durSlider.value = secs;
+            if (durNum) durNum.value = secs;
+            this.save();
+        };
+        durSlider?.addEventListener('input', (e) => applyDuration(e.target.value));
+        durNum?.addEventListener('change', (e) => applyDuration(e.target.value));
+        el.querySelector('.cnode-p-fps')?.addEventListener('change', (e) => {
+            const nn = node(); if (!nn) return;
+            nn.data.fps = parseInt(e.target.value, 10) || 30; this.save();
         });
 
         // 图片节点生图参数
@@ -758,6 +783,12 @@ const CanvasModule = {
             const size = map && map[node.data.resolution] && map[node.data.resolution][node.data.ratio];
             return size || '1920x1920';
         } catch (e) { return '1920x1920'; }
+    },
+
+    /** 视频时长钳制：4~30 秒整数（对齐 infinite-canvas 的 VIDEO_SECONDS_MIN/MAX） */
+    _clampDuration(v) {
+        const s = Math.floor(Number(v) || 5);
+        return Math.max(4, Math.min(30, s));
     },
 
     _updateImageNodeStatus(el, n) {
@@ -1582,12 +1613,25 @@ const CanvasModule = {
                 this._nodesLayer.querySelector(`.cnode[data-id="${node.id}"]`), node);
             Logger.req(`[画布] 创建视频任务: 模型=${model}, 首帧=${firstFrameUrl ? '有' : '无'}, 参考图=${refImages.length}, 提示词="${(prompt || '').substring(0, 50)}..."`);
 
+            const duration = this._clampDuration(node.data.duration);
+            node.data.duration = duration;
+            // 时长校验：与图生视频页同规则（普通模型 ≤15s；30s 仅 MiniMax-H3）
+            const invalidDuration = VideoModule._validateDuration(model, duration);
+            if (invalidDuration) {
+                UI.toast(invalidDuration, 'error', 6000);
+                node.data.status = 'idle';
+                node.data.error = invalidDuration;
+                this._updateVideoNodeStatus(
+                    this._nodesLayer.querySelector(`.cnode[data-id="${node.id}"]`), node);
+                return;
+            }
+
             const params = {
                 model,
                 prompt,
                 resolution: node.data.resolution || '720p',
                 ratio: node.data.ratio || '16:9',
-                duration: node.data.duration || 5,
+                duration,
                 fps: node.data.fps || 30,
                 firstFrameUrl,
                 lastFrameUrl: null,
