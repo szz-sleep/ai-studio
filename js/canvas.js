@@ -84,6 +84,7 @@ const CanvasModule = {
         this._bindKeyboard();
         this._bindContextMenu();
         this._bindMinimap();
+        this._bindCanvasSettings();
         this.renderAll();
 
         Logger.info('[画布] 初始化完成');
@@ -863,6 +864,7 @@ const CanvasModule = {
     },
 
     _updateVideoNodeStatus(el, n) {
+        this.renderEdges();   // 连线跟随生成状态（蚂蚁线/完成实线）
         const statusEl = el.querySelector('.cnode-video-status');
         const btn = el.querySelector('.cnode-generate-btn');
         const resultEl = el.querySelector('.cnode-video-result');
@@ -960,6 +962,7 @@ const CanvasModule = {
     },
 
     _updateImageNodeStatus(el, n) {
+        this.renderEdges();   // 连线跟随生成状态（蚂蚁线/完成实线）
         const statusEl = el.querySelector('.cnode-img-status');
         const btn = el.querySelector('.cnode-img-generate-btn');
         if (!statusEl) return;
@@ -1020,6 +1023,7 @@ const CanvasModule = {
 
         const abort = new AbortController();
         node._abort = abort;
+        node.data.done = false;   // 生成开始：清除完成态（连线恢复普通样式）
         const setStatus = (status, extra) => {
             node.data.status = status;
             Object.assign(node.data, extra || {});
@@ -1074,7 +1078,7 @@ const CanvasModule = {
             node.data.url = url;
             node.data.assetId = null;   // 新图未入库
             node.data.name = `生成的图片-${new Date().toLocaleTimeString()}`;
-            setStatus('idle', { error: '' });
+            setStatus('idle', { error: '', done: true });
             this.renderAll();
             this.save();
             UI.toast('图片生成成功！可继续连线到视频节点', 'success');
@@ -1085,7 +1089,7 @@ const CanvasModule = {
                 Logger.warn('[画布] 用户取消图片生成');
             } else {
                 Logger.error(`[画布] 图片生成失败: ${err.message}`);
-                setStatus('error', { error: err.message, progress: 0 });
+                setStatus('error', { error: err.message, progress: 0, done: false });
                 UI.toast('图片生成失败: ' + err.message, 'error', 5000);
             }
         } finally {
@@ -1131,6 +1135,22 @@ const CanvasModule = {
             const p2 = this._portPos(edge.to, 'in');
             if (!p1 || !p2) return;
             const d = this._edgePath(p1.x, p1.y, p2.x, p2.y);
+            // 生成状态可视化：生成中=动态蚂蚁线（图=蓝/视频=紫），完成=对应色半透明实线
+            const from = this.getNode(edge.from), to = this.getNode(edge.to);
+            let stateCls = '';
+            for (const n of [from, to]) {
+                if (n && n.data && (n.data.status === 'generating' || n.data.status === 'uploading')) {
+                    stateCls = n.type === 'video' ? ' edge-anim-video' : ' edge-anim-image';
+                    break;
+                }
+            }
+            if (!stateCls) {
+                for (const n of [from, to]) {
+                    if (!n || !n.data) continue;
+                    if (n.type === 'video' && n.data.status === 'done') { stateCls = ' edge-done-video'; break; }
+                    if (n.type === 'image' && n.data.done) { stateCls = ' edge-done-image'; break; }
+                }
+            }
             // 宽透明命中层
             const hit = document.createElementNS(ns, 'path');
             hit.setAttribute('d', d);
@@ -1154,7 +1174,7 @@ const CanvasModule = {
             svg.appendChild(hit);
             const vis = document.createElementNS(ns, 'path');
             vis.setAttribute('d', d);
-            vis.setAttribute('class', 'canvas-edge' + (selected ? ' selected' : ''));
+            vis.setAttribute('class', 'canvas-edge' + (selected ? ' selected' : '') + stateCls);
             svg.appendChild(vis);
         };
 
@@ -1342,6 +1362,22 @@ const CanvasModule = {
                 const targetEl = document.elementFromPoint(e.clientX, e.clientY)?.closest('.cnode');
                 if (targetEl && targetEl.dataset.id !== this._tempEdge.fromId) {
                     this._connect(this._tempEdge.fromId, targetEl.dataset.id);
+                } else if (!targetEl && !e.target?.closest?.('.canvas-minimap')) {
+                    // 空白处松手：弹出"新建节点并连线"选项（按连线规则过滤类型）
+                    const fromId = this._tempEdge.fromId;
+                    const from = this.getNode(fromId);
+                    const allowed = (from && this._EDGE_RULES[from.type]) || [];
+                    if (allowed.length > 0) {
+                        const world = this._screenToWorld(e.clientX, e.clientY);
+                        const titles = { text: '提示词', image: '图片', material: '素材库', video: '视频' };
+                        this._showContextMenu(e.clientX, e.clientY, allowed.map(t => ({
+                            label: `新建「${titles[t]}」节点并连线`,
+                            action: () => {
+                                const n = this.addNode(t, world.x, world.y - 20);
+                                this._connect(fromId, n.id);
+                            },
+                        })));
+                    }
                 }
                 this._tempEdge = null;
                 this.renderEdges();
@@ -1903,5 +1939,104 @@ const CanvasModule = {
         if (localStorage.getItem('aistudio_canvas_hint_closed') === '1') {
             $('canvasHint')?.classList.add('hidden');
         }
+    },
+
+    // ================================================================
+    // 画布设置：背景样式（点阵/网格线/无）、背景色、工具栏自动隐藏
+    // ================================================================
+
+    _loadSettings() {
+        try { return JSON.parse(localStorage.getItem('aistudio_canvas_settings') || '{}'); }
+        catch (e) { return {}; }
+    },
+
+    _saveSettings() {
+        localStorage.setItem('aistudio_canvas_settings', JSON.stringify(this._settings || {}));
+    },
+
+    _applyBackground() {
+        const vp = this._viewport;
+        if (!vp) return;
+        const s = this._settings || {};
+        vp.classList.remove('bg-dots', 'bg-grid', 'bg-none');
+        vp.classList.add('bg-' + (s.bgStyle || 'dots'));
+        // 自定义背景色（浅色模式下用户可自定底色；留空恢复主题默认）
+        vp.style.backgroundColor = s.bgColor || '';
+        const sel = document.getElementById('canvasBgStyle');
+        const color = document.getElementById('canvasBgColor');
+        if (sel && sel.value !== (s.bgStyle || 'dots')) sel.value = s.bgStyle || 'dots';
+        if (color && color.value !== (s.bgColor || '')) color.value = s.bgColor || '';
+    },
+
+    _bindCanvasSettings() {
+        this._settings = this._loadSettings();
+        const $ = id => document.getElementById(id);
+
+        $('canvasBgStyle')?.addEventListener('change', (e) => {
+            this._settings.bgStyle = e.target.value;
+            this._saveSettings();
+            this._applyBackground();
+        });
+        $('canvasBgColor')?.addEventListener('input', (e) => {
+            this._settings.bgColor = e.target.value;
+            this._saveSettings();
+            this._applyBackground();
+        });
+        $('canvasBgColor')?.addEventListener('change', () => this.save());
+        this._applyBackground();
+
+        this._bindToolbarAutoHide();
+    },
+
+    _bindToolbarAutoHide() {
+        const panel = document.getElementById('tab-canvas');
+        const bar = panel?.querySelector('.canvas-toolbar');
+        if (!panel || !bar) return;
+
+        let hideTimer = null;
+        const show = () => { clearTimeout(hideTimer); panel.classList.add('toolbar-visible'); };
+        const scheduleHide = () => {
+            clearTimeout(hideTimer);
+            hideTimer = setTimeout(() => panel.classList.remove('toolbar-visible'), 2200);
+        };
+
+        // 固定/自动 切换
+        const pinBtn = document.getElementById('canvasToolbarPinBtn');
+        const applyPin = () => {
+            panel.classList.toggle('toolbar-pinned', !!this._settings.toolbarPin);
+            if (pinBtn) {
+                pinBtn.classList.toggle('active', !!this._settings.toolbarPin);
+                pinBtn.title = this._settings.toolbarPin
+                    ? '已固定：点击取消固定（工具栏自动隐藏，鼠标移到顶部唤出）'
+                    : '固定工具栏（不再自动隐藏）';
+            }
+        };
+        applyPin();
+        pinBtn?.addEventListener('click', () => {
+            this._settings.toolbarPin = !this._settings.toolbarPin;
+            this._saveSettings();
+            applyPin();
+            if (this._settings.toolbarPin) {
+                clearTimeout(hideTimer);
+                panel.classList.add('toolbar-visible');
+            } else {
+                show();
+                scheduleHide();
+            }
+        });
+
+        // 自动隐藏模式：鼠标移到面板顶部区域或工具栏上 → 唤出；离开 → 2.2s 后隐藏
+        if (this._settings.toolbarPin) return;
+        show();
+        scheduleHide();
+        panel.addEventListener('mousemove', (e) => {
+            if (this._settings.toolbarPin) return;
+            const rect = panel.getBoundingClientRect();
+            if (e.clientY - rect.top < 64 || e.target.closest?.('.canvas-toolbar')) show();
+            else scheduleHide();
+        });
+        panel.addEventListener('mouseleave', () => {
+            if (!this._settings.toolbarPin) scheduleHide();
+        });
     },
 };

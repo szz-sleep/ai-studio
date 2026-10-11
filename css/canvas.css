@@ -592,3 +592,102 @@
     line-height: 2;
     pointer-events: none;
 }
+
+/* ===== 生成状态连线：蚂蚁线（动画）与完成实线 ===== */
+@keyframes canvas-edge-ants {
+    to { stroke-dashoffset: -12; }
+}
+.canvas-edge.edge-anim-image {
+    stroke: #5b9cf6;
+    stroke-width: 2.5;
+    stroke-dasharray: 7 5;
+    animation: canvas-edge-ants .45s linear infinite;
+}
+.canvas-edge.edge-anim-video {
+    stroke: #a86cf6;
+    stroke-width: 2.5;
+    stroke-dasharray: 7 5;
+    animation: canvas-edge-ants .45s linear infinite;
+}
+.canvas-edge.edge-done-image {
+    stroke: rgba(91, 156, 246, 0.45);
+    stroke-width: 2.5;
+}
+.canvas-edge.edge-done-video {
+    stroke: rgba(168, 108, 246, 0.5);
+    stroke-width: 2.5;
+}
+
+/* ===== 画布背景样式切换 ===== */
+.canvas-viewport.bg-grid {
+    background-image:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 24px 24px;
+}
+.canvas-viewport.bg-none {
+    background-image: none;
+}
+
+/* 背景样式下拉与颜色选择器 */
+.canvas-bg-select {
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-size: 12.5px;
+    padding: 5px 8px;
+    height: auto;
+    cursor: pointer;
+}
+.canvas-bg-color {
+    width: 34px;
+    height: 28px;
+    padding: 2px 3px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: var(--bg-surface);
+    cursor: pointer;
+}
+.canvas-bg-color:hover { border-color: var(--border-hover); }
+
+/* ===== 工具栏悬浮化 + 自动隐藏 ===== */
+#tab-canvas {
+    position: relative;
+}
+#tab-canvas .canvas-toolbar {
+    position: absolute;
+    top: 10px;
+    left: 12px;
+    right: 12px;
+    z-index: 40;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+    transition: transform .28s ease, opacity .28s ease;
+}
+/* 固定模式：恢复停靠满宽样式 */
+#tab-canvas.toolbar-pinned .canvas-toolbar {
+    top: 0;
+    left: 0;
+    right: 0;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    box-shadow: none;
+}
+/* 自动隐藏：未固定且未唤出时上滑收起 */
+#tab-canvas:not(.toolbar-pinned):not(.toolbar-visible) .canvas-toolbar {
+    transform: translateY(-140%);
+    opacity: 0;
+    pointer-events: none;
+}
+.canvas-pin-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--text-on-accent, #fff);
+}
+.canvas-pin-btn.active:hover {
+    background: var(--accent-hover, var(--accent));
+}
+
