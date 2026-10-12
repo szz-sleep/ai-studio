@@ -87,6 +87,15 @@
         }
       ],
       "icon": "assets/icon.ico",
+      "extraResources": [
+        {
+          "from": "agent-server",
+          "to": "agent-server",
+          "filter": [
+            "agent-server.exe"
+          ]
+        }
+      ],
       "files": [
         "!history",
         "!history/**",

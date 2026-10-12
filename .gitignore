@@ -6,3 +6,5 @@ node_modules/
 .backup-*
 history/
 .workbuddy/
+# PyInstaller 产物（用 my-agent 源码本地构建，不入库）
+agent-server/

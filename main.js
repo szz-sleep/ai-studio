@@ -165,9 +165,11 @@ function cleanupTmpDir(dir) {
 }
 
 // ============ 云镜 Agent 后端（my-agent FastAPI，127.0.0.1:8765） ============
-// Agent 对话标签页依赖这个本地 Python 服务；随应用自动拉起，退出时关闭。
-const AGENT_DIR = 'C:\\Users\\Administrator\\Desktop\\AGENT\\my-agent';
-const AGENT_PYTHON = 'C:\\Users\\Administrator\\.workbuddy\\binaries\\python\\envs\\default\\Scripts\\python.exe';
+// Agent 对话标签页依赖这个本地服务；随应用自动拉起，退出时关闭。
+// 源码版：用下方本机路径的 Python 直接跑源码（仅开发机有效）
+// 安装版：用随包分发的 resources/agent-server/agent-server.exe（PyInstaller 独立打包，无需 Python）
+const AGENT_DIR = 'C:\\Users\\Administrator\\Desktop\\AGENT\\my-agent';   // 仅源码版使用
+const AGENT_PYTHON = 'C:\\Users\\Administrator\\.workbuddy\\binaries\\python\\envs\\default\\Scripts\\python.exe'; // 仅源码版使用
 const AGENT_PORT = 8765;
 let agentChild = null; // 仅在由本应用拉起时才持有引用，退出时才会去关
 
@@ -198,6 +200,32 @@ async function detectSystemProxy() {
   } catch { return null; }
 }
 
+/** 解析 Agent 后端启动方式：安装版用内置 agent-server.exe，源码版用本机 Python+uvicorn */
+function agentBackendSpec() {
+  if (app.isPackaged) {
+    const exe = path.join(process.resourcesPath, 'agent-server', 'agent-server.exe');
+    if (!fs.existsSync(exe)) {
+      console.warn('[agent] 未找到内置后端 ' + exe + '，Agent 功能不可用');
+      return null;
+    }
+    return { exe, args: [], cwd: path.dirname(exe), frozen: true };
+  }
+  if (!fs.existsSync(path.join(AGENT_DIR, 'server.py'))) {
+    console.warn('[agent] 未找到 ' + AGENT_DIR + '\\server.py，Agent 功能不可用');
+    return null;
+  }
+  if (!fs.existsSync(AGENT_PYTHON)) {
+    console.warn('[agent] 未找到 Python 解释器 ' + AGENT_PYTHON + '，Agent 功能不可用');
+    return null;
+  }
+  return {
+    exe: AGENT_PYTHON,
+    args: ['-m', 'uvicorn', 'server:app', '--host', '127.0.0.1', '--port', String(AGENT_PORT)],
+    cwd: AGENT_DIR,
+    frozen: false,
+  };
+}
+
 /** 应用启动时拉起 Agent 后端（已在运行则跳过，避免端口冲突） */
 async function startAgentBackend() {
   try {
@@ -205,15 +233,16 @@ async function startAgentBackend() {
       console.log('[agent] 后端已在运行，跳过自启动');
       return;
     }
-    if (!fs.existsSync(path.join(AGENT_DIR, 'server.py'))) {
-      console.warn('[agent] 未找到 ' + AGENT_DIR + '\\server.py，Agent 功能不可用');
-      return;
+    const spec = agentBackendSpec();
+    if (!spec) return;
+    const env = { ...process.env, AGENT_PORT: String(AGENT_PORT) };
+    if (spec.frozen) {
+      // 打包版：可写数据（config.json/workspace）放到用户数据目录，不写进安装目录
+      const dataDir = path.join(app.getPath('userData'), 'agent-data');
+      env.AGENT_DATA_DIR = dataDir;
+      env.AGENT_WORKSPACE = path.join(dataDir, 'workspace');
+      console.log('[agent] 数据目录:', dataDir);
     }
-    if (!fs.existsSync(AGENT_PYTHON)) {
-      console.warn('[agent] 未找到 Python 解释器 ' + AGENT_PYTHON + '，Agent 功能不可用');
-      return;
-    }
-    const env = { ...process.env };
     // 显式注入系统代理（httpx 只认环境变量），本机回环不走代理
     const proxy = await detectSystemProxy();
     if (proxy) {
@@ -225,16 +254,16 @@ async function startAgentBackend() {
       console.log('[agent] 未检测到系统代理，后端将直连');
     }
     agentChild = spawn(
-      AGENT_PYTHON,
-      ['-m', 'uvicorn', 'server:app', '--host', '127.0.0.1', '--port', String(AGENT_PORT)],
-      { cwd: AGENT_DIR, windowsHide: true, stdio: 'ignore', env }
+      spec.exe,
+      spec.args,
+      { cwd: spec.cwd, windowsHide: true, stdio: 'ignore', env }
     );
     agentChild.on('error', (e) => console.warn('[agent] 后端启动失败:', e.message));
     agentChild.on('close', (code) => {
       console.log('[agent] 后端进程退出 (code=' + code + ')');
       if (agentChild && agentChild.exitCode !== null) agentChild = null;
     });
-    console.log('[agent] 已拉起 Agent 后端 (uvicorn @127.0.0.1:' + AGENT_PORT + ')');
+    console.log('[agent] 已拉起 Agent 后端 (@127.0.0.1:' + AGENT_PORT + ')');
   } catch (e) {
     console.warn('[agent] 后端启动异常:', e.message);
   }
