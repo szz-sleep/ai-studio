@@ -31,12 +31,12 @@ const PUB_KEY_PEM = [
 ].join('\n');
 
 // ============ 联网卡密激活（Cloudflare Workers） ============
-// 部署后把 Workers 地址填到 LICENSE_SERVER_DEFAULT（形如 https://aistudio-license.xxx.workers.dev）
+// 主域名 = 自定义域名（国内直连可达）；workers.dev 国内被墙仅作备用地址
 // 环境变量 AISTUDIO_LICENSE_SERVER 可覆盖（联调用）
-const LICENSE_SERVER_DEFAULT = 'https://aistudio-license.459811579.workers.dev';
+const LICENSE_SERVER_DEFAULT = 'https://rabbit123.indevs.in';
 let _serverUrl = process.env.AISTUDIO_LICENSE_SERVER || LICENSE_SERVER_DEFAULT;
 let _serverUrlOverride = null; // 测试覆盖
-const NET_TIMEOUT_MS = 10000;
+const NET_TIMEOUT_MS = 12000;
 
 function getServerUrl() { return _serverUrlOverride ?? _serverUrl; }
 
@@ -46,13 +46,89 @@ function isCardCode(code) {
   return n.length >= 10 && n.length <= 20 && n.startsWith('YJ');
 }
 
-/** 主进程发起 JSON POST */
-function _netPost(urlPath, body) {
+// —— 系统代理识别（客户开着「系统代理模式」VPN 时也能激活） ——
+const net = require('net');
+const tls = require('tls');
+const { exec } = require('child_process');
+
+function _envProxy() { return process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy || ''; }
+
+let _regProxyCache = { at: 0, value: '' };
+/** Windows 注册表系统代理（ProxyEnable=1 时），缓存 60 秒；非 win32 返回空 */
+function _registryProxy() {
+  if (process.platform !== 'win32') return '';
+  const now = Date.now();
+  if (now - _regProxyCache.at < 60000) return _regProxyCache.value;
+  _regProxyCache.at = now;
+  _regProxyCache.value = new Promise((resolve) => {
+    const base = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings';
+    exec(`reg query "${base}" /v ProxyEnable & reg query "${base}" /v ProxyServer`, { timeout: 4000, windowsHide: true }, (err, stdout) => {
+      try {
+        if (err || !/ProxyEnable\s+REG_SZ\s+0x1/.test(stdout || '')) return resolve('');
+        const m = (stdout || '').match(/ProxyServer\s+REG_SZ\s+(\S+)/);
+        if (!m) return resolve('');
+        let v = m[1];
+        if (v.includes('=')) {
+          const parts = v.split(';').map((s) => s.trim()).filter(Boolean);
+          const hit = parts.find((s) => s.startsWith('https=')) || parts.find((s) => s.startsWith('http=')) || parts[0];
+          v = hit.split('=').pop();
+        }
+        resolve(v && /^[a-zA-Z0-9.:-]+$/.test(v) ? (v.includes('://') ? v : 'http://' + v) : '');
+      } catch { resolve(''); }
+    });
+  }).then((v) => { _regProxyCache.value = v; return v; });
+  return _regProxyCache.value;
+}
+
+/** 经代理建立 CONNECT 隧道到 targetHost:targetPort */
+function _tunnel(targetHost, targetPort, proxyUrl) {
   return new Promise((resolve, reject) => {
+    let p;
+    try { p = new URL(proxyUrl); } catch { return reject(new Error('代理地址无效')); }
+    const sock = net.connect(Number(p.port || 8080), p.hostname, () => {
+      sock.write(`CONNECT ${targetHost}:${targetPort} HTTP/1.1\r\nHost: ${targetHost}:${targetPort}\r\n\r\n`);
+    });
+    let buf = '';
+    const onData = (d) => {
+      buf += d.toString('latin1');
+      if (buf.includes('\r\n\r\n')) {
+        sock.removeListener('data', onData);
+        if (/^HTTP\/1\.[01] 200/.test(buf)) resolve(sock);
+        else { sock.destroy(); reject(new Error('代理隧道失败')); }
+      }
+    };
+    sock.setTimeout(8000, () => { sock.destroy(); reject(new Error('代理连接超时')); });
+    sock.on('error', reject);
+    sock.on('data', onData);
+  });
+}
+
+/** 依次尝试 注册表代理 → 环境变量代理 → 直连；null 表示直连 */
+async function _createConn(u) {
+  const isHttps = u.protocol === 'https:';
+  const host = u.hostname;
+  const port = Number(u.port || (isHttps ? 443 : 80));
+  const candidates = [];
+  try { const reg = await _registryProxy(); if (reg) candidates.push(reg); } catch { /* 忽略 */ }
+  const envP = _envProxy();
+  if (envP && !candidates.includes(envP)) candidates.push(envP);
+  for (const proxy of candidates) {
     try {
-      const u = new URL(getServerUrl() + urlPath);
-      const lib = u.protocol === 'https:' ? require('https') : require('http');
-      const data = Buffer.from(JSON.stringify(body || {}), 'utf8');
+      const sock = await _tunnel(host, port, proxy);
+      return isHttps ? tls.connect({ socket: sock, servername: host }) : sock;
+    } catch { /* 换下一个候选 */ }
+  }
+  return null; // 直连
+}
+
+/** 主进程发起 JSON POST（自动识别系统代理） */
+async function _netPost(urlPath, body) {
+  const u = new URL(getServerUrl() + urlPath);
+  const lib = u.protocol === 'https:' ? require('https') : require('http');
+  const data = Buffer.from(JSON.stringify(body || {}), 'utf8');
+  const conn = await _createConn(u);
+  return await new Promise((resolve, reject) => {
+    try {
       const req = lib.request({
         hostname: u.hostname,
         port: u.port || (u.protocol === 'https:' ? 443 : 80),
@@ -60,6 +136,7 @@ function _netPost(urlPath, body) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Content-Length': data.length },
         timeout: NET_TIMEOUT_MS,
+        ...(conn ? { createConnection: () => conn } : {}),
       }, (res) => {
         let buf = '';
         res.on('data', (c) => buf += c);
@@ -431,7 +508,7 @@ async function activate(codeRaw) {
         version: LICENSE_VERSION,
       });
     } catch (e) {
-      return { ok: false, error: '无法连接激活服务器，请检查网络后重试', state: await getState() };
+      return { ok: false, error: '无法连接激活服务器，请检查网络后重试；若开启了代理/VPN，请尝试全局(TUN)模式', state: await getState() };
     }
     if (!res || !res.ok) {
       return { ok: false, error: (res && res.error) || '激活失败，请检查卡密', state: await getState() };
