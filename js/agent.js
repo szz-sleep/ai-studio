@@ -463,10 +463,15 @@ const AgentModule = {
         for (let i = 0; i < retries; i++) {
             try {
                 const r = await fetch(this.BASE + '/api/config', { signal: AbortSignal.timeout(2500) });
-                const cfg = await r.json();
+                await r.json();
                 el.classList.remove('connecting');
                 el.classList.add('ok');
-                txt.textContent = cfg.has_key ? 'Agent 服务已连接' : '服务已连接，但尚未配置 API Key';
+                // Agent 与 AI Studio 共用顶部设置里的 API（每次请求直传凭据），
+                // 后端自身 config.json 的 has_key 与实际调用无关，不作为提示依据
+                const hasStudioKey = (typeof Config !== 'undefined') && Config.hasKey();
+                txt.textContent = hasStudioKey
+                    ? 'Agent 服务已连接（使用顶部设置的 API）'
+                    : 'Agent 服务已连接，请先在顶部设置中配置 API Key';
                 return true;
             } catch {
                 await new Promise(res => setTimeout(res, 1500));

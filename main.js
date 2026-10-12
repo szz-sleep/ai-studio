@@ -4,6 +4,7 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const https = require('https');
 const http = require('http');
+const net = require('net');
 const os = require('os');
 const { spawn } = require('child_process');
 const license = require('./license.js');
@@ -188,6 +189,24 @@ function agentServerReachable(timeoutMs = 800) {
   });
 }
 
+/** TCP 探测代理端口是否真的可达（代理软件关掉后系统设置仍会残留，不能盲信） */
+function proxyReachable(addr, timeoutMs = 1200) {
+  return new Promise((resolve) => {
+    const idx = addr.lastIndexOf(':');
+    const host = idx > 0 ? addr.slice(0, idx) : addr;
+    const port = parseInt(idx > 0 ? addr.slice(idx + 1) : '', 10);
+    if (!host || !port || port < 1 || port > 65535) { resolve(false); return; }
+    const socket = new net.Socket();
+    let done = false;
+    const finish = (ok) => { if (!done) { done = true; socket.destroy(); resolve(ok); } };
+    socket.setTimeout(timeoutMs);
+    socket.once('connect', () => finish(true));
+    socket.once('timeout', () => finish(false));
+    socket.once('error', () => finish(false));
+    socket.connect(port, host);
+  });
+}
+
 /** 用 Chromium 自带的代理解析读取系统代理（httpx 不读系统代理，需要显式传给后端进程） */
 async function detectSystemProxy() {
   try {
@@ -246,15 +265,16 @@ async function startAgentBackend() {
       env.AGENT_WORKSPACE = path.join(dataDir, 'workspace');
       console.log('[agent] 数据目录:', dataDir);
     }
-    // 显式注入系统代理（httpx 只认环境变量），本机回环不走代理
+    // 显式注入系统代理（httpx 只认环境变量），本机回环不走代理；
+    // 代理软件已关闭（端口不可达）时不注入，避免后端所有请求撞死代理
     const proxy = await detectSystemProxy();
-    if (proxy) {
+    if (proxy && await proxyReachable(proxy.replace(/^https?:\/\//, ''))) {
       env.HTTP_PROXY = proxy;
       env.HTTPS_PROXY = proxy;
       env.NO_PROXY = 'localhost,127.0.0.1';
       console.log('[agent] 已注入系统代理:', proxy);
     } else {
-      console.log('[agent] 未检测到系统代理，后端将直连');
+      console.log('[agent] 系统代理不可用或未开启，后端将直连' + (proxy ? ` (检测到 ${proxy} 但端口不通)` : ''));
     }
     agentChild = spawn(
       spec.exe,
