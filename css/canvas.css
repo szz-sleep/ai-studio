@@ -453,6 +453,8 @@
     padding: 8px;
 }
 .cnode-audio-wrap:not(.empty) .cnode-audio-placeholder { display: none; }
+/* 素材库节点（音频类型）播放器 */
+.cnode-mat-audio { width: 100%; height: 36px; }
 
 .cnode-sub {
     font-size: 11px;
