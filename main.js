@@ -6,7 +6,7 @@ const https = require('https');
 const http = require('http');
 const net = require('net');
 const os = require('os');
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 const license = require('./license.js');
 const auth = require('./auth.js');
 
@@ -276,6 +276,8 @@ async function startAgentBackend() {
     } else {
       console.log('[agent] 系统代理不可用或未开启，后端将直连' + (proxy ? ` (检测到 ${proxy} 但端口不通)` : ''));
     }
+    // 父进程看门狗：主程序退出后后端自动退出，防止孤儿进程锁安装目录
+    env.AGENT_PARENT_PID = String(process.pid);
     agentChild = spawn(
       spec.exe,
       spec.args,
@@ -295,9 +297,19 @@ async function startAgentBackend() {
 /** 退出前关闭由本应用拉起的 Agent 后端 */
 function stopAgentBackend() {
   if (!agentChild) return;
-  try { agentChild.kill(); } catch { /* 进程可能已退出 */ }
+  const child = agentChild;
+  const pid = child.pid;
   agentChild = null;
-  console.log('[agent] 已关闭 Agent 后端');
+  try {
+    if (process.platform === 'win32' && pid) {
+      // 必须杀整棵进程树：PyInstaller onefile 的引导进程被单独杀掉后，
+      // 真正跑服务的子进程会存活成孤儿，锁住安装目录导致升级时"无法关闭"
+      execSync(`taskkill /PID ${pid} /T /F`, { windowsHide: true, stdio: 'ignore' });
+    } else {
+      child.kill();
+    }
+  } catch { /* 进程可能已退出 */ }
+  console.log('[agent] 已关闭 Agent 后端 (pid=' + pid + ')');
 }
 
 // 单实例锁 — 防止多开
