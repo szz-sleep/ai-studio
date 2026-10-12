@@ -46,14 +46,15 @@ const CanvasModule = {
     _clipboard: [],            // Ctrl+C 复制的节点快照
 
     // 允许的连线：from 类型 → 允许的 to 类型
-    // image → material：图片入库通道（素材节点自动上传火山素材库并跟踪审核状态）
+    // image/material(图) → material：图片入库通道（素材节点自动上传火山素材库并跟踪审核状态）
+    // video → material：视频入库通道（同上，视频素材节点实时显示审核状态）
     // audio/video → video：音频/视频参考生成
     _EDGE_RULES: {
         text: ['video', 'image'],
         image: ['video', 'image', 'material'],
         material: ['video', 'image'],
         audio: ['video'],
-        video: ['video'],
+        video: ['video', 'material'],
     },
 
     // 节点标题/图标
@@ -874,6 +875,18 @@ const CanvasModule = {
             const sub = el.querySelector('.cnode-sub');
             if (sub && sub.textContent !== (n.data.name || '')) sub.textContent = n.data.name || '';
         }
+        // 素材节点（视频类型）预览
+        if (n.type === 'material' && n.data.mtype === 'video' && el.querySelector('.cnode-mat-video')) {
+            const mv = el.querySelector('.cnode-mat-video');
+            if (mv.dataset.src !== n.data.url) {
+                mv.src = n.data.url || '';
+                mv.dataset.src = n.data.url || '';
+                mv.style.display = n.data.url ? '' : 'none';
+                el.querySelector('.cnode-video-wrap')?.classList.toggle('empty', !n.data.url);
+            }
+            const sub = el.querySelector('.cnode-sub');
+            if (sub && sub.textContent !== (n.data.name || '')) sub.textContent = n.data.name || '';
+        }
         // 音频节点播放器/名称
         if (n.type === 'audio' && el.querySelector('.cnode-audio-player')) {
             const player = el.querySelector('.cnode-audio-player');
@@ -958,18 +971,25 @@ const CanvasModule = {
         }
 
         if (n.type === 'material') {
+            const isVideo = n.data.mtype === 'video';
             return `${head(`<span class="cnode-lib-badge">未入库</span>`)}
                 <div class="cnode-body">
+                    ${isVideo ? `
+                    <div class="cnode-video-wrap mat-video empty">
+                        <video class="cnode-mat-video" controls preload="metadata" style="display:none;"></video>
+                        <div class="cnode-video-placeholder">视频素材区<br>连线视频节点自动入库</div>
+                    </div>` : `
                     <div class="cnode-img-wrap empty">
                         <img class="cnode-img" draggable="false" alt="">
                         <div class="cnode-img-placeholder">从素材库选择</div>
-                    </div>
+                    </div>`}
                     <div class="cnode-sub">${this._escape(n.data.name || '')}</div>
                     <div class="cnode-btn-row">
                         <button class="cnode-btn cnode-act-pick">选择素材</button>
+                        ${isVideo ? `<button class="cnode-btn cnode-act-matsync" title="上传到火山素材库，等待审核">同步素材库</button>` : ''}
                     </div>
                 </div>
-                <div class="cnode-port cnode-port-out" data-port="out" title="拖拽连线到视频节点"></div>`;
+                <div class="cnode-port cnode-port-out" data-port="out" title="拖拽连线到视频/图片节点"></div>`;
         }
 
         if (n.type === 'audio') {
@@ -1230,6 +1250,11 @@ const CanvasModule = {
         el.querySelector('.cnode-act-pick')?.addEventListener('click', (e) => {
             e.stopPropagation();
             this._pickMaterial(node());
+        });
+        // 素材节点（视频类型）手动同步素材库
+        el.querySelector('.cnode-act-matsync')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._syncMaterialVideo(node());
         });
 
         // 图片节点下载
@@ -1640,15 +1665,18 @@ const CanvasModule = {
                 this._renderSelection();
             });
         }
-        const typeNames = { image: '图片', material: '图片', audio: '音频', video: '视频' };
+        const typeNames = { image: '图片', audio: '音频', video: '视频' };
+        // 素材节点按内容类型归类：视频类型素材 → 视频，其余 → 图片
+        const kindOf = (m) => m.type === 'material' ? (m.data.mtype === 'video' ? 'video' : 'image') : m.type;
         // 同类素材按上游顺序编号（与 generateVideo 的参考数组顺序一致）
-        const counters = { image: 0, material: 0, audio: 0, video: 0 };
+        const counters = { image: 0, audio: 0, video: 0 };
         const sig = media.map(m => m.id).join(',');
         if (box.dataset.sig === sig) return;
         box.dataset.sig = sig;
         box.innerHTML = media.map((m) => {
-            counters[m.type]++;
-            const label = `${typeNames[m.type] || m.type}${counters[m.type]}`;
+            const kind = kindOf(m);
+            counters[kind]++;
+            const label = `${typeNames[kind] || kind}${counters[kind]}`;
             const name = this._escape(m.data.name || '未命名');
             return `<span class="cnode-ref-label" data-src="${m.id}" title="${label}：${name} —— 在提示词中可用「${label}」引用这个素材">${label}</span>`;
         }).join('');
@@ -1835,13 +1863,18 @@ const CanvasModule = {
                         const world = this._screenToWorld(e.clientX, e.clientY);
                         const titles = { text: '提示词', image: '图片', material: '素材库', video: '视频' };
                         this._showContextMenu(e.clientX, e.clientY, allowed.map(t => ({
-                            label: t === 'material' && from.type === 'image'
+                            label: t === 'material' && (from.type === 'image' || from.type === 'video')
                                 ? '新建「素材库」节点并入库'
                                 : `新建「${titles[t]}」节点并连线`,
                             action: () => {
                                 if (t === 'material' && from.type === 'image') {
                                     // 图片入库通道：图片节点保留原图，素材节点承接上传与审核状态
                                     this._materializeImage(fromId, world.x, world.y - 20);
+                                    return;
+                                }
+                                if (t === 'material' && from.type === 'video') {
+                                    // 视频入库通道：视频节点保留原视频，素材节点承接上传与审核状态
+                                    this._materializeVideo(fromId, world.x, world.y - 20);
                                     return;
                                 }
                                 const n = this.addNode(t, world.x, world.y - 20);
@@ -2056,6 +2089,12 @@ const CanvasModule = {
                 }
                 if (n && n.type === 'material') {
                     items.unshift({ label: '重新选择素材', action: () => this._pickMaterial(n) });
+                    if (!VideoModule._validAssetId(n.data.assetId)) {
+                        items.unshift({
+                            label: '同步到素材库',
+                            action: () => n.data.mtype === 'video' ? this._syncMaterialVideo(n) : this._syncImageToLib(n),
+                        });
+                    }
                 }
                 if (n && n.type === 'audio') {
                     items.unshift({ label: '重新选择音频', action: () => this._pickLocalAudio(n) });
@@ -2346,6 +2385,76 @@ const CanvasModule = {
         }
     },
 
+    /**
+     * 视频节点 → 素材库节点（视频入库通道，与图片入库通道对称）：
+     *  - 视频节点保留原视频，新建素材节点（mtype=video）承接上传与审核状态
+     *  - 视频已在库（有有效 assetId）→ 素材节点直接继承引用，秒完成
+     *  - 否则自动走 _syncMaterialVideo 上传（托管 → 火山素材库 → 轮询审核）
+     */
+    _materializeVideo(fromId, wx, wy) {
+        const from = this.getNode(fromId);
+        if (!from || from.type !== 'video' || !from.data.videoUrl) {
+            UI.toast('视频节点还没有视频，无法入库', 'warn');
+            return;
+        }
+        const m = this.addNode('material', wx, wy, {
+            url: from.data.videoUrl,
+            sourceUrl: from.data.videoUrl,
+            name: from.data.name || '画布视频',
+            mtype: 'video',
+            assetId: VideoModule._validAssetId(from.data.assetId) ? from.data.assetId : '',
+        });
+        this.edges.push({ id: this._uid('edge'), from: fromId, to: m.id });
+        this.renderAll();
+        this.save();
+        if (VideoModule._validAssetId(m.data.assetId)) {
+            UI.toast('视频已在素材库，直接继承引用', 'success');
+        } else {
+            m.data.uploading = true;
+            this._syncMaterialVideo(m);
+        }
+    },
+
+    /** 视频素材节点同步到火山素材库（托管公网 → CreateAsset → 轮询审核，徽标实时刷新） */
+    async _syncMaterialVideo(m) {
+        if (!m || m.type !== 'material') { UI.toast('素材节点不存在', 'warn'); return; }
+        if (!m.data.url) { UI.toast('素材节点还没有视频内容，请先连线视频节点或从素材库选择', 'warn'); return; }
+        if (VideoModule._validAssetId(m.data.assetId)) { UI.toast('该视频已在素材库中', 'info'); return; }
+        try {
+            m.data.uploading = true;
+            this.renderAll();
+            UI.showLoading('正在同步视频到素材库...');
+            const resp = await fetch(m.data.url);
+            const blob = await resp.blob();
+            const file = new File([blob], m.data.name || `canvas-video-${Date.now()}.mp4`, { type: blob.type || 'video/mp4' });
+            // uploadFile 返回托管后的 httpUrl，本地缓存记录以 httpUrl 为键
+            const httpUrl = await MaterialLib.uploadFile(file);
+            const rec = MaterialLib.getAll().find(i => i.url === httpUrl || i.sourceUrl === httpUrl);
+            const nn = this.getNode(m.id);
+            if (!nn) return;
+            if (rec && VideoModule._validAssetId(rec.id)) {
+                nn.data.assetId = rec.id;
+                nn.data.name = rec.name || nn.data.name;
+                // 用托管 URL 替换 data: 引用，审核轮询后徽标自动变为审核中/通过
+                if (httpUrl && httpUrl.startsWith('http')) { nn.data.url = httpUrl; nn.data.sourceUrl = httpUrl; }
+                this.save();
+                UI.toast('视频已上传到素材库，等待火山审核（审核通过后才能生成视频）', 'info', 5000);
+                Logger.success(`[画布] 视频素材已入库: ${rec.id}`);
+            } else {
+                if (httpUrl && httpUrl.startsWith('http')) { nn.data.url = httpUrl; nn.data.sourceUrl = httpUrl; }
+                this.save();
+                UI.toast('视频已上传，火山审核通过后即可用 asset:// 引用', 'info', 5000);
+            }
+        } catch (e) {
+            UI.toast('同步视频素材库失败: ' + e.message, 'error');
+        } finally {
+            const nn = this.getNode(m?.id);
+            if (nn && nn.data) nn.data.uploading = false;
+            UI.hideLoading();
+            this.renderAll();
+        }
+    },
+
     /** MaterialLib 缓存变化（审核状态轮询/同步）后刷新画布徽标与连线 */
     _refreshMaterialBadges() {
         let dirty = false;
@@ -2446,9 +2555,10 @@ const CanvasModule = {
         }
     },
 
-    /** 打开素材库选择素材（图片类型） */
+    /** 打开素材库选择素材（按节点内容类型过滤：视频素材节点选视频，其余选图片） */
     _pickMaterial(node) {
         if (typeof MaterialLib === 'undefined') { UI.toast('素材库模块未加载', 'error'); return; }
+        const filter = node?.data?.mtype === 'video' ? 'video' : 'image';
         MaterialLib.openPicker((item) => {
             const nn = this.getNode(node.id);
             if (!nn) return;
@@ -2456,12 +2566,12 @@ const CanvasModule = {
                 assetId: VideoModule._validAssetId(item.id) ? item.id : '',
                 url: item.url || item.sourceUrl || '',
                 name: item.name || '素材',
-                mtype: item.type || 'image',
+                mtype: item.type || filter,
             };
             this.renderAll();
             this.save();
             Logger.info(`[画布] 素材节点已选择: ${nn.data.name} (assetId=${nn.data.assetId || '无'})`);
-        }, 'image');
+        }, filter);
     },
 
     // ===== 拖放 / 粘贴 =====
@@ -2517,9 +2627,13 @@ const CanvasModule = {
 
         const ups = this.upstream(nodeId);
         const textNodes = ups.filter(n => n.type === 'text');
-        const mediaNodes = ups.filter(n => n.type === 'image' || n.type === 'material');
+        // 图片参考：image 节点 + 图片类型素材节点；视频类型素材节点归入视频参考
+        const mediaNodes = ups.filter(n => n.type === 'image' || (n.type === 'material' && n.data.mtype !== 'video'));
         const audioNodes = ups.filter(n => n.type === 'audio');
-        const videoRefNodes = ups.filter(n => n.type === 'video');
+        // 视频参考：video 节点 + 视频类型素材节点（素材库视频 → 视频生视频）
+        const videoRefNodes = ups.filter(n => n.type === 'video' || (n.type === 'material' && n.data.mtype === 'video'));
+        // 审核拦截针对所有素材节点（图片/视频类型均须审核通过）
+        const materialNodes = ups.filter(n => n.type === 'material');
 
         // 提示词：节点自身提示词 + 相连文本节点内容
         const promptParts = [];
@@ -2533,7 +2647,7 @@ const CanvasModule = {
         }
 
         // 严格模式：上游素材节点必须在库且审核通过（审核中/失败一律禁止生成）
-        for (const m of mediaNodes) {
+        for (const m of materialNodes) {
             if (m.type !== 'material') continue;
             const name = m.data.name || '未命名素材';
             const reportError = (msg) => {
@@ -2629,27 +2743,28 @@ const CanvasModule = {
                 if (value) refAudioValues.push(value);
             }
 
-            // —— 参考视频（video 节点：本机上传/素材库选择/生成结果均可）——
+            // —— 参考视频（video 节点 / 视频类型素材节点：本机上传/素材库选择/生成结果均可）——
             const refVideoValues = [];
             for (const v of videoRefNodes) {
+                const vurl = v.data.videoUrl || v.data.url || '';
                 let value = null;
                 if (VideoModule._validAssetId(v.data.assetId)) {
                     value = 'asset://' + v.data.assetId;
-                } else if (v.data.videoUrl) {
+                } else if (vurl) {
                     if (isLocalModel) {
-                        value = v.data.videoUrl;
-                    } else if (v.data.videoUrl.startsWith('http')) {
-                        value = v.data.videoUrl;
-                    } else if (v.data.videoUrl.startsWith('data:')) {
+                        value = vurl;
+                    } else if (vurl.startsWith('http')) {
+                        value = vurl;
+                    } else if (vurl.startsWith('data:')) {
                         setUploading(`正在上传参考视频「${v.data.name || '视频'}」...`);
-                        value = await VideoModule._uploadToTempHost(v.data.videoUrl, v.data.name || 'canvas-ref-video');
+                        value = await VideoModule._uploadToTempHost(vurl, v.data.name || 'canvas-ref-video');
                         if (!value || value.startsWith('data:')) {
                             throw new Error('参考视频上传公网托管失败，无法作为参考视频');
                         }
                     }
                 }
                 if (value) refVideoValues.push(value);
-                else UI.toast(`视频节点「${v.data.name || '未命名'}」还没有视频内容（可双击上传或右键从素材库选择），已跳过`, 'warn', 4000);
+                else UI.toast(`视频「${v.data.name || '未命名'}」还没有视频内容（可双击上传或右键从素材库选择），已跳过`, 'warn', 4000);
             }
 
             // —— 模式约束（与图生视频页多模态分支同规则）——

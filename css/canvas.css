@@ -866,6 +866,15 @@
     pointer-events: none;
 }
 
+/* 素材库节点（视频类型）：预览与占位切换 */
+.cnode-video-wrap.mat-video video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #000;
+}
+.cnode-video-wrap.mat-video:not(.empty) .cnode-video-placeholder { display: none; }
+
 /* ===== 工具栏悬浮化 + 自动隐藏 ===== */
 #tab-canvas {
     position: relative;
