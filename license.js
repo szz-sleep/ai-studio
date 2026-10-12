@@ -30,6 +30,65 @@ const PUB_KEY_PEM = [
   '-----END PUBLIC KEY-----',
 ].join('\n');
 
+// ============ 联网卡密激活（Cloudflare Workers） ============
+// 部署后把 Workers 地址填到 LICENSE_SERVER_DEFAULT（形如 https://aistudio-license.xxx.workers.dev）
+// 环境变量 AISTUDIO_LICENSE_SERVER 可覆盖（联调用）
+const LICENSE_SERVER_DEFAULT = '';
+let _serverUrl = process.env.AISTUDIO_LICENSE_SERVER || LICENSE_SERVER_DEFAULT;
+let _serverUrlOverride = null; // 测试覆盖
+const NET_TIMEOUT_MS = 10000;
+
+function getServerUrl() { return _serverUrlOverride ?? _serverUrl; }
+
+/** 主进程发起 JSON POST */
+function _netPost(urlPath, body) {
+  return new Promise((resolve, reject) => {
+    try {
+      const u = new URL(getServerUrl() + urlPath);
+      const lib = u.protocol === 'https:' ? require('https') : require('http');
+      const data = Buffer.from(JSON.stringify(body || {}), 'utf8');
+      const req = lib.request({
+        hostname: u.hostname,
+        port: u.port || (u.protocol === 'https:' ? 443 : 80),
+        path: u.pathname + u.search,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': data.length },
+        timeout: NET_TIMEOUT_MS,
+      }, (res) => {
+        let buf = '';
+        res.on('data', (c) => buf += c);
+        res.on('end', () => {
+          try { resolve(JSON.parse(buf)); } catch (e) { reject(new Error('响应解析失败')); }
+        });
+      });
+      req.on('timeout', () => req.destroy(new Error('连接超时')));
+      req.on('error', reject);
+      req.end(data);
+    } catch (e) { reject(e); }
+  });
+}
+
+/** 校验服务器签发的授权（Ed25519，负载 = v1|卡密|指纹|到期时间） */
+function _verifyNetworkSig(code, fingerprint, expiryTime, sig) {
+  try {
+    const payload = `v1|${String(code).toUpperCase().replace(/[^0-9A-Z]/g, '')}|${String(fingerprint).toLowerCase()}|${Number(expiryTime) || 0}`;
+    return crypto.verify(null, Buffer.from(payload, 'utf8'), crypto.createPublicKey(_pubKey()), Buffer.from(sig, 'base64'));
+  } catch { return false; }
+}
+
+/** 静默心跳：封禁/过期（到期不宽限）时清除本地授权 */
+async function _heartbeat() {
+  try {
+    const rec = readLicenseRecord();
+    if (!rec || rec.mode !== 'network' || !getServerUrl()) return;
+    const { digest } = await _fingerprint();
+    const res = await _netPost('/api/verify', { code: rec.code, fingerprint: digest.toString('hex') });
+    if (res && !res.ok && (res.reason === 'revoked' || res.reason === 'expired' || res.reason === 'mismatch')) {
+      try { fs.unlinkSync(licenseFile()); } catch { /* 忽略 */ }
+    }
+  } catch { /* 断网/服务器不可达：忽略，本地授权继续有效 */ }
+}
+
 // ============ 测试钩子（仅测试使用） ============
 const _test = {
   fpDigestOverride: null,   // Buffer(32)
@@ -291,6 +350,29 @@ async function getState() {
   if (!record || !record.code) {
     return { ...base, status: 'not_activated' };
   }
+
+  // —— 联网卡密授权（mode:network）：本地验签 + 指纹绑定 + 到期不宽限 ——
+  if (record.mode === 'network') {
+    const fpHex = digest.toString('hex');
+    if (record.fingerprint !== fpHex) {
+      return { ...base, status: 'fingerprint_mismatch', message: '本机指纹与授权不匹配：一个卡密只能在一台电脑上使用' };
+    }
+    if (!_verifyNetworkSig(record.code, fpHex, record.expiryTime, record.sig)) {
+      return { ...base, status: 'license_corrupt', message: '授权信息校验失败，请重新激活' };
+    }
+    const expiryTime = record.expiryTime > 0 ? record.expiryTime : null;
+    if (expiryTime && trusted >= expiryTime) {
+      return { ...base, status: 'expired', expiryTime, message: '授权已到期，请联系管理员续期' };
+    }
+    return {
+      ...base,
+      status: 'ok',
+      expiryTime,
+      activatedAt: record.activatedAt || null,
+      codeMasked: maskCode(record.code),
+    };
+  }
+
   const v = verifyCode(record.code);
   if (!v.ok) {
     return { ...base, status: 'license_corrupt', message: '授权信息校验失败，请重新激活' };
@@ -328,7 +410,50 @@ async function activate(codeRaw) {
   const { digest } = await _fingerprint();
   const machineCode = formatMachineCode(digest.subarray(0, 8).toString('hex').toUpperCase());
   const code = String(codeRaw || '').trim();
-  if (!code) return { ok: false, error: '请输入注册码', state: await getState() };
+  if (!code) return { ok: false, error: '请输入卡密或注册码', state: await getState() };
+
+  // —— 联网卡密激活：服务器绑定指纹并签发授权 ——
+  if (getServerUrl()) {
+    let res;
+    try {
+      res = await _netPost('/api/activate', {
+        code,
+        fingerprint: digest.toString('hex'),
+        machineCode,
+        platform: process.platform,
+        version: LICENSE_VERSION,
+      });
+    } catch (e) {
+      return { ok: false, error: '无法连接激活服务器，请检查网络后重试', state: await getState() };
+    }
+    if (!res || !res.ok) {
+      return { ok: false, error: (res && res.error) || '激活失败，请检查卡密', state: await getState() };
+    }
+    const lic = res.license || {};
+    const fpHex = digest.toString('hex');
+    if (String(lic.fingerprint || '') !== fpHex) {
+      return { ok: false, error: '授权数据异常（指纹不匹配），请重试', state: await getState() };
+    }
+    if (!_verifyNetworkSig(lic.code, fpHex, lic.expiryTime, res.sig)) {
+      return { ok: false, error: '授权签名校验失败，请重试', state: await getState() };
+    }
+    const record = {
+      mode: 'network',
+      version: 2,
+      code: lic.code,
+      fingerprint: fpHex,
+      expiryTime: lic.expiryTime || 0,
+      issuedAt: lic.issuedAt || Date.now(),
+      sig: res.sig,
+      activatedAt: Date.now(),
+      machineCode,
+    };
+    fs.mkdirSync(dataDir(), { recursive: true });
+    fs.writeFileSync(licenseFile(), JSON.stringify(record, null, 2), 'utf8');
+    const state = await getState();
+    if (state.status === 'ok') return { ok: true, state };
+    return { ok: false, error: state.message || '激活校验未通过', state };
+  }
 
   const v = verifyCode(code);
   if (!v.ok) return { ok: false, error: v.error, state: await getState() };
@@ -365,14 +490,19 @@ async function activate(codeRaw) {
   return { ok: false, error: state.message || '激活校验未通过', state };
 }
 
-/** 启动时初始化：预热指纹 + 推进受信时间；返回状态 */
+/** 启动时初始化：预热指纹 + 推进受信时间 + 联网授权静默心跳；返回状态 */
 async function init() {
   const state = await getState();
-  // 运行期间周期推进受信时间（每 5 分钟）
+  // 心跳（异步不阻塞）：封禁/到期由服务器判定后清除本地授权；断网时本地授权继续有效
+  if (state.status !== 'not_activated' && getServerUrl()) {
+    _heartbeat().catch(() => {});
+  }
+  // 运行期间周期推进受信时间 + 每 30 分钟心跳一次
   if (!init._timer) {
     init._timer = setInterval(() => {
       _fingerprint().then(({ digest }) => _trustedTime(digest)).catch(() => {});
-    }, 5 * 60 * 1000);
+      if (getServerUrl()) _heartbeat().catch(() => {});
+    }, 30 * 60 * 1000);
     if (init._timer.unref) init._timer.unref();
   }
   return state;
@@ -389,6 +519,8 @@ module.exports = {
     setPublicKey(pem) { _test.publicKeyOverride = String(pem); },
     setDataDir(dir) { _test.dataDirOverride = dir; },
     setRegistryDisabled(v) { _test.registryDisabled = !!v; },
+    setServerUrl(url) { _serverUrlOverride = url || null; },
+    heartbeat: _heartbeat,
     signCode,
     verifyCode,
     b32Encode,
