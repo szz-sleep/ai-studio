@@ -363,6 +363,8 @@ body {
     z-index: 200;
 }
 .modal.hidden { display: none; }
+/* 通用确认弹窗需盖过登录/激活遮罩（.activation-overlay z-index:99999） */
+#confirmModal { z-index: 100001; }
 .modal-content {
     background: var(--bg-surface);
     border: 1px solid var(--border);

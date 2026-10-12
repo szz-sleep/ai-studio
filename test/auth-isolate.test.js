@@ -13,7 +13,7 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 
-app.setPath('userData', path.join(os.tmpdir(), 'aistudio-auth-isolate-test'));
+app.setPath('userData', path.join(os.tmpdir(), 'aistudio-auth-isolate-test-' + Date.now()));
 
 const RESULT_FILE = path.join(__dirname, 'auth-isolate.result.txt');
 const lines = [];

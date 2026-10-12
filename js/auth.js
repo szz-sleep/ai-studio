@@ -72,6 +72,9 @@
   async function maybeMigrate(user) {
     try {
       const ls = window.localStorage;
+      // 本机已对旧版数据做过决定（归入当前账号或放弃）→ 不再询问。
+      // 否则每个新注册的账号登录时都会被再次询问，造成"互相识别旧数据"的困扰
+      if (ls.getItem('auth-legacy-decided')) return;
       let hasLegacy = false;
       let myEmpty = ls.getItem(window.ScopedStore.key('opc_api_keys')) === null
         && ls.getItem(window.ScopedStore.key('aistudio_canvas_projects')) === null;
@@ -82,9 +85,12 @@
         if (/^(opc_|aistudio_|h3-)/.test(k)) { hasLegacy = true; break; }
       }
       if (!hasLegacy) return;
-      const ok = (window.UI && typeof UI.confirm === 'function')
+      // UI 是 app.js 顶层 const（词法全局），不在 window 上——必须用 typeof 检查裸标识符
+      const ok = (typeof UI !== 'undefined' && UI && typeof UI.confirm === 'function')
         ? await UI.confirm('检测到本机已有未分账号的旧版数据。\n是否将其归入当前账号「' + user.username + '」的工作空间？\n（选"否"则使用空白工作空间，旧数据仍保留在本机）')
-        : window.confirm('检测到本机已有未分账号的旧版数据，是否归入当前账号？');
+        : false; // 无确认弹窗时降级为不迁移，绝不使用原生 confirm（Electron 会破坏焦点）
+      // 无论选是/否都标记"已决定"，本机不再重复询问
+      try { ls.setItem('auth-legacy-decided', '1'); } catch { /* 忽略 */ }
       if (!ok) return;
       const snap = [];
       for (let i = 0; i < ls.length; i++) {
@@ -136,9 +142,9 @@
     const badgeEl = userBadge();
     if (badgeEl) badgeEl.addEventListener('click', async () => {
       if (!currentUser) return;
-      const ok = (window.UI && typeof UI.confirm === 'function')
+      const ok = (typeof UI !== 'undefined' && UI && typeof UI.confirm === 'function')
         ? await UI.confirm('切换账号将返回登录界面（当前工作空间数据已保存）。\n确定要切换账号吗？')
-        : window.confirm('确定要切换账号吗？');
+        : true; // 无确认弹窗时降级为直接退出，绝不使用原生 confirm（Electron 会破坏焦点）
       if (!ok) return;
       try { await Api.authLogout(); } catch { /* 忽略 */ }
       window.location.reload();

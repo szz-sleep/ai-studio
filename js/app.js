@@ -282,8 +282,10 @@ const UI = {
             const okBtn = document.getElementById('confirmOkBtn');
             const cancelBtn = document.getElementById('confirmCancelBtn');
             if (!modal || !textEl || !okBtn || !cancelBtn) {
-                // 弹窗元素缺失时回退到原生 confirm，保证功能可用
-                resolve(window.confirm(message));
+                // 弹窗元素缺失：直接按取消处理。绝不回退原生 confirm——
+                // Electron 的原生 confirm/alert 会破坏渲染进程焦点（输入框点不了，
+                // 整页 reload 也无法恢复），代价远大于一次确认失败
+                resolve(false);
                 return;
             }
 
