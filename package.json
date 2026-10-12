@@ -27,6 +27,7 @@
     "files": [
       "main.js",
       "license.js",
+      "auth.js",
       "preload.js",
       "index.html",
       "css/**/*",
@@ -58,6 +59,7 @@
       "files": [
         "main.js",
         "license.js",
+        "auth.js",
         "preload.js",
         "index.html",
         "css/**/*",
@@ -117,6 +119,7 @@
       "files": [
         "main.js",
         "license.js",
+        "auth.js",
         "preload.js",
         "index.html",
         "css/**/*",
