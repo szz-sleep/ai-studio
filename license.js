@@ -33,12 +33,18 @@ const PUB_KEY_PEM = [
 // ============ 联网卡密激活（Cloudflare Workers） ============
 // 部署后把 Workers 地址填到 LICENSE_SERVER_DEFAULT（形如 https://aistudio-license.xxx.workers.dev）
 // 环境变量 AISTUDIO_LICENSE_SERVER 可覆盖（联调用）
-const LICENSE_SERVER_DEFAULT = '';
+const LICENSE_SERVER_DEFAULT = 'https://aistudio-license.459811579.workers.dev';
 let _serverUrl = process.env.AISTUDIO_LICENSE_SERVER || LICENSE_SERVER_DEFAULT;
 let _serverUrlOverride = null; // 测试覆盖
 const NET_TIMEOUT_MS = 10000;
 
 function getServerUrl() { return _serverUrlOverride ?? _serverUrl; }
+
+/** 卡密格式判定：YJ 前缀 + 短码（离线注册码为 100+ 字符长码，不会误判） */
+function isCardCode(code) {
+  const n = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return n.length >= 10 && n.length <= 20 && n.startsWith('YJ');
+}
 
 /** 主进程发起 JSON POST */
 function _netPost(urlPath, body) {
@@ -412,8 +418,9 @@ async function activate(codeRaw) {
   const code = String(codeRaw || '').trim();
   if (!code) return { ok: false, error: '请输入卡密或注册码', state: await getState() };
 
-  // —— 联网卡密激活：服务器绑定指纹并签发授权 ——
-  if (getServerUrl()) {
+  // —— 联网卡密激活：YJ- 卡密格式 且 已配置服务器 → 服务器绑定指纹并签发授权；
+  //    长码（离线注册码）始终走本地验签，向后兼容 ——
+  if (getServerUrl() && isCardCode(code)) {
     let res;
     try {
       res = await _netPost('/api/activate', {
@@ -520,6 +527,7 @@ module.exports = {
     setDataDir(dir) { _test.dataDirOverride = dir; },
     setRegistryDisabled(v) { _test.registryDisabled = !!v; },
     setServerUrl(url) { _serverUrlOverride = url || null; },
+    isCardCode,
     heartbeat: _heartbeat,
     signCode,
     verifyCode,
