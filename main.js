@@ -6,6 +6,7 @@ const https = require('https');
 const http = require('http');
 const os = require('os');
 const { spawn } = require('child_process');
+const license = require('./license.js');
 
 // 更名为「云镜AI Studio」后，固定用户数据目录，避免 localStorage（API 配置/会话）丢失
 app.setPath('userData', path.join(app.getPath('appData'), 'ai-studio'));
@@ -373,13 +374,20 @@ const menuTemplate = [
     submenu: [
       {
         label: '关于 云镜AI Studio',
-        click: () => {
+        click: async () => {
+          let licText = '未激活';
+          try {
+            const st = await license.getState();
+            if (st.status === 'ok') licText = st.expiryTime ? ('已激活（' + new Date(st.expiryTime).toLocaleDateString() + ' 到期）') : '已激活（永久）';
+            else if (st.status === 'expired') licText = '已过期';
+            else if (st.status === 'clock_rollback') licText = '系统时间异常';
+          } catch { /* 忽略 */ }
           const { dialog } = require('electron');
           dialog.showMessageBox(mainWindow, {
             type: 'info',
             title: '关于 云镜AI Studio',
             message: '云镜AI Studio - AI创作工坊',
-            detail: '版本 V2.0.1\n湖北生而为一科技有限公司'
+            detail: '版本 V2.0.1\n湖北生而为一科技有限公司\n授权：' + licText
           });
         }
       }
@@ -388,6 +396,13 @@ const menuTemplate = [
 ];
 
 app.whenReady().then(() => {
+  // 注册码机制（一码一机）：预热指纹、推进防回拨受信时间
+  license.init().then((st) => console.log('[license] 授权状态:', st.status, '机器码:', st.machineCode)).catch(() => {});
+
+  // 注册码 IPC
+  ipcMain.handle('license:get-state', () => license.getState());
+  ipcMain.handle('license:activate', (event, code) => license.activate(String(code || '')));
+
   // 拉起 Agent 对话后端（异步，不阻塞窗口创建）
   startAgentBackend();
 

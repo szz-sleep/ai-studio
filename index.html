@@ -11,6 +11,26 @@
 </head>
 <body>
 
+    <!-- 激活遮罩：未激活/异常时覆盖全应用（license.js 校验通过后才隐藏） -->
+    <div id="activationOverlay" class="activation-overlay">
+        <div class="activation-card">
+            <div class="activation-logo"><img src="assets/icon.png" width="46" height="46" alt=""></div>
+            <h1 class="activation-title">激活 云镜AI Studio</h1>
+            <p class="activation-sub" id="activationSub">请将下方机器码发送给管理员，获取对应的注册码（一个注册码仅能在一台电脑上激活）</p>
+            <div class="activation-machine">
+                <span class="activation-machine-label">机器码</span>
+                <span id="activationMachineCode" class="activation-machine-code">读取中…</span>
+                <button type="button" id="activationCopyBtn" class="activation-btn-copy" title="复制机器码">复制</button>
+            </div>
+            <div class="activation-input-row">
+                <input type="text" id="activationCodeInput" placeholder="粘贴注册码" autocomplete="off" spellcheck="false">
+            </div>
+            <div id="activationMsg" class="activation-msg"></div>
+            <button type="button" id="activationBtn" class="activation-btn-activate">激 活</button>
+            <div class="activation-footer">湖北生而为一科技有限公司</div>
+        </div>
+    </div>
+
     <!-- 顶部导航 -->
     <header class="top-bar">
         <div class="logo">
@@ -854,6 +874,7 @@
     <script src="js/redraw.js"></script>
     <script src="js/agent.js"></script>
     <script src="js/canvas.js"></script>
+    <script src="js/activation.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>

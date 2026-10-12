@@ -2869,3 +2869,111 @@ select option {
 .timeline-fast-upload { display: flex; align-items: center; gap: 8px; margin: 10px 0; color: var(--text-secondary); font-size: 12px; cursor: pointer; }
 .timeline-upload-item [data-cancel-upload] { flex: none; border: 0; background: transparent; color: var(--text-secondary); cursor: pointer; padding: 0 3px; }
 .timeline-upload-item [data-cancel-upload]:hover { color: var(--danger, #e45b5b); }
+
+/* ============ 激活遮罩（注册码，一码一机） ============ */
+.activation-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-base);
+}
+.activation-overlay.hidden { display: none; }
+.activation-card {
+    width: 460px;
+    max-width: calc(100vw - 48px);
+    padding: 36px 36px 24px;
+    border-radius: 14px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    box-shadow: 0 18px 60px rgba(0,0,0,0.14);
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+}
+.activation-logo img { border-radius: 10px; display: block; margin: 0 auto; }
+.activation-title {
+    margin: 14px 0 6px;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+.activation-sub {
+    margin: 0 0 18px;
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+}
+.activation-machine {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+}
+.activation-machine-label { font-size: 12px; color: var(--text-secondary); flex: none; }
+.activation-machine-code {
+    flex: 1;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: var(--text-primary);
+    user-select: text;
+    -webkit-user-select: text;
+}
+.activation-btn-copy {
+    flex: none;
+    padding: 5px 12px;
+    font-size: 12px;
+    border-radius: 7px;
+    border: 1px solid var(--border-strong);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    cursor: pointer;
+}
+.activation-btn-copy:hover { background: var(--bg-hover); }
+.activation-input-row { margin-top: 16px; }
+.activation-input-row input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 11px 14px;
+    font-size: 13.5px;
+    font-family: ui-monospace, Consolas, monospace;
+    border-radius: 10px;
+    border: 1px solid var(--border-strong);
+    background: var(--bg-input);
+    color: var(--text-primary);
+    outline: none;
+}
+.activation-input-row input:focus { border-color: var(--border-accent); }
+.activation-msg {
+    min-height: 18px;
+    margin: 8px 0 4px;
+    font-size: 12.5px;
+    color: var(--text-secondary);
+}
+.activation-msg-err { color: #e5484d; }
+.activation-btn-activate {
+    width: 100%;
+    padding: 11px 0;
+    font-size: 14.5px;
+    font-weight: 600;
+    border: none;
+    border-radius: 10px;
+    background: #3b82f6;
+    color: #fff;
+    cursor: pointer;
+}
+.activation-btn-activate:hover { background: #2563eb; }
+.activation-btn-activate:disabled { opacity: 0.55; cursor: default; }
+.activation-footer {
+    margin-top: 16px;
+    font-size: 11.5px;
+    color: var(--text-muted);
+}

@@ -15,5 +15,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 后处理能力探测，返回 { ok, path }
   compressTimelineVideo: (payload) => ipcRenderer.invoke('timeline:compress-video', payload),
   cancelTimelineCompression: (id) => ipcRenderer.send('timeline:cancel-compression', id),
-  ffmpegAvailable: () => ipcRenderer.invoke('video:ffmpeg-available')
+  ffmpegAvailable: () => ipcRenderer.invoke('video:ffmpeg-available'),
+  // 注册码（一码一机）：授权状态查询 / 激活
+  getLicenseState: () => ipcRenderer.invoke('license:get-state'),
+  activateLicense: (code) => ipcRenderer.invoke('license:activate', code)
 });

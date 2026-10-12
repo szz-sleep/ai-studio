@@ -26,6 +26,7 @@
     },
     "files": [
       "main.js",
+      "license.js",
       "preload.js",
       "index.html",
       "css/**/*",
