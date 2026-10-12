@@ -110,6 +110,29 @@ function logout() {
   return { ok: true };
 }
 
+/**
+ * 注销当前登录用户（不可恢复）：
+ * 删除账号记录 + 清除会话 + 删除其历史工作空间目录（Documents/AI Studio/history/<uid>）。
+ * 浏览器存储里的工作空间数据（u:<uid>: 前缀）由渲染层在确认后清理。
+ */
+function deleteCurrent() {
+  const d = load();
+  if (!d.session || !d.session.uid) return { ok: false, error: '当前没有登录的用户' };
+  const uid = d.session.uid;
+  if (!d.users[uid]) { d.session = null; save(); return { ok: false, error: '用户不存在' }; }
+  const username = d.users[uid].username;
+  delete d.users[uid];
+  d.session = null;
+  save();
+  try {
+    const dir = path.join(app().getPath('documents'), 'AI Studio', 'history', uid);
+    fs.rmSync(dir, { recursive: true, force: true });
+  } catch (e) {
+    console.warn('[auth] 删除用户工作空间目录失败:', e.message);
+  }
+  return { ok: true, username };
+}
+
 /** 主进程侧当前登录用户（历史落盘目录按此隔离）；未登录返回 null */
 function currentUid() {
   const d = load();
@@ -121,12 +144,13 @@ function initIpc(ipcMain) {
   ipcMain.handle('auth:register', (e, p) => register(p && p.username, p && p.password));
   ipcMain.handle('auth:login', (e, p) => login(p && p.username, p && p.password, p && p.remember));
   ipcMain.handle('auth:logout', () => logout());
+  ipcMain.handle('auth:delete', () => deleteCurrent());
 }
 
 /** 测试辅助：清空内存缓存，模拟应用重启 */
 function _resetForTest() { _db = null; }
 
 module.exports = {
-  setTestMode, register, login, session, logout, currentUid,
+  setTestMode, register, login, session, logout, deleteCurrent, currentUid,
   uidFor, initIpc, _resetForTest,
 };

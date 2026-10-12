@@ -291,6 +291,8 @@ const UI = {
 
             this._confirmResolve = resolve;
             textEl.textContent = message || '确定要继续吗？';
+            // redText=true 时正文用红色警示（用于不可恢复操作的最终确认）
+            textEl.style.color = opts.redText ? 'var(--red-text)' : '';
             okBtn.textContent = opts.okText || '确定';
             cancelBtn.textContent = opts.cancelText || '取消';
             // 危险操作：确定按钮用红色；常规操作：用 .btn-primary 默认 accent 色

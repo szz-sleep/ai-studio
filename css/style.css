@@ -3021,3 +3021,58 @@ select option {
 }
 .user-badge:hover { background: var(--bg-hover); color: var(--text-primary); }
 .user-badge.hidden { display: none; }
+
+/* ===== 用户下拉菜单（退出登录 / 注销用户） ===== */
+.user-menu {
+    position: fixed;
+    z-index: 100002;
+    min-width: 150px;
+    padding: 6px;
+    border-radius: 12px;
+    border: 1px solid var(--border-primary);
+    background: var(--bg-surface);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.18);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.user-menu.hidden { display: none; }
+.user-menu button {
+    border: 0;
+    background: transparent;
+    text-align: left;
+    padding: 9px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--text-primary);
+    cursor: pointer;
+    white-space: nowrap;
+}
+.user-menu button:hover { background: var(--bg-hover); }
+.user-menu button.danger { color: var(--red-text); }
+.user-menu button.danger:hover { background: var(--red-soft); }
+
+/* ===== 密码输入框显示/隐藏（小眼睛） ===== */
+.pw-wrap { position: relative; width: 100%; }
+.pw-wrap input { width: 100%; padding-right: 42px; }
+.pw-eye {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0;
+}
+.pw-eye:hover { color: var(--text-primary); background: var(--bg-hover); }
+.pw-eye .eye-off { display: block; }
+.pw-eye .eye-off.hidden { display: none; }
+.pw-eye .eye-open.hidden { display: none; }

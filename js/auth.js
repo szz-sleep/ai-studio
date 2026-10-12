@@ -50,7 +50,7 @@
     if (username) {
       el.textContent = username;
       el.classList.remove('hidden');
-      el.title = '点击切换账号';
+      el.title = '点击打开账号菜单';
     } else {
       el.classList.add('hidden');
     }
@@ -107,7 +107,6 @@
     const username = document.getElementById('authUsername').value.trim();
     const password = document.getElementById('authPassword').value;
     const password2 = document.getElementById('authPassword2').value;
-    const remember = document.getElementById('authRemember').checked;
     if (!username || !password) { err('请输入用户名和密码'); return; }
     if (mode === 'register' && password !== password2) { err('两次输入的密码不一致'); return; }
     btn.disabled = true;
@@ -116,7 +115,7 @@
     try {
       const r = mode === 'register'
         ? await Api.authRegister(username, password)
-        : await Api.authLogin(username, password, remember);
+        : await Api.authLogin(username, password, false);
       if (r && r.ok) {
         try { localStorage.setItem('auth-last-username', username); } catch { /* 忽略 */ }
         finish(r.user);
@@ -131,6 +130,93 @@
     }
   }
 
+  /** 密码框显示/隐藏（小眼睛）：切换 input 类型并交换图标 */
+  function bindEyeToggles() {
+    document.querySelectorAll('.pw-eye').forEach((btn) => {
+      const input = document.getElementById(btn.dataset.eye);
+      if (!input) return;
+      btn.addEventListener('click', () => {
+        const show = input.type === 'password';
+        input.type = show ? 'text' : 'password';
+        btn.querySelector('.eye-open').classList.toggle('hidden', show);
+        btn.querySelector('.eye-off').classList.toggle('hidden', !show);
+        input.focus();
+      });
+    });
+  }
+
+  /** 用户菜单（点用户名徽章弹出）：退出登录 / 注销用户 */
+  function toggleUserMenu() {
+    const menu = document.getElementById('userMenu');
+    const badgeEl = userBadge();
+    if (!menu || !badgeEl) return;
+    if (!menu.classList.contains('hidden')) { menu.classList.add('hidden'); return; }
+    const rect = badgeEl.getBoundingClientRect();
+    menu.style.top = Math.round(rect.bottom + 8) + 'px';
+    menu.style.right = Math.max(8, Math.round(window.innerWidth - rect.right)) + 'px';
+    menu.classList.remove('hidden');
+  }
+
+  function closeUserMenu() {
+    const menu = document.getElementById('userMenu');
+    if (menu) menu.classList.add('hidden');
+  }
+
+  /** 退出登录：确认后返回登录界面 */
+  async function doLogout() {
+    closeUserMenu();
+    const ok = (typeof UI !== 'undefined' && UI && typeof UI.confirm === 'function')
+      ? await UI.confirm('退出登录将返回登录界面（当前工作空间数据已保存）。\n确定要退出吗？')
+      : true; // 无确认弹窗时降级为直接退出，绝不使用原生 confirm（Electron 会破坏焦点）
+    if (!ok) return;
+    try { await Api.authLogout(); } catch { /* 忽略 */ }
+    window.location.reload();
+  }
+
+  /** 注销用户：红色警示最终确认 → 删除账号 + 全部 API 配置 + 工作空间数据与文件 */
+  async function doDeleteAccount() {
+    closeUserMenu();
+    if (!currentUser) return;
+    const name = currentUser.username;
+    const ok = (typeof UI !== 'undefined' && UI && typeof UI.confirm === 'function')
+      ? await UI.confirm(
+        '⚠️ 危险操作：注销后无法恢复！\n\n'
+        + '将永久删除账号「' + name + '」及其全部数据：\n'
+        + '· 所有 API Key 与平台配置\n'
+        + '· 聊天记录、生成历史、素材库\n'
+        + '· 画布项目与全部工作空间文件\n\n'
+        + '确定要注销该用户吗？',
+        { danger: true, okText: '确认注销', cancelText: '取消', redText: true })
+      : false; // 无确认弹窗时绝不注销
+    if (!ok) return;
+    try {
+      const r = await Api.authDeleteAccount();
+      if (r && r.ok) {
+        // 清掉本用户在浏览器存储里的全部工作空间数据（u:<uid>: 前缀）
+        try {
+          const prefix = 'u:' + currentUser.id + ':';
+          const doomed = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.startsWith(prefix)) doomed.push(k);
+          }
+          doomed.forEach((k) => localStorage.removeItem(k));
+          localStorage.removeItem('auth-last-username');
+        } catch { /* 忽略 */ }
+        window.location.reload();
+      } else {
+        const msg = (r && r.error) || '注销失败';
+        if (typeof UI !== 'undefined' && UI && typeof UI.confirm === 'function') {
+          UI.confirm('注销失败：' + msg, { okText: '知道了', cancelText: '取消' });
+        }
+      }
+    } catch (e) {
+      if (typeof UI !== 'undefined' && UI && typeof UI.confirm === 'function') {
+        UI.confirm('注销请求失败：' + ((e && e.message) || e), { okText: '知道了', cancelText: '取消' });
+      }
+    }
+  }
+
   function bind() {
     document.getElementById('authSubmitBtn').addEventListener('click', submit);
     ['authUsername', 'authPassword', 'authPassword2'].forEach((id) => {
@@ -139,15 +225,22 @@
     document.getElementById('authToggleLink').addEventListener('click', () => {
       showOverlay(mode === 'login'); // 在登录/注册之间切换
     });
+    bindEyeToggles();
+    // 用户徽章 → 下拉菜单（退出登录 / 注销用户）
     const badgeEl = userBadge();
-    if (badgeEl) badgeEl.addEventListener('click', async () => {
-      if (!currentUser) return;
-      const ok = (typeof UI !== 'undefined' && UI && typeof UI.confirm === 'function')
-        ? await UI.confirm('切换账号将返回登录界面（当前工作空间数据已保存）。\n确定要切换账号吗？')
-        : true; // 无确认弹窗时降级为直接退出，绝不使用原生 confirm（Electron 会破坏焦点）
-      if (!ok) return;
-      try { await Api.authLogout(); } catch { /* 忽略 */ }
-      window.location.reload();
+    if (badgeEl) badgeEl.addEventListener('click', (e) => { e.stopPropagation(); toggleUserMenu(); });
+    const menuLogout = document.getElementById('userMenuLogout');
+    if (menuLogout) menuLogout.addEventListener('click', doLogout);
+    const menuDelete = document.getElementById('userMenuDelete');
+    if (menuDelete) menuDelete.addEventListener('click', doDeleteAccount);
+    // 点击菜单外任意位置关闭菜单
+    document.addEventListener('mousedown', (e) => {
+      const menu = document.getElementById('userMenu');
+      if (!menu || menu.classList.contains('hidden')) return;
+      if (menu.contains(e.target)) return;
+      const badgeEl2 = userBadge();
+      if (badgeEl2 && badgeEl2.contains(e.target)) return;
+      closeUserMenu();
     });
   }
 

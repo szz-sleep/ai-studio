@@ -19,5 +19,13 @@ PASS 登出后回到未登录
 PASS 第二个账号注册成功
 PASS 两账号 uid 互异
 PASS 账号文件不包含明文密码
+PASS 未登录时注销拒绝
+PASS 注销返回 ok 与用户名
+PASS 注销后会话清空
+PASS 注销后账号记录已删除
+PASS 注销后历史工作空间目录已删除
+PASS 注销后同名可重新注册
+PASS 重新注册接回原 uid（工作空间可找回）
+PASS 注销 bob 不影响 alice
 
-==== auth.test.js: 21 passed, 0 failed ====
+==== auth.test.js: 29 passed, 0 failed ====

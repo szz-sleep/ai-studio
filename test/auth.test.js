@@ -81,6 +81,32 @@ app.whenReady().then(async () => {
   const raw = fs.readFileSync(path.join(app.getPath('userData'), 'accounts.json'), 'utf8');
   assert('账号文件不包含明文密码', !raw.includes('secret1') && !raw.includes('secret2'));
 
+  // 11. 注销用户（deleteCurrent）：删账号 + 清会话 + 删工作空间目录
+  //  11a. 未登录时注销拒绝
+  A._resetForTest(); A.logout();
+  const delNone = A.deleteCurrent();
+  assert('未登录时注销拒绝', !delNone.ok && /没有登录/.test(delNone.error || ''), delNone);
+  //  11b. 登录后注销：账号删除、会话清空、历史目录删除
+  const uDir = path.join(app.getPath('documents'), 'AI Studio', 'history', rb.user.id);
+  fs.mkdirSync(path.join(uDir, '视频'), { recursive: true });
+  fs.writeFileSync(path.join(uDir, '视频', 'a.mp4'), 'x');
+  A.login('bob', 'secret2', true);
+  const del = A.deleteCurrent();
+  assert('注销返回 ok 与用户名', del.ok && del.username === 'bob', del);
+  assert('注销后会话清空', A.session().loggedIn === false && A.currentUid() === null);
+  const raw2 = fs.readFileSync(path.join(app.getPath('userData'), 'accounts.json'), 'utf8');
+  const db2 = JSON.parse(raw2);
+  assert('注销后账号记录已删除', !db2.users[rb.user.id]);
+  assert('注销后历史工作空间目录已删除', !fs.existsSync(uDir));
+  //  11c. 注销后同名可重新注册（uid 稳定 → 可接回原工作空间键）
+  const reReg = A.register('BOB', 'secret3');
+  assert('注销后同名可重新注册', !!reReg.ok, reReg);
+  assert('重新注册接回原 uid（工作空间可找回）', reReg.ok && reReg.user.id === rb.user.id);
+  //  11d. 别的用户不受影响：alice 仍在
+  A._resetForTest();
+  const lgAlice = A.login('alice', 'secret1');
+  assert('注销 bob 不影响 alice', !!lgAlice.ok && A.session().user.username === 'Alice');
+
   out(`\n==== auth.test.js: ${passed} passed, ${failed} failed ====`);
   app.exit(failed ? 1 : 0);
 }).catch((e) => {

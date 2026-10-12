@@ -19,9 +19,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 注册码（一码一机）：授权状态查询 / 激活
   getLicenseState: () => ipcRenderer.invoke('license:get-state'),
   activateLicense: (code) => ipcRenderer.invoke('license:activate', code),
-  // 本地多用户账号：会话查询 / 注册 / 登录 / 退出
+  // 本地多用户账号：会话查询 / 注册 / 登录 / 退出 / 注销（删除账号与工作空间）
   authSession: () => ipcRenderer.invoke('auth:session'),
   authRegister: (username, password) => ipcRenderer.invoke('auth:register', { username, password }),
   authLogin: (username, password, remember) => ipcRenderer.invoke('auth:login', { username, password, remember: !!remember }),
-  authLogout: () => ipcRenderer.invoke('auth:logout')
+  authLogout: () => ipcRenderer.invoke('auth:logout'),
+  authDeleteAccount: () => ipcRenderer.invoke('auth:delete')
 });
