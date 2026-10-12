@@ -7,6 +7,7 @@ const http = require('http');
 const os = require('os');
 const { spawn } = require('child_process');
 const license = require('./license.js');
+const auth = require('./auth.js');
 
 // 更名为「云镜AI Studio」后，固定用户数据目录，避免 localStorage（API 配置/会话）丢失
 app.setPath('userData', path.join(app.getPath('appData'), 'ai-studio'));
@@ -41,9 +42,10 @@ function downloadToBuffer(url) {
   });
 }
 
-// 保存目录：~/Documents/AI Studio/history/{视频|图片}
+// 保存目录：~/Documents/AI Studio/history/<用户uid|shared>/{视频|图片}
+// 按 uid 一级子目录实现多用户工作空间隔离；未登录（测试/降级）落 shared
 function getHistoryDir(folder) {
-  const base = path.join(app.getPath('documents'), 'AI Studio', 'history');
+  const base = path.join(app.getPath('documents'), 'AI Studio', 'history', auth.currentUid() || 'shared');
   const dir = path.join(base, folder || '默认');
   fs.mkdirSync(dir, { recursive: true });
   return dir;
@@ -402,6 +404,10 @@ app.whenReady().then(() => {
   // 注册码 IPC
   ipcMain.handle('license:get-state', () => license.getState());
   ipcMain.handle('license:activate', (event, code) => license.activate(String(code || '')));
+
+  // 本地多用户账号 IPC；测试/异常入口（非 main.js 启动）不启用登录门禁
+  auth.setTestMode(path.resolve(app.getAppPath()) !== path.resolve(__dirname));
+  auth.initIpc(ipcMain);
 
   // 拉起 Agent 对话后端（异步，不阻塞窗口创建）
   startAgentBackend();

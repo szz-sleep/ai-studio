@@ -1,0 +1,23 @@
+PASS uid 派生稳定：同名同 uid
+PASS uid 归一化：大小写/空格不影响
+PASS uid 长度 24 且十六进制
+PASS 不同用户名 uid 不同
+PASS 注册成功
+PASS 注册返回的 id 与派生 uid 一致
+PASS 注册即建立会话
+PASS 重复注册（大小写变体）拒绝
+PASS 用户名过短拒绝
+PASS 密码过短拒绝
+PASS 用户名含非法字符拒绝
+PASS 正确密码登录成功
+PASS 错误密码拒绝
+PASS 不存在用户拒绝
+PASS 登录后 currentUid 正确
+PASS 记住登录：重启后仍登录
+PASS 不记住登录：重启后回到未登录
+PASS 登出后回到未登录
+PASS 第二个账号注册成功
+PASS 两账号 uid 互异
+PASS 账号文件不包含明文密码
+
+==== auth.test.js: 21 passed, 0 failed ====

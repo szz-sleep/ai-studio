@@ -28,15 +28,18 @@ const Config = {
     // 默认单图上传限制（MB）
     DEFAULT_UPLOAD_SIZE_MB: 50,
 
-    // localStorage 键名
-    STORAGE_KEYS: {
-        PLATFORM: 'opc_platform',
-        API_KEYS: 'opc_api_keys',       // JSON: { volcengine: "xxx", custom_1: "yyy", ... }
-        CUSTOM_PLATFORMS: 'opc_custom_platforms', // JSON: [{ id, name, baseUrl, apiKey }, ...]
-        CUSTOM_API_STANDARD: 'opc_custom_api_standard',
-        CUSTOM_ANTHROPIC_VERSION: 'opc_custom_anthropic_version',
-        HISTORY: 'opc_history',
-        UPLOAD_SIZE: 'opc_upload_size_mb'
+    // localStorage 键名（经 ScopedStore 加 u:<uid>: 前缀实现多用户隔离；未登录时键名不变）
+    get STORAGE_KEYS() {
+        const k = (n) => (window.ScopedStore ? ScopedStore.key(n) : n);
+        return {
+            PLATFORM: k('opc_platform'),
+            API_KEYS: k('opc_api_keys'),       // JSON: { volcengine: "xxx", custom_1: "yyy", ... }
+            CUSTOM_PLATFORMS: k('opc_custom_platforms'), // JSON: [{ id, name, baseUrl, apiKey }, ...]
+            CUSTOM_API_STANDARD: k('opc_custom_api_standard'),
+            CUSTOM_ANTHROPIC_VERSION: k('opc_custom_anthropic_version'),
+            HISTORY: k('opc_history'),
+            UPLOAD_SIZE: k('opc_upload_size_mb')
+        };
     },
 
     // ===== 自定义平台管理 =====
@@ -183,7 +186,7 @@ const Config = {
         const custom = this.getCustomPlatformConfig(id);
         if (custom) return custom.baseUrl;
         // 预设平台：优先读 localStorage，回退到预设
-        const customUrl = localStorage.getItem(`opc_base_url_${id}`);
+        const customUrl = localStorage.getItem(ScopedStore.key(`opc_base_url_${id}`));
         if (customUrl !== null) return customUrl;
         return PLATFORM_PRESETS[id]?.baseUrl || '';
     },
@@ -195,14 +198,14 @@ const Config = {
         if (custom) {
             this.updateCustomPlatform(platform, { baseUrl: url });
         } else {
-            localStorage.setItem(`opc_base_url_${platform}`, url);
+            localStorage.setItem(ScopedStore.key(`opc_base_url_${platform}`), url);
         }
     },
 
     // 恢复某平台地址为默认预设值
     resetBaseUrl(platform) {
         platform = platform || this.getPlatform();
-        localStorage.removeItem(`opc_base_url_${platform}`);
+        localStorage.removeItem(ScopedStore.key(`opc_base_url_${platform}`));
     },
 
     // ===== 上传限制 =====
@@ -234,9 +237,10 @@ const Config = {
         Object.values(this.STORAGE_KEYS)
             .filter(k => !skipKeys.includes(k))
             .forEach(k => localStorage.removeItem(k));
-        // 清除所有平台 base URL 缓存
+        // 清除当前命名空间下所有平台 base URL 缓存（不影响其他账号）
+        const basePrefix = ScopedStore.key('opc_base_url_');
         Object.keys(localStorage).forEach(k => {
-            if (k.startsWith('opc_base_url_')) localStorage.removeItem(k);
+            if (k.startsWith(basePrefix)) localStorage.removeItem(k);
         });
     },
 

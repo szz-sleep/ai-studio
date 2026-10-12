@@ -1,7 +1,7 @@
 /** H3 long-video timeline editor. */
 const TimelineModule = {
-    STORAGE_KEY: 'h3-timeline-draft-v1',
-    TASKS_KEY: 'h3-timeline-tasks-v1',
+    get STORAGE_KEY() { return ScopedStore.key('h3-timeline-draft-v1'); },
+    get TASKS_KEY() { return ScopedStore.key('h3-timeline-tasks-v1'); },
     segments: [],
     _nextId: 1,
     activeTaskId: null,

@@ -1,0 +1,18 @@
+PASS 渲染层加载了 ScopedStore
+PASS 渲染层加载了 Auth 门禁
+PASS 测试环境 Auth.ready 立即放行
+PASS 登录遮罩保持隐藏
+PASS App 正常初始化（不受门禁阻塞）
+PASS 未登录：键名保持原样（向后兼容）
+PASS 登录后：键名带 u:<uid>: 前缀
+PASS B 账号看不到 A 的数据
+PASS 切回 A 后数据完整
+PASS config 键走命名空间
+PASS history 键走命名空间
+PASS material 键走命名空间
+PASS agent 会话键走命名空间
+PASS canvas 项目索引键走命名空间
+PASS canvas 项目数据键走命名空间
+PASS timeline 键走命名空间
+
+==== auth-isolate.test.js: 16 passed, 0 failed ====

@@ -11,9 +11,9 @@
  */
 
 const CanvasModule = {
-    STORAGE_KEY: 'aistudio_canvas_v1',          // 旧版单空间数据（仅迁移用）
-    PROJECTS_KEY: 'aistudio_canvas_projects',   // 项目索引 [{id,name,createdAt,updatedAt}]
-    PROJECT_CURRENT_KEY: 'aistudio_canvas_current',
+    get STORAGE_KEY() { return ScopedStore.key('aistudio_canvas_v1'); },          // 旧版单空间数据（仅迁移用）
+    get PROJECTS_KEY() { return ScopedStore.key('aistudio_canvas_projects'); },   // 项目索引 [{id,name,createdAt,updatedAt}]
+    get PROJECT_CURRENT_KEY() { return ScopedStore.key('aistudio_canvas_current'); },
     PROJECT_POLL_TIMER: null,
 
     // ===== 状态 =====
@@ -331,7 +331,7 @@ const CanvasModule = {
     _saveProjects(list) {
         localStorage.setItem(this.PROJECTS_KEY, JSON.stringify(list));
     },
-    _projectKey(id) { return 'aistudio_canvas_project_' + id; },
+    _projectKey(id) { return ScopedStore.key('aistudio_canvas_project_' + id); },
     _newProjectId() { return 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); },
 
     /** 立即落盘当前项目（绕过防抖；切换项目/刷新前调用） */
@@ -3053,9 +3053,9 @@ const CanvasModule = {
         // 画布使用提示关闭
         $('canvasHintClose')?.addEventListener('click', () => {
             $('canvasHint')?.classList.add('hidden');
-            localStorage.setItem('aistudio_canvas_hint_closed', '1');
+            localStorage.setItem(ScopedStore.key('aistudio_canvas_hint_closed'), '1');
         });
-        if (localStorage.getItem('aistudio_canvas_hint_closed') === '1') {
+        if (localStorage.getItem(ScopedStore.key('aistudio_canvas_hint_closed')) === '1') {
             $('canvasHint')?.classList.add('hidden');
         }
     },
@@ -3127,12 +3127,12 @@ const CanvasModule = {
     // ================================================================
 
     _loadSettings() {
-        try { return JSON.parse(localStorage.getItem('aistudio_canvas_settings') || '{}'); }
+        try { return JSON.parse(localStorage.getItem(ScopedStore.key('aistudio_canvas_settings')) || '{}'); }
         catch (e) { return {}; }
     },
 
     _saveSettings() {
-        localStorage.setItem('aistudio_canvas_settings', JSON.stringify(this._settings || {}));
+        localStorage.setItem(ScopedStore.key('aistudio_canvas_settings'), JSON.stringify(this._settings || {}));
     },
 
     _applyBackground() {

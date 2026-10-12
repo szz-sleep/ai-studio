@@ -6,7 +6,7 @@
  */
 
 const MaterialLib = {
-    STORAGE_KEY: 'aistudio_material_library',
+    get STORAGE_KEY() { return ScopedStore.key('aistudio_material_library'); },
     _pendingCallback: null,   // 当前弹窗的 onSelect 回调
     _pendingFilter: 'all',    // 当前筛选类型
     _pollingTimer: null,      // 轮询定时器

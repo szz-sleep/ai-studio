@@ -823,13 +823,13 @@ const App = {
                         agentSel.innerHTML = '<option value="">无可用模型</option>';
                     }
                 }
-                // 恢复上次选择的模型
-                const savedModel = localStorage.getItem('agentModel');
+                // 恢复上次选择的模型（按账号隔离）
+                const savedModel = localStorage.getItem(ScopedStore.key('agentModel'));
                 if (savedModel && agentSel.querySelector(`option[value="${CSS.escape(savedModel)}"]`)) {
                     agentSel.value = savedModel;
                 }
                 agentSel.addEventListener('change', () => {
-                    localStorage.setItem('agentModel', agentSel.value);
+                    localStorage.setItem(ScopedStore.key('agentModel'), agentSel.value);
                 });
             }
 
@@ -907,5 +907,8 @@ const App = {
     }
 };
 
-// 启动
-document.addEventListener('DOMContentLoaded', () => App.init());
+// 启动：等待登录门禁放行（测试/无 auth 环境立即放行），再初始化应用
+document.addEventListener('DOMContentLoaded', () => {
+    const gate = (window.Auth && window.Auth.ready) ? window.Auth.ready : Promise.resolve();
+    gate.then(() => { try { App.init(); } catch (e) { console.error('应用初始化失败:', e); } });
+});

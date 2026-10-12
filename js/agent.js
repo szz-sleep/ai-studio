@@ -6,8 +6,8 @@
 
 const AgentModule = {
     BASE: 'http://127.0.0.1:8765',
-    STORE_KEY: 'aistudio_agent_sessions_v1',
-    CURRENT_KEY: 'aistudio_agent_current',
+    get STORE_KEY() { return ScopedStore.key('aistudio_agent_sessions_v1'); },
+    get CURRENT_KEY() { return ScopedStore.key('aistudio_agent_current'); },
 
     _sessions: [],   // [{id, title, items, updated, pinned}]
     _currentId: null,
