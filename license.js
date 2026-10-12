@@ -56,7 +56,7 @@ function _envProxy() { return process.env.HTTPS_PROXY || process.env.https_proxy
 let _regProxyCache = { at: 0, value: '' };
 /** Windows 注册表系统代理（ProxyEnable=1 时），缓存 60 秒；非 win32 返回空 */
 function _registryProxy() {
-  if (process.platform !== 'win32') return '';
+  if (process.platform !== 'win32' || _test.registryDisabled) return '';
   const now = Date.now();
   if (now - _regProxyCache.at < 60000) return _regProxyCache.value;
   _regProxyCache.at = now;
