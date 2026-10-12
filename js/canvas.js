@@ -787,6 +787,7 @@ const CanvasModule = {
 
         // 只在新建或类型内容差异大时全量重建 body；平时只更新需要动态的片段
         if (isNew) {
+            el.dataset.mtype = n.data.mtype || 'image';
             el.innerHTML = this._nodeBodyHTML(n);
             this._bindNodeEvents(el, n);
             // 视频节点创建时立即填充模型下拉（模型可能在节点创建前就已加载完成）
@@ -809,6 +810,12 @@ const CanvasModule = {
                     }
                 }
             }
+        }
+        // 素材节点内容类型变化（接入图片/视频/音频切换）时全量重建 body（预览分支不同）
+        if (n.type === 'material' && el.dataset.mtype !== (n.data.mtype || 'image')) {
+            el.dataset.mtype = n.data.mtype || 'image';
+            el.innerHTML = this._nodeBodyHTML(n);
+            this._bindNodeEvents(el, n);
         }
         // 动态更新视频节点状态区
         if (n.type === 'video') this._updateVideoNodeStatus(el, n);
@@ -1002,7 +1009,7 @@ const CanvasModule = {
                     <div class="cnode-sub">${this._escape(n.data.name || '')}</div>
                     <div class="cnode-btn-row">
                         <button class="cnode-btn cnode-act-pick">选择素材</button>
-                        ${(isVideo || isAudio) ? `<button class="cnode-btn cnode-act-matsync" title="上传到火山素材库，等待审核">同步素材库</button>` : ''}
+                        <button class="cnode-btn cnode-act-matsync" title="把接入素材同步上传到火山素材库（上方徽标实时显示审核状态）">同步素材</button>
                     </div>
                 </div>
                 <div class="cnode-port cnode-port-in" data-port="in" title="接收图片/视频/音频入库"></div>
@@ -1268,12 +1275,10 @@ const CanvasModule = {
             e.stopPropagation();
             this._pickMaterial(node());
         });
-        // 素材节点（视频/音频类型）手动同步素材库
+        // 素材节点「同步素材」：以当前接入素材为准刷新并上传到火山素材库
         el.querySelector('.cnode-act-matsync')?.addEventListener('click', (e) => {
             e.stopPropagation();
-            const nn = node();
-            if (nn?.data?.mtype === 'audio') this._syncMaterialAudio(nn);
-            else this._syncMaterialVideo(nn);
+            this._syncMaterial(node());
         });
 
         // 图片节点下载
@@ -1711,6 +1716,8 @@ const CanvasModule = {
         if (!allowed.includes(to.type)) return false;
         // 去重
         if (this.edges.find(e => e.from === fromId && e.to === toId)) return false;
+        // 素材节点只接收 1 个接入节点：一个素材节点对应一个素材，接入后由素材节点上传同步到火山素材库
+        if (to.type === 'material' && this.edges.some(e => e.to === toId)) return false;
         // 视频节点最多 1 个文本输入 + 6 个媒体输入
         return true;
     },
@@ -1718,11 +1725,22 @@ const CanvasModule = {
     _connect(fromId, toId) {
         if (!this._canConnect(fromId, toId)) {
             const from = this.getNode(fromId), to = this.getNode(toId);
-            if (from && to) UI.toast(`不支持 ${this._META[from.type]?.title || from.type} → ${this._META[to.type]?.title || to.type} 的连线`, 'warn');
+            if (from && to) {
+                if (to.type === 'material' && this.edges.some(e => e.to === toId)) {
+                    UI.toast('素材库节点只能接入 1 个素材，请先删除原有连线再接入新素材', 'warn', 5000);
+                } else {
+                    UI.toast(`不支持 ${this._META[from.type]?.title || from.type} → ${this._META[to.type]?.title || to.type} 的连线`, 'warn');
+                }
+            }
             return;
         }
         this._pushHistory();
         this.edges.push({ id: this._uid('edge'), from: fromId, to: toId });
+        // 素材节点入库通道：接入即吸收来源素材内容，未入库自动上传跟踪审核
+        const to = this.getNode(toId);
+        if (to && to.type === 'material') {
+            this._absorbMaterial(to, this.getNode(fromId), true);
+        }
         this.renderEdges();
         this.save();
     },
@@ -2115,16 +2133,7 @@ const CanvasModule = {
                 }
                 if (n && n.type === 'material') {
                     items.unshift({ label: '重新选择素材', action: () => this._pickMaterial(n) });
-                    if (!VideoModule._validAssetId(n.data.assetId)) {
-                        items.unshift({
-                            label: '同步到素材库',
-                            action: () => {
-                                if (n.data.mtype === 'video') this._syncMaterialVideo(n);
-                                else if (n.data.mtype === 'audio') this._syncMaterialAudio(n);
-                                else this._syncImageToLib(n);
-                            },
-                        });
-                    }
+                    items.unshift({ label: '同步到素材库', action: () => this._syncMaterial(n) });
                 }
                 if (n && n.type === 'audio') {
                     items.unshift({ label: '重新选择音频', action: () => this._pickLocalAudio(n) });
@@ -2385,6 +2394,72 @@ const CanvasModule = {
     },
 
     /**
+     * 素材节点吸收接入素材：以来源节点当前内容为准刷新素材节点数据（单一素材模型）。
+     * autoUpload=true 且未入库时自动上传跟踪审核（接入即入库通道）。
+     */
+    _absorbMaterial(m, src, autoUpload) {
+        if (!m || m.type !== 'material' || !src) return;
+        const url = src.type === 'video' ? (src.data.videoUrl || '') : (src.data.url || '');
+        m.data.mtype = src.type;
+        m.data.url = url;
+        m.data.sourceUrl = url;
+        m.data.name = src.data.name || m.data.name || '接入素材';
+        m.data.assetId = VideoModule._validAssetId(src.data.assetId) ? src.data.assetId : '';
+        this.renderAll();
+        this.save();
+        if (!url) {
+            UI.toast(`接入的${this._META[src.type]?.title || src.type}节点还没有内容`, 'warn');
+            return;
+        }
+        if (VideoModule._validAssetId(m.data.assetId)) {
+            UI.toast('素材已在火山素材库，直接继承引用（审核状态见节点徽标）', 'success');
+            return;
+        }
+        if (autoUpload) {
+            m.data.uploading = true;
+            if (src.type === 'video') this._syncMaterialVideo(m);
+            else if (src.type === 'audio') this._syncMaterialAudio(m);
+            else this._syncImageToLib(m);
+        }
+    },
+
+    /**
+     * 统一同步入口（「同步素材」按钮 / 右键「同步到素材库」）：
+     * 先以当前接入素材（唯一入边来源节点）为准刷新素材节点内容，再按类型上传同步；
+     * 已入库则提示当前审核状态。
+     */
+    async _syncMaterial(m) {
+        if (!m || m.type !== 'material') return;
+        const inEdge = this.edges.find(e => e.to === m.id);
+        const src = inEdge ? this.getNode(inEdge.from) : null;
+        if (src) {
+            const url = src.type === 'video' ? (src.data.videoUrl || '') : (src.data.url || '');
+            if (!url) {
+                UI.toast(`接入的${this._META[src.type]?.title || src.type}节点还没有内容，无法同步`, 'warn');
+                return;
+            }
+            m.data.mtype = src.type;
+            m.data.url = url;
+            m.data.sourceUrl = url;
+            m.data.name = src.data.name || m.data.name || '接入素材';
+            m.data.assetId = VideoModule._validAssetId(src.data.assetId) ? src.data.assetId : '';
+        }
+        if (!m.data.url) {
+            UI.toast('素材节点还没有接入素材，请先连线图片/视频/音频节点', 'warn');
+            return;
+        }
+        this.renderAll();
+        this.save();
+        if (VideoModule._validAssetId(m.data.assetId)) {
+            UI.toast('该素材已在素材库中，审核状态见节点上方徽标', 'info');
+            return;
+        }
+        if (m.data.mtype === 'video') await this._syncMaterialVideo(m);
+        else if (m.data.mtype === 'audio') await this._syncMaterialAudio(m);
+        else await this._syncImageToLib(m);
+    },
+
+    /**
      * 图片节点 → 素材库节点（入库通道）：
      *  - 图片节点保留原图，新建素材节点承接上传与审核状态
      *  - 图片已在库（有有效 assetId）→ 素材节点直接继承引用，秒完成
@@ -2396,23 +2471,9 @@ const CanvasModule = {
             UI.toast('图片节点还没有图片，无法入库', 'warn');
             return;
         }
-        const m = this.addNode('material', wx, wy, {
-            url: from.data.url,
-            sourceUrl: from.data.url,
-            name: from.data.name || '画布图片',
-            mtype: 'image',
-            assetId: VideoModule._validAssetId(from.data.assetId) ? from.data.assetId : '',
-        });
+        const m = this.addNode('material', wx, wy, { name: from.data.name || '画布图片' });
         this.edges.push({ id: this._uid('edge'), from: fromId, to: m.id });
-        this.renderAll();
-        this.save();
-        if (VideoModule._validAssetId(m.data.assetId)) {
-            UI.toast('图片已在素材库，直接继承引用', 'success');
-        } else {
-            // 异步上传：完成/失败都会刷新徽标
-            m.data.uploading = true;
-            this._syncImageToLib(m);
-        }
+        this._absorbMaterial(m, from, true);
     },
 
     /**
@@ -2427,22 +2488,9 @@ const CanvasModule = {
             UI.toast('视频节点还没有视频，无法入库', 'warn');
             return;
         }
-        const m = this.addNode('material', wx, wy, {
-            url: from.data.videoUrl,
-            sourceUrl: from.data.videoUrl,
-            name: from.data.name || '画布视频',
-            mtype: 'video',
-            assetId: VideoModule._validAssetId(from.data.assetId) ? from.data.assetId : '',
-        });
+        const m = this.addNode('material', wx, wy, { name: from.data.name || '画布视频' });
         this.edges.push({ id: this._uid('edge'), from: fromId, to: m.id });
-        this.renderAll();
-        this.save();
-        if (VideoModule._validAssetId(m.data.assetId)) {
-            UI.toast('视频已在素材库，直接继承引用', 'success');
-        } else {
-            m.data.uploading = true;
-            this._syncMaterialVideo(m);
-        }
+        this._absorbMaterial(m, from, true);
     },
 
     /** 视频素材节点同步到火山素材库（托管公网 → CreateAsset → 轮询审核，徽标实时刷新） */
@@ -2497,22 +2545,9 @@ const CanvasModule = {
             UI.toast('音频节点还没有音频，无法入库', 'warn');
             return;
         }
-        const m = this.addNode('material', wx, wy, {
-            url: from.data.url,
-            sourceUrl: from.data.url,
-            name: from.data.name || '画布音频',
-            mtype: 'audio',
-            assetId: VideoModule._validAssetId(from.data.assetId) ? from.data.assetId : '',
-        });
+        const m = this.addNode('material', wx, wy, { name: from.data.name || '画布音频' });
         this.edges.push({ id: this._uid('edge'), from: fromId, to: m.id });
-        this.renderAll();
-        this.save();
-        if (VideoModule._validAssetId(m.data.assetId)) {
-            UI.toast('音频已在素材库，直接继承引用', 'success');
-        } else {
-            m.data.uploading = true;
-            this._syncMaterialAudio(m);
-        }
+        this._absorbMaterial(m, from, true);
     },
 
     /** 音频素材节点同步到火山素材库（托管公网 → CreateAsset → 轮询审核，徽标实时刷新） */
