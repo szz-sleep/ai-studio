@@ -4,6 +4,9 @@
  * 设计要点：
  *  1. 机器指纹 = SHA256(主板序列号 | MachineGuid | 主网卡 MAC)，
  *     机器码 = 指纹前 8 字节十六进制，格式 XXXX-XXXX-XXXX-XXXX，用户发给管理员。
+ *     MAC 钉存：Wi-Fi 随机硬件地址/USB 网卡/虚拟网卡增减会让 MAC 在开机间漂移，
+ *     导致已激活用户每次启动都被要求重新激活。首次采集后把 MAC 用 HMAC
+ *     （密钥=主板+MachineGuid，跨机无效）钉进 userData + 注册表，之后恒用钉存值。
  *  2. 注册码 = Base32( 版本(1B) + 指纹8B + 签发日(2B，自 2026-01-01 的天数) + 有效期天数(2B，0=永久) + Ed25519签名(64B) )
  *     私钥只存在独立注册机（license-admin，不进安装包），应用内只内置公钥 → 无法伪造注册码。
  *  3. 防时间回拨：受信时间 = max(系统时间, 历史最大时间)。历史最大时间存三处：
@@ -239,6 +242,10 @@ function pickMac() {
 }
 
 async function _collectFingerprintParts() {
+  if (_test.partsOverride) {
+    // 测试注入 board/guid；MAC 仍走 pickMac（测试通过补丁 os.networkInterfaces 控制）
+    return { board: _test.partsOverride.board || '', guid: _test.partsOverride.guid || '', mac: _test.macOverride || pickMac() };
+  }
   const parts = { board: '', guid: '', mac: pickMac() };
   if (process.platform === 'win32') {
     // 主板序列号：wmic 优先（快），缺失时退 PowerShell CIM（新版 Win11 已移除 wmic）
@@ -263,13 +270,86 @@ async function _collectFingerprintParts() {
 }
 
 let _fpCache = null; // { digest: Buffer(32), parts }
+
+// —— MAC 钉存（解决客户机指纹漂移导致每次启动都要重新激活） ——
+// 指纹材料含 MAC，而 Wi-Fi「随机硬件地址」、USB 网卡、VPN/TUN 虚拟网卡增减
+// 都会让 pickMac 的结果在两次开机之间变化 → 指纹变化 → 一码一机判定不匹配，
+// 用户每次启动都要重输卡密，且重输时服务器因已绑定旧指纹而拒绝。
+// 方案：首次采集后把 MAC 用 HMAC（密钥=主板序列号+MachineGuid，跨机无效）
+// 钉进 userData 文件 + 注册表；之后恒用钉住的 MAC，指纹从此稳定。
+function macPinFile() { return path.join(dataDir(), 'license-mac.json'); }
+
+function _macPinKey(parts) {
+  return crypto.createHash('sha256')
+    .update(['aistudio-macpin-v1', parts.board || '', parts.guid || ''].join('|'), 'utf8')
+    .digest();
+}
+
+function _macPinTag(parts, mac) {
+  return crypto.createHmac('sha256', _macPinKey(parts)).update(String(mac)).digest('hex');
+}
+
+function _macFmt(hex12) {
+  const h = String(hex12 || '').toUpperCase().replace(/[^0-9A-F]/g, '');
+  return /^[0-9A-F]{12}$/.test(h) ? h.match(/.{2}/g).join(':') : null;
+}
+
+function _readMacPinFile(parts) {
+  try {
+    const obj = JSON.parse(fs.readFileSync(macPinFile(), 'utf8'));
+    const mac = _macFmt(obj.mac);
+    if (mac && obj.tag === _macPinTag(parts, mac)) return mac;
+  } catch { /* 缺失/损坏忽略 */ }
+  return null;
+}
+
+function _readMacPinRegistry(parts) {
+  return new Promise((resolve) => {
+    if (_test.registryDisabled || process.platform !== 'win32') return resolve(null);
+    execFile('reg', ['query', 'HKCU\\Software\\AIStudio', '/v', 'LicenseMac'], { timeout: 5000, windowsHide: true }, (err, stdout) => {
+      if (err) return resolve(null);
+      const m = String(stdout || '').match(/LicenseMac\s+REG_SZ\s+([0-9A-F]{12}):([0-9a-f]{64})/i);
+      if (!m) return resolve(null);
+      const mac = _macFmt(m[1]);
+      resolve(mac && _macPinTag(parts, mac) === m[2].toLowerCase() ? mac : null);
+    });
+  });
+}
+
+function _writeMacPinEverywhere(parts, mac) {
+  const hex12 = String(mac || '').replace(/[^0-9A-Fa-f]/g, '').toUpperCase();
+  if (!/^[0-9A-F]{12}$/.test(hex12)) return; // MAC 异常（空/多网卡全滤掉）不钉存
+  const tag = _macPinTag(parts, _macFmt(hex12));
+  try { fs.mkdirSync(dataDir(), { recursive: true }); } catch { /* 目录已存在 */ }
+  try { fs.writeFileSync(macPinFile(), JSON.stringify({ mac: hex12, tag }), 'utf8'); } catch { /* 忽略 */ }
+  if (!_test.registryDisabled && process.platform === 'win32') {
+    execFile('reg', ['add', 'HKCU\\Software\\AIStudio', '/v', 'LicenseMac', '/t', 'REG_SZ', '/d', `${hex12}:${tag}`, '/f'], { timeout: 5000, windowsHide: true }, () => {});
+  }
+}
+
+/** 稳定 MAC：优先用钉存值（跨开机/随机 MAC 恒定）；无钉存则钉住当前值 */
+async function _stableMac(parts) {
+  if (!parts.board && !parts.guid) return parts.mac; // 无稳定硬件锚点，无从钉存
+  const filePin = _readMacPinFile(parts);
+  if (filePin) return filePin;
+  const regPin = await _readMacPinRegistry(parts);
+  if (regPin) {
+    // 注册表有而文件缺：回写文件保持一致
+    try { fs.writeFileSync(macPinFile(), JSON.stringify({ mac: regPin, tag: _macPinTag(parts, regPin) }), 'utf8'); } catch { /* 忽略 */ }
+    return regPin;
+  }
+  _writeMacPinEverywhere(parts, parts.mac);
+  return parts.mac;
+}
+
 async function _fingerprint() {
   if (_test.fpDigestOverride) {
     return { digest: _test.fpDigestOverride, parts: { board: 'test', guid: 'test', mac: 'test' } };
   }
   if (_fpCache) return _fpCache;
   const parts = await _collectFingerprintParts();
-  const material = ['aistudio-fp-v1', parts.board || '', parts.guid || '', parts.mac || ''].join('|');
+  const mac = await _stableMac(parts);
+  const material = ['aistudio-fp-v1', parts.board || '', parts.guid || '', mac || ''].join('|');
   const digest = crypto.createHash('sha256').update(material, 'utf8').digest();
   _fpCache = { digest, parts };
   return _fpCache;
@@ -438,7 +518,7 @@ async function getState() {
   if (record.mode === 'network') {
     const fpHex = digest.toString('hex');
     if (record.fingerprint !== fpHex) {
-      return { ...base, status: 'fingerprint_mismatch', message: '本机指纹与授权不匹配：一个卡密只能在一台电脑上使用' };
+      return { ...base, status: 'fingerprint_mismatch', message: '本机指纹与授权不匹配：一个卡密只能在一台电脑上使用。如重装系统或更换硬件，请联系管理员解绑后重新激活' };
     }
     if (!_verifyNetworkSig(record.code, fpHex, record.expiryTime, record.sig)) {
       return { ...base, status: 'license_corrupt', message: '授权信息校验失败，请重新激活' };
@@ -604,6 +684,10 @@ module.exports = {
     setDataDir(dir) { _test.dataDirOverride = dir; },
     setRegistryDisabled(v) { _test.registryDisabled = !!v; },
     setServerUrl(url) { _serverUrlOverride = url || null; },
+    setPartsOverride(parts) { _test.partsOverride = parts || null; _fpCache = null; },
+    setMacOverride(mac) { _test.macOverride = mac || null; _fpCache = null; },
+    clearFingerprintCache() { _fpCache = null; },
+    readMacPin: _readMacPinFile,
     isCardCode,
     heartbeat: _heartbeat,
     signCode,
