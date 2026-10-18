@@ -199,7 +199,10 @@ const API = {
            size: size || '1024x1024',
             n: n || 1
         };
-        if (quality) body.quality = quality;
+        if (quality) {
+            // gpt-image 系列（MUX 等中转）质量档位为 auto/low/medium/high
+            body.quality = /gpt-image/i.test(model) ? ({ standard: 'medium', hd: 'high' }[quality] || 'auto') : quality;
+        }
         if (style) body.style = style;
         // 图片参数：支持单图和多图
         if (Array.isArray(images) && images.length > 0) {
@@ -244,12 +247,25 @@ const API = {
    },
 
     /**
-     * 图生图 - 图片编辑/融合接口
-     * POST /v1/images/edits
-     * JSON 格式，images 数组传纯 base64 + prompt 一次性发给模型
-     * 注意：不传 size、不传 response_format（由模型自动决定）
+     * 图生图 - 按模型家族分路：
+     * - gpt-image 系列（OpenAI 系，如 MUX 中转）→ POST /v1/images/generations，
+     *   参考图放 images 字段与 prompt/size 同发（该系没有 edits 专用接口）
+     * - 其余（火山 Seedream 等）→ POST /v1/images/edits（原逻辑不动）
      */
-    async generateImageEdit({ prompt, model, size, images, ratio, qualityLabel, signal }) {
+    async generateImageEdit(opts) {
+        const { model, images } = opts;
+        if (/gpt-image/i.test(model || '')) {
+            // 素材库 asset:// 引用是火山专属通道，gpt-image 走不通
+            if (Array.isArray(images) && images.some((u) => String(u).startsWith('asset://'))) {
+                throw new Error('gpt-image 模型不支持火山素材库引用，请改用本地上传图片，或换 doubao-seedream 系模型');
+            }
+            Logger.info('[API] 图生图(gpt-image 系): ' + (images ? images.length : 0) + ' 张参考图, 模型=' + model + ', 尺寸=' + (opts.size || 'auto') + ' → /v1/images/generations');
+            return this.generateImage({ prompt: opts.prompt, model, size: opts.size, n: 1, images, ratio: opts.ratio, qualityLabel: opts.qualityLabel, signal: opts.signal });
+        }
+        return this._generateImageEditVolc(opts);
+    },
+
+    async _generateImageEditVolc({ prompt, model, size, images, ratio, qualityLabel, signal }) {
         const body = { prompt, model, n: 1 };
         if (size) body.size = size;
 

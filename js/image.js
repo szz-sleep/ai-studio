@@ -24,8 +24,11 @@ const MODEL_IMAGE_CAPS = [
         minSide: 512, maxSide: 4096, minPixels: 3686400, maxPixels: 4096 * 4096,
     },
     {
+        // MUX 等中转的 gpt-image 系列：接受任意 WxH（1024x1024 ~ 3840x2160），
+        // 比例直接用标准阶梯的精确宽高控制；-1K 结尾的型号上限 1024
         match: /gpt-image/i, label: 'GPT Image',
-        sizes: { '21:9': '1536x1024', '16:9': '1536x1024', '4:3': '1536x1024', '1:1': '1024x1024', '3:4': '1024x1536', '9:16': '1024x1536' },
+        minSide: 512, minPixels: 512 * 512,
+        maxSideFor(model) { return /-1k$/i.test(String(model || '')) ? 1024 : 4096; },
     },
     {
         match: /qwen-image|wanx/i, label: '通义万相',
@@ -81,7 +84,8 @@ const ImageSize = {
                 const s = Math.min(w, h);
                 if (s < caps.minSide) { const k = caps.minSide / s; w = this._even(w * k); h = this._even(h * k); }
             }
-            if (caps.maxSide) { w = Math.min(w, caps.maxSide); h = Math.min(h, caps.maxSide); }
+            const maxSide = caps.maxSideFor ? caps.maxSideFor(model) : caps.maxSide;
+            if (maxSide) { w = Math.min(w, maxSide); h = Math.min(h, maxSide); }
             if (caps.maxPixels && w * h > caps.maxPixels) {
                 const k = Math.sqrt(caps.maxPixels / (w * h)); w = this._even(w * k); h = this._even(h * k);
             }
