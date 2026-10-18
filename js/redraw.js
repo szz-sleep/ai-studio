@@ -181,21 +181,20 @@ const RedrawModule = {
     },
 
     /**
-     * 根据选中的分辨率和比例计算实际像素尺寸
+     * 根据选中的模型/分辨率/比例计算实际像素尺寸
      */
-    getSelectedSize() {
+    getSelectedSize(model) {
         const ratio = document.querySelector('#i2iRatio .ratio-btn.active');
-        const resolution = document.getElementById('i2iResolution')?.value || '720p';
+        const resolution = document.getElementById('i2iResolution')?.value || '720P';
         const ratioKey = ratio ? ratio.dataset.ratio : '16:9';
-        const sizeMap = RESOLUTION_SIZE_MAP[resolution];
-        return (sizeMap && sizeMap[ratioKey]) || '1920x1920';
+        return ImageSize.compute(model, resolution, ratioKey);
     },
 
     /**
      * 获取当前选中的分辨率
      */
     getSelectedResolution() {
-        return document.getElementById('i2iResolution')?.value || '720p';
+        return (document.getElementById('i2iResolution')?.value || '720P').toUpperCase();
     },
 
     /**
@@ -256,7 +255,11 @@ const RedrawModule = {
             return;
         }
 
-        const size = this.getSelectedSize();
+        const sel = this.getSelectedSize(model);
+        const size = sel.size;
+        if (sel.bumped) {
+            UI.toast(`${sel.caps && sel.caps.label || model} 对该比例要求更高像素，已自动改用 ${sel.bumped}`, 'warn', 6000);
+        }
 
         const btn = document.getElementById('i2iGenerateBtn');
         const resultArea = document.getElementById('i2iResult');

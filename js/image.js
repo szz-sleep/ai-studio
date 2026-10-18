@@ -2,41 +2,96 @@
  * AI Studio - 文生图模块
  */
 
-// 分辨率 → 比例 → 实际像素尺寸映射（Seedream 要求 ≥ 3.69M 像素）
-const RESOLUTION_SIZE_MAP = {
-    '480p': {
-        '21:9': '1920x816',
-        '16:9': '1536x864',
-        '4:3': '1408x1056',
-        '1:1': '1152x1152',
-        '3:4': '1056x1408',
-        '9:16': '864x1536',
+// ===== 尺寸计算（双层：模型参数优先，标准阶梯兜底） =====
+// 标准分辨率阶梯：短边像素；16:9/9:16 使用精确标准尺寸（横竖自动切换）
+const RES_PRESETS = {
+    '480P':  { short: 480,  land: [854, 480],   port: [480, 854] },
+    '720P':  { short: 720,  land: [1280, 720],  port: [720, 1280] },
+    '1080P': { short: 1080, land: [1920, 1080], port: [1080, 1920] },
+    '2K':    { short: 1440, land: [2560, 1440], port: [1440, 2560] },
+    '4K':    { short: 2160, land: [3840, 2160], port: [2160, 3840] },
+};
+
+// 已知模型的生成参数（自动匹配层）：按模型 id 正则匹配；匹配不到的模型走标准阶梯
+// sizes 有值 → 模型只支持固定尺寸；min/max → 约束 WxH 计算结果（超限自动升降档）
+const MODEL_IMAGE_CAPS = [
+    {
+        match: /seedream[-_]?4/i, label: 'Seedream 4.0',
+        minSide: 720, maxSide: 4096, minPixels: 1280 * 720, maxPixels: 4096 * 4096,
     },
-    '720p': {
-        '21:9': '2880x1232',
-        '16:9': '2304x1296',
-        '4:3': '2112x1584',
-        '1:1': '1920x1920',
-        '3:4': '1584x2112',
-        '9:16': '1296x2304',
+    {
+        match: /seedream[-_]?3|doubao-seedream/i, label: 'Seedream 3.x',
+        minSide: 512, maxSide: 4096, minPixels: 3686400, maxPixels: 4096 * 4096,
     },
-    '1080p': {
-        '21:9': '3840x1648',
-        '16:9': '3072x1728',
-        '4:3': '2816x2112',
-        '1:1': '2560x2560',
-        '3:4': '2112x2816',
-        '9:16': '1728x3072',
+    {
+        match: /gpt-image/i, label: 'GPT Image',
+        sizes: { '21:9': '1536x1024', '16:9': '1536x1024', '4:3': '1536x1024', '1:1': '1024x1024', '3:4': '1024x1536', '9:16': '1024x1536' },
     },
-    '4K': {
-        '21:9': '6048x2592',
-        '16:9': '5120x2880',
-        '4:3': '4480x3360',
-        '1:1': '4096x4096',
-        '3:4': '3360x4480',
-        '9:16': '2880x5120',
+    {
+        match: /qwen-image|wanx/i, label: '通义万相',
+        minSide: 512, maxSide: 2048, minPixels: 512 * 512, maxPixels: 2048 * 2048,
+    },
+];
+
+const ImageSize = {
+    /** 解析比例字符串 '16:9' → 宽高比数值 */
+    _aspect(ratio) {
+        const m = String(ratio || '').match(/^(\d+(?:\.\d+)?)\s*[:\/]\s*(\d+(?:\.\d+)?)$/);
+        return m ? Number(m[1]) / Number(m[2]) : 16 / 9;
+    },
+    /** 偶数取整（编码器友好） */
+    _even(n) { return Math.max(2, Math.round(n / 2) * 2); },
+    /**
+     * 计算实际尺寸
+     * @returns {{size: string, preset: string, bumped: string|null, caps: object|null}}
+     */
+    compute(model, resolution, ratio) {
+        const resKey = String(resolution || '720P').toUpperCase();
+        const preset = RES_PRESETS[resKey] || RES_PRESETS['720P'];
+        let usedKey = RES_PRESETS[resKey] ? resKey : '720P';
+        const caps = MODEL_IMAGE_CAPS.find((c) => c.match.test(String(model || ''))) || null;
+
+        // 模型只支持固定尺寸 → 直接用
+        if (caps && caps.sizes) {
+            const fixed = caps.sizes[String(ratio)] || caps.sizes['1:1'] || '1024x1024';
+            return { size: fixed, preset: usedKey, bumped: null, caps };
+        }
+
+        // 标准阶梯：16:9/9:16 精确标准尺寸；其他比例：高度 = 阶梯短边值
+        const ar = this._aspect(ratio);
+        const is169 = Math.abs(ar - 16 / 9) < 0.01;
+        const is916 = Math.abs(ar - 9 / 16) < 0.01;
+        const sizeFor = (key) => {
+            const p = RES_PRESETS[key];
+            if (is169) return [p.land[0], p.land[1]];
+            if (is916) return [p.port[0], p.port[1]];
+            return [this._even(p.short * ar), p.short];
+        };
+        let [w, h] = sizeFor(usedKey);
+
+        // 模型约束：像素不足自动升档，边长钳制
+        let bumped = null;
+        if (caps) {
+            if (caps.minPixels && w * h < caps.minPixels) {
+                const allKeys = Object.keys(RES_PRESETS);
+                const ok = allKeys.find((k) => { const [a, b] = sizeFor(k); return a * b >= caps.minPixels; });
+                if (ok && ok !== usedKey) { usedKey = ok; bumped = ok; [w, h] = sizeFor(ok); }
+            }
+            if (caps.minSide) {
+                const s = Math.min(w, h);
+                if (s < caps.minSide) { const k = caps.minSide / s; w = this._even(w * k); h = this._even(h * k); }
+            }
+            if (caps.maxSide) { w = Math.min(w, caps.maxSide); h = Math.min(h, caps.maxSide); }
+            if (caps.maxPixels && w * h > caps.maxPixels) {
+                const k = Math.sqrt(caps.maxPixels / (w * h)); w = this._even(w * k); h = this._even(h * k);
+            }
+        }
+        return { size: `${w}x${h}`, preset: usedKey, bumped, caps };
     },
 };
+
+// 兼容旧代码的全局映射（保留但不再使用）
+const RESOLUTION_SIZE_MAP = null;
 
 const ImageModule = {
     /**
@@ -57,21 +112,20 @@ const ImageModule = {
     },
 
     /**
-     * 根据选中的分辨率和比例计算实际像素尺寸
+     * 根据选中的模型/分辨率/比例计算实际像素尺寸
      */
-    getSelectedSize() {
+    getSelectedSize(model) {
         const ratio = document.querySelector('#t2iRatio .ratio-btn.active');
-        const resolution = document.getElementById('t2iResolution')?.value || '720p';
+        const resolution = document.getElementById('t2iResolution')?.value || '720P';
         const ratioKey = ratio ? ratio.dataset.ratio : '16:9';
-        const sizeMap = RESOLUTION_SIZE_MAP[resolution];
-        return (sizeMap && sizeMap[ratioKey]) || '1920x1920';
+        return ImageSize.compute(model, resolution, ratioKey);
     },
 
     /**
      * 获取当前选中的分辨率
      */
     getSelectedResolution() {
-        return document.getElementById('t2iResolution')?.value || '720p';
+        return (document.getElementById('t2iResolution')?.value || '720P').toUpperCase();
     },
 
     /**
@@ -90,17 +144,10 @@ const ImageModule = {
             return;
         }
 
-        const size = this.getSelectedSize();
-        const [w, h] = size.split('x').map(Number);
-        const totalPixels = w * h;
-
-        // 检测是否选择了 Seedream 模型（要求 ≥ 3.69M 像素）
-        const modelLower = model.toLowerCase();
-        const isSeedream = modelLower.includes('seedream') || modelLower.includes('seed');
-        const MIN_PIXELS = 3686400;
-        if (isSeedream && totalPixels < MIN_PIXELS) {
-            UI.toast(`Seedream 要求至少 ${(MIN_PIXELS/1000000).toFixed(1)}M 像素，当前 ${size} 不满足，请选更高分辨率`, 'error', 8000);
-            return;
+        const sel = this.getSelectedSize(model);
+        const size = sel.size;
+        if (sel.bumped) {
+            UI.toast(`${sel.caps && sel.caps.label || model} 对该比例要求更高像素，已自动改用 ${sel.bumped}`, 'warn', 6000);
         }
 
         const n = parseInt(document.getElementById('t2iCount').value);
