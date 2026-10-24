@@ -161,11 +161,11 @@ function assert(name, cond, extra) {
         r.clickSelectsSource = CM.selection.has(r.expectedSrc);
         // 按下标签不应触发节点拖拽状态
         r.noNodeDragOnMousedown = !CM._drag || CM._drag.type !== 'node';
-        // 标签点选 → 来源节点橘黄色高亮（ref-pick 类 + 橘色边框），普通选中仍是蓝色
+        // 标签点选 → 来源节点红色粗边框高亮（ref-pick 类），普通选中仍是蓝色
         const srcEl = document.querySelector('.cnode[data-id="' + r.expectedSrc + '"]');
         r.srcHasRefPick = srcEl.classList.contains('ref-pick') && srcEl.classList.contains('selected');
         r.orangeBorder = getComputedStyle(srcEl).borderTopColor;
-        // 普通点击其它节点 → 橘黄高亮清除，恢复蓝色（重渲染后需重新查询元素）
+        // 普通点击其它节点 → 红色高亮清除，恢复蓝色（重渲染后需重新查询元素）
         CM._selectNode(v.id);
         const srcEl2 = document.querySelector('.cnode[data-id="' + r.expectedSrc + '"]');
         r.refPickCleared = !srcEl2.classList.contains('ref-pick');
@@ -179,7 +179,7 @@ function assert(name, cond, extra) {
     assert('ref.singleNoLabels', rRef.singleNoLabels, rRef.singleNoLabels);
     assert('ref.clickSelectsSource', rRef.clickSelectsSource, { src: rRef.firstTagSrc, exp: rRef.expectedSrc, before: rRef.selBeforeClick, after: rRef.selAfterClick });
     assert('ref.noNodeDragOnMousedown', rRef.noNodeDragOnMousedown, rRef.noNodeDragOnMousedown);
-    assert('ref.orangeHighlight', rRef.srcHasRefPick === true && rRef.orangeBorder === 'rgb(249, 115, 22)', { pick: rRef.srcHasRefPick, border: rRef.orangeBorder });
+    assert('ref.redHighlight', rRef.srcHasRefPick === true && rRef.orangeBorder === 'rgb(239, 68, 68)', { pick: rRef.srcHasRefPick, border: rRef.orangeBorder });
     assert('ref.pickClearedOnNormalSelect', rRef.refPickCleared === true && rRef.normalIsBlue === 'rgb(59, 130, 246)', { cleared: rRef.refPickCleared, border: rRef.normalIsBlue });
     // 标签文字显著性：字号≥11px、加粗、不透明
     rRef.labelStyle = await win.webContents.executeJavaScript(`(() => {
@@ -188,7 +188,7 @@ function assert(name, cond, extra) {
         return { fs: parseFloat(cs.fontSize), fw: cs.fontWeight, op: parseFloat(cs.opacity) };
     })()`);
     assert('ref.prominentStyle', rRef.labelStyle.fs >= 11 && parseInt(rRef.labelStyle.fw) >= 600 && rRef.labelStyle.op === 1, rRef.labelStyle);
-    // 两种主题下标签都为橘黄底白字（与点击标签后节点的橘黄高亮一致，且不随 --accent 反转）
+    // 两种主题下标签都为中性灰底白字（点击后 .active 红色高亮，不随 --accent 反转）
     rRef.labelTheme = await win.webContents.executeJavaScript(`(async () => {
         const out = {};
         const t = document.querySelector('.cnode-ref-label');
@@ -200,8 +200,8 @@ function assert(name, cond, extra) {
         }
         return out;
     })()`);
-    assert('ref.lightThemeOrangeChip', rRef.labelTheme.light.bg === 'rgb(249, 115, 22)' && rRef.labelTheme.light.color === 'rgb(255, 255, 255)', rRef.labelTheme.light);
-    assert('ref.darkThemeOrangeChip', rRef.labelTheme.dark.bg === 'rgb(249, 115, 22)' && rRef.labelTheme.dark.color === 'rgb(255, 255, 255)', rRef.labelTheme.dark);
+    assert('ref.lightThemeNeutralChip', rRef.labelTheme.light.bg === 'rgb(100, 116, 139)' && rRef.labelTheme.light.color === 'rgb(255, 255, 255)', rRef.labelTheme.light);
+    assert('ref.darkThemeNeutralChip', rRef.labelTheme.dark.bg === 'rgb(100, 116, 139)' && rRef.labelTheme.dark.color === 'rgb(255, 255, 255)', rRef.labelTheme.dark);
 
     // ============ 4. 固定按钮主题适配 + 项目重命名 ============
     const rMisc = await win.webContents.executeJavaScript(`(async () => {

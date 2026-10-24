@@ -1655,7 +1655,7 @@ const CanvasModule = {
         const svg = this._edgesSvg;
         svg.innerHTML = '';
 
-        const drawEdge = (edge, selected) => {
+        const drawEdge = (edge, selected, refHl) => {
             const p1 = this._portPos(edge.from, 'out');
             const p2 = this._portPos(edge.to, 'in');
             if (!p1 || !p2) return;
@@ -1699,14 +1699,18 @@ const CanvasModule = {
             svg.appendChild(hit);
             const vis = document.createElementNS(ns, 'path');
             vis.setAttribute('d', d);
-            vis.setAttribute('class', 'canvas-edge' + (selected ? ' selected' : '') + stateCls);
+            vis.setAttribute('class', 'canvas-edge'
+                + (selected ? ' selected' : '')
+                + (refHl ? ' edge-ref-hl' : '')
+                + stateCls);
             svg.appendChild(vis);
         };
 
-        this.edges.forEach(e => drawEdge(e, this.selectedEdge === e.id));
+        this.edges.forEach(e => drawEdge(e, this.selectedEdge === e.id, this._refPick && e.from === this._refPick.srcId && e.to === this._refPick.nodeId));
 
         // 视频节点左侧参考图序号标签（多图参考时可按 图片1/图片2… 在提示词中引用）
-        this.nodes.forEach(n => { if (n.type === 'video') this._updateRefLabels(n); });
+        // 图片节点同样支持多图参考，显示 图片1/图片2… 小标
+        this.nodes.forEach(n => { if (n.type === 'video' || n.type === 'image') this._updateRefLabels(n); });
 
         // 临时连线
         if (this._tempEdge) {
@@ -1721,15 +1725,23 @@ const CanvasModule = {
     },
 
     /**
-     * 视频节点左侧的参考素材序号标签：上游媒体 ≥2 个时显示 图片1/音频1/视频1/…（竖向贴左排列），
-     * 同类素材按上游顺序编号，与 generateVideo 的参考顺序一致，方便用户在提示词里按序号引用。
-     * 点击标签可选中对应来源节点。
+     * 节点左侧的参考素材序号标签：上游媒体 ≥2 个时显示 图片1/音频1/视频1/…（竖向贴左排列），
+     * 同类素材按上游顺序编号，与生成接口的参考顺序一致，方便用户在提示词里按序号引用。
+     * 视频节点：图片/音频/视频参考；图片节点：仅图片类参考（图片1/图片2…）。
+     * 点击标签：对应小标红色高亮 + 连线红色加粗 + 来源节点卡片红色粗边框；再点取消。
      */
     _updateRefLabels(n) {
         const el = this._nodesLayer.querySelector(`.cnode[data-id="${n.id}"]`);
         if (!el) return;
         let box = el.querySelector('.cnode-ref-labels');
-        const media = this.upstream(n.id).filter(m => ['image', 'material', 'audio', 'video'].includes(m.type));
+        const media = this.upstream(n.id).filter(m => {
+            if (n.type === 'image') {
+                // 图片节点只统计图片类参考（视频/音频素材对图片生成无意义）
+                if (m.type === 'material') return !['video', 'audio'].includes(m.data.mtype);
+                return m.type === 'image';
+            }
+            return ['image', 'material', 'audio', 'video'].includes(m.type);
+        });
         if (media.length < 2) {
             if (box) box.remove();
             return;
@@ -1737,8 +1749,9 @@ const CanvasModule = {
         if (!box) {
             box = document.createElement('div');
             box.className = 'cnode-ref-labels';
+            box.dataset.for = n.id; // 标签归属的目标节点，点击高亮时用来匹配 _refPick.nodeId
             el.appendChild(box);
-            // 拦截按下事件，避免触发视频节点的选中/拖拽
+            // 拦截按下事件，避免触发节点的选中/拖拽
             box.addEventListener('mousedown', (e) => e.stopPropagation());
             box.addEventListener('click', (e) => {
                 const tag = e.target.closest('.cnode-ref-label');
@@ -1746,10 +1759,13 @@ const CanvasModule = {
                 e.stopPropagation();
                 const src = this.getNode(tag.dataset.src);
                 if (!src) return;
-                // 选中来源节点，并用橘黄色高亮（区别于普通蓝色选中）
+                // 再点同一个标签：取消高亮；否则选中来源节点并红色高亮（小标+连线+卡片）
+                if (this._refPick && this._refPick.nodeId === n.id && this._refPick.srcId === src.id) {
+                    this._setRefPick(null);
+                    return;
+                }
                 this._selectNode(src.id);
-                this._refPickId = src.id;
-                this._renderSelection();
+                this._setRefPick({ nodeId: n.id, srcId: src.id });
             });
         }
         const typeNames = { image: '图片', audio: '音频', video: '视频' };
@@ -1757,18 +1773,52 @@ const CanvasModule = {
         const kindOf = (m) => m.type === 'material'
             ? (m.data.mtype === 'video' ? 'video' : m.data.mtype === 'audio' ? 'audio' : 'image')
             : m.type;
-        // 同类素材按上游顺序编号（与 generateVideo 的参考数组顺序一致）
+        // 同类素材按上游顺序编号（与生成接口的参考数组顺序一致）
         const counters = { image: 0, audio: 0, video: 0 };
         const sig = media.map(m => m.id).join(',');
-        if (box.dataset.sig === sig) return;
-        box.dataset.sig = sig;
-        box.innerHTML = media.map((m) => {
-            const kind = kindOf(m);
-            counters[kind]++;
-            const label = `${typeNames[kind] || kind}${counters[kind]}`;
-            const name = this._escape(m.data.name || '未命名');
-            return `<span class="cnode-ref-label" data-src="${m.id}" title="${label}：${name} —— 在提示词中可用「${label}」引用这个素材">${label}</span>`;
-        }).join('');
+        if (box.dataset.sig !== sig) {
+            box.dataset.sig = sig;
+            box.innerHTML = media.map((m) => {
+                const kind = kindOf(m);
+                counters[kind]++;
+                const label = `${typeNames[kind] || kind}${counters[kind]}`;
+                const name = this._escape(m.data.name || '未命名');
+                const tip = n.type === 'image'
+                    ? `${label}：${name} —— 作为第 ${counters[kind]} 张参考图参与图片生成，点击红色高亮对应素材`
+                    : `${label}：${name} —— 在提示词中可用「${label}」引用这个素材`;
+                return `<span class="cnode-ref-label" data-src="${m.id}" title="${tip}">${label}</span>`;
+            }).join('');
+        }
+        // 高亮状态（每次都刷新，不依赖 sig）：被点选的标签加红色 active
+        box.querySelectorAll('.cnode-ref-label').forEach(tag => {
+            tag.classList.toggle('active', !!this._refPick
+                && this._refPick.nodeId === n.id
+                && tag.dataset.src === this._refPick.srcId);
+        });
+    },
+
+    /**
+     * 设置/清除参考标签点选高亮：
+     * _refPick = { nodeId, srcId } —— nodeId 是带小标的目标节点，srcId 是来源节点。
+     * 联动三处红色高亮：小标（.cnode-ref-label.active）、连线（.edge-ref-hl）、来源卡片（.ref-pick 红色粗边框）。
+     */
+    _setRefPick(pick) {
+        this._refPick = pick || null;
+        this._renderSelection();
+        this.renderEdges();
+        this._refreshRefLabelActive();
+    },
+
+    /** 只刷新小标 .active 状态（_refPick 被其他选中路径清除时，避免标签残留高亮） */
+    _refreshRefLabelActive() {
+        this._nodesLayer.querySelectorAll('.cnode-ref-labels').forEach(box => {
+            const owner = box.dataset.for;
+            box.querySelectorAll('.cnode-ref-label').forEach(tag => {
+                tag.classList.toggle('active', !!this._refPick
+                    && this._refPick.nodeId === owner
+                    && tag.dataset.src === this._refPick.srcId);
+            });
+        });
     },
 
     /** 判断 from 节点能否连到 to 节点 */    _canConnect(fromId, toId) {
@@ -2001,7 +2051,8 @@ const CanvasModule = {
             this.save();
         } else if (d.type === 'select' && d.cur) {
             const r = d.cur;
-            this._refPickId = null; // 框选清除标签点选的橘黄高亮
+            this._refPick = null; // 框选清除标签点选的高亮
+            this._refreshRefLabelActive();
             this.selection.clear();
             this.nodes.forEach(n => {
                 const el = this._nodesLayer.querySelector(`.cnode[data-id="${n.id}"]`);
@@ -2018,7 +2069,8 @@ const CanvasModule = {
     // ===== 选择 =====
 
     _selectNode(id, additive) {
-        this._refPickId = null; // 普通选中路径清除橘黄高亮（标签点选会在随后重新设置）
+        this._refPick = null; // 普通选中路径清除标签点选高亮（标签点选会在随后重新设置）
+        this._refreshRefLabelActive();
         if (additive) {
             if (this.selection.has(id)) this.selection.delete(id); else this.selection.add(id);
         } else {
@@ -2033,8 +2085,10 @@ const CanvasModule = {
     _renderSelection() {
         this._nodesLayer.querySelectorAll('.cnode').forEach(el => {
             el.classList.toggle('selected', this.selection.has(el.dataset.id));
-            // 标签点选的来源节点用橘黄色高亮（_refPickId 在其他选中路径中被清除）
-            el.classList.toggle('ref-pick', el.dataset.id === this._refPickId && this.selection.has(el.dataset.id));
+            // 标签点选的来源节点用红色粗边框高亮（_refPick 在其他选中路径中被清除）
+            el.classList.toggle('ref-pick', !!this._refPick
+                && el.dataset.id === this._refPick.srcId
+                && this.selection.has(el.dataset.id));
         });
     },
 
