@@ -732,6 +732,8 @@
                     <button class="canvas-btn canvas-align-btn" data-align="distY" title="垂直等距分布（≥3 个节点）"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="4" x2="19" y2="4"/><line x1="5" y1="12" x2="19" y2="12"/><line x1="5" y1="20" x2="19" y2="20"/></svg></button>
                 </div>
                 <div class="canvas-toolbar-spacer"></div>
+                <button class="canvas-btn" id="canvasHistoryBtn" title="历史记录（画布生成的内容自动保存在这里）"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> 历史记录</button>
+                <div class="canvas-sep"></div>
                 <button class="canvas-btn" id="canvasClearBtn" title="清空画布"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> 清空</button>
                 <div class="canvas-sep"></div>
                 <div class="canvas-bg-group" title="画布背景样式与底色">
@@ -787,18 +789,18 @@
                     </button>
                 </div>
 
-                <!-- 右侧历史记录（画布生成的内容自动入史；可隐藏悬浮卡片） -->
-                <div class="canvas-projects canvas-history-block" id="canvasHistory">
-                    <div class="canvas-projects-panel hidden" id="canvasHistoryPanel">
-                        <div class="canvas-projects-head">
-                            <span>历史记录</span>
-                            <button class="canvas-btn" id="canvasHistoryClearBtn" title="清空全部历史记录">清空</button>
+                <!-- 历史记录弹窗（工具栏「历史记录」按钮触发，界面中央打开） -->
+                <div class="canvas-history-modal hidden" id="canvasHistoryModal">
+                    <div class="canvas-history-modal-box">
+                        <div class="canvas-history-modal-head">
+                            <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> 历史记录</span>
+                            <div class="canvas-history-modal-actions">
+                                <button class="canvas-btn" id="canvasHistoryClearBtn" title="清空全部历史记录">清空</button>
+                                <button class="canvas-history-modal-close" id="canvasHistoryCloseBtn" title="关闭 (Esc)">×</button>
+                            </div>
                         </div>
                         <div class="canvas-history-list" id="canvasHistoryList"></div>
                     </div>
-                    <button class="canvas-projects-handle" id="canvasHistoryHandle" title="历史记录（画布生成的内容自动保存在这里）">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                    </button>
                 </div>
             </div>
         </section>
@@ -828,7 +830,7 @@
     </div>
 
     <!-- 版本号 -->
-    <div id="appVersion" class="app-version">云镜AI Studio V2.1.0</div>
+    <div id="appVersion" class="app-version">云镜AI Studio V2.1.1</div>
 
     <!-- 运行日志面板 -->
     <div id="logPanel" class="log-panel" style="display:none;">

@@ -440,7 +440,7 @@ const menuTemplate = [
             type: 'info',
             title: '关于 云镜AI Studio',
             message: '云镜AI Studio - AI创作工坊',
-            detail: '版本 V2.1.0\n湖北生而为一科技有限公司'
+            detail: '版本 V2.1.1\n湖北生而为一科技有限公司'
           });
         }
       }

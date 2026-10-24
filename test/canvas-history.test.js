@@ -34,15 +34,26 @@ app.whenReady().then(async () => {
     const imgPath = r1.first.url.replace('file://', '');
     assert('hist.fileExists', fs.existsSync(imgPath), imgPath);
     assert('hist.fileContent', fs.readFileSync(imgPath).toString() === 'AAAA-content-or-bin' || fs.readFileSync(imgPath).length === 3, fs.statSync(imgPath).size);
-    // 2) 历史面板渲染
+    // 2) 历史弹窗渲染（工具栏按钮触发，界面中央打开）
     const r2 = await win.webContents.executeJavaScript(`(() => {
-        document.getElementById('canvasHistoryHandle').click();
+        document.getElementById('canvasHistoryBtn').click();
         const list = document.getElementById('canvasHistoryList');
-        return { panelOpen: !document.getElementById('canvasHistoryPanel').classList.contains('hidden'),
+        return { panelOpen: !document.getElementById('canvasHistoryModal').classList.contains('hidden'),
                  items: list.querySelectorAll('.canvas-history-item').length };
     })()`);
     assert('hist.panelOpens', r2.panelOpen === true, r2);
     assert('hist.panelRenders', r2.items === 1, r2);
+    // 2b) 关闭按钮与 Esc 关闭
+    const r2b = await win.webContents.executeJavaScript(`(() => {
+        document.getElementById('canvasHistoryCloseBtn').click();
+        const closedByBtn = document.getElementById('canvasHistoryModal').classList.contains('hidden');
+        document.getElementById('canvasHistoryBtn').click();
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        const closedByEsc = document.getElementById('canvasHistoryModal').classList.contains('hidden');
+        return { closedByBtn, closedByEsc };
+    })()`);
+    assert('hist.closeByBtn', r2b.closedByBtn === true, r2b);
+    assert('hist.closeByEsc', r2b.closedByEsc === true, r2b);
     // 3) 空白点击清除选中与小标高亮（pan 未移动路径）
     const r3 = await win.webContents.executeJavaScript(`(async () => {
         const CM = CanvasModule;

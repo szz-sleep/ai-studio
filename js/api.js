@@ -292,7 +292,11 @@ const API = {
                 Logger.error('[API] 图生图(multipart) 失败响应: ' + errText.substring(0, 800));
                 let errMsg = '';
                 try { errMsg = JSON.parse(errText).error?.message || ''; } catch (_) {}
-                throw new Error(errMsg || `图生图失败 (${resp.status})${errText ? ': ' + errText.substring(0, 200) : ''}`);
+                if (errMsg) throw new Error(errMsg);
+                if (resp.status === 524) {
+                    throw new Error('图生图失败：服务商源站超时 (Cloudflare 524)，生成耗时超过其 100 秒上限。建议：降低尺寸/质量档位、减少参考图数量，或联系服务商（根治需他们调大超时或提供异步接口）。');
+                }
+                throw new Error(`图生图失败 (${resp.status})${errText ? ': ' + errText.substring(0, 200) : ''}`);
             }
             return await resp.json();
         } catch (err) {

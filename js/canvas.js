@@ -575,20 +575,25 @@ const CanvasModule = {
             this._createProject().then(p => UI.toast(`已创建「${p.name}」`, 'success'));
         });
 
-        // ===== 历史记录面板（与主页历史同源：History 模块） =====
-        const hWrap = document.getElementById('canvasHistory');
-        const hPanel = document.getElementById('canvasHistoryPanel');
-        const hHandle = document.getElementById('canvasHistoryHandle');
-        hHandle?.addEventListener('click', (e) => {
+        // ===== 历史记录弹窗（工具栏按钮触发，界面中央打开） =====
+        const hModal = document.getElementById('canvasHistoryModal');
+        const openHistoryModal = () => {
+            hModal?.classList.remove('hidden');
+            this._renderHistoryPanel();
+        };
+        const closeHistoryModal = () => hModal?.classList.add('hidden');
+        document.getElementById('canvasHistoryBtn')?.addEventListener('click', (e) => {
             e.stopPropagation();
-            hPanel.classList.toggle('hidden');
-            if (!hPanel.classList.contains('hidden')) this._renderHistoryPanel();
+            if (hModal && !hModal.classList.contains('hidden')) closeHistoryModal();
+            else openHistoryModal();
         });
-        hPanel?.addEventListener('click', (e) => e.stopPropagation());
-        // 点击画布其他区域收起面板
-        document.addEventListener('mousedown', (e) => {
-            if (hWrap && hWrap.contains(e.target)) return;
-            hPanel?.classList.add('hidden');
+        document.getElementById('canvasHistoryCloseBtn')?.addEventListener('click', closeHistoryModal);
+        // 点击遮罩（弹窗外部）关闭；弹窗内部点击不关闭
+        hModal?.addEventListener('click', (e) => {
+            if (e.target === hModal) closeHistoryModal();
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && hModal && !hModal.classList.contains('hidden')) closeHistoryModal();
         });
         document.getElementById('canvasHistoryClearBtn')?.addEventListener('click', async () => {
             if (!History.getAll().length) return;
@@ -599,7 +604,7 @@ const CanvasModule = {
         });
     },
 
-    /** 渲染画布历史记录悬浮面板 */
+    /** 渲染画布历史记录弹窗列表 */
     _renderHistoryPanel() {
         const list = document.getElementById('canvasHistoryList');
         if (!list) return;
@@ -3512,9 +3517,12 @@ const CanvasModule = {
         });
 
         // 自动隐藏模式：鼠标移到面板顶部区域或工具栏上 → 唤出；离开 → 2.2s 后隐藏
-        if (this._settings.toolbarPin) return;
-        show();
-        scheduleHide();
+        // 注意：监听必须始终注册（不能因初始为固定模式就提前 return），
+        // 否则运行时取消固定后将没有任何唤出监听 → 工具栏隐藏后永远无法唤出
+        if (!this._settings.toolbarPin) {
+            show();
+            scheduleHide();
+        }
         panel.addEventListener('mousemove', (e) => {
             if (this._settings.toolbarPin) return;
             const rect = panel.getBoundingClientRect();
