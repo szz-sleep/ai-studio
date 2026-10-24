@@ -29,10 +29,10 @@ const st1 = { hasInput: false, value: null };
     await sleep(1500);
 
     // 准备：两个项目 + 展开项目面板（默认隐藏，隐藏时 getBoundingClientRect 全为 0）
-    await win.webContents.executeJavaScript(`(() => {
+    await win.webContents.executeJavaScript(`(async () => {
         const CM = CanvasModule;
-        CM._createProject('项目甲');
-        CM._createProject('项目乙');
+        await CM._createProject('项目甲');
+        await CM._createProject('项目乙');
         const panel = document.getElementById('canvasProjectsPanel');
         if (panel) panel.classList.remove('hidden');
         CM._renderProjects();

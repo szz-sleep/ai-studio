@@ -98,6 +98,11 @@ const CanvasModule = {
         this._bindProjectPanel();
         // 素材库缓存变化（审核轮询/手动同步）→ 刷新画布内素材状态徽标
         document.addEventListener('aistudio-material-cache', () => this._refreshMaterialBadges());
+        // 退出/切后台前兜底落盘：防抖窗口内的最后一次编辑不丢（300ms 防抖 + 关窗时序问题）
+        window.addEventListener('beforeunload', () => this._saveNow());
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') this._saveNow();
+        });
         this.renderAll();
         this._renderProjects();
 
@@ -334,31 +339,60 @@ const CanvasModule = {
     _projectKey(id) { return ScopedStore.key('aistudio_canvas_project_' + id); },
     _newProjectId() { return 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); },
 
+    /** 磁盘持久化是否可用（Electron 主进程注册了 canvas:* 通道；无 handler 时自动回退 localStorage） */
+    get _diskPersist() { return !!(window.electronAPI && window.electronAPI.saveCanvasProject); },
+
+    /** 保存失败提示（30 秒节流：不用一次性标志，避免后续失败全部静默） */
+    _warnSaveFail(reason) {
+        const now = Date.now();
+        if (this._lastSaveWarn && now - this._lastSaveWarn < 30000) return;
+        this._lastSaveWarn = now;
+        Logger.warn('[画布] 画布保存失败: ' + reason);
+        UI.toast('画布自动保存失败：' + reason + '，本次改动可能未保存', 'warn', 6000);
+    },
+
+    /** 写入项目数据：磁盘优先（无配额限制），失败或不可用时回退 localStorage */
+    async _writeProject(id, state) {
+        const json = JSON.stringify(state);
+        if (this._diskPersist) {
+            const r = await window.electronAPI.saveCanvasProject(id, json)
+                .catch(e => ({ ok: false, error: e.message }));
+            if (r && r.ok) return true;
+            this._warnSaveFail(r && r.error || '主进程写入失败');
+            // 磁盘写失败（磁盘满/权限）→ 继续尝试 localStorage 兜底
+        }
+        try {
+            localStorage.setItem(this._projectKey(id), json);
+            return true;
+        } catch (e) {
+            this._warnSaveFail('本地存储空间不足（图片/视频节点过多）');
+            return false;
+        }
+    },
+
+    /** 读取项目数据：磁盘优先，读不到（旧版本数据在 localStorage）自动回退 */
+    async _readProject(id) {
+        if (this._diskPersist) {
+            const raw = await window.electronAPI.loadCanvasProject(id).catch(() => null);
+            if (raw) return raw;
+        }
+        return localStorage.getItem(this._projectKey(id));
+    },
+
     /** 立即落盘当前项目（绕过防抖；切换项目/刷新前调用） */
     _saveNow() {
         clearTimeout(this._saveTimer);
-        try {
-            const id = this.currentProjectId;
-            if (!id) return;
-            localStorage.setItem(this._projectKey(id), JSON.stringify({
-                nodes: this.nodes,
-                edges: this.edges,
-                viewport: this.viewport,
-            }));
-            const list = this._projects();
-            const p = list.find(x => x.id === id);
-            if (p) {
-                p.updatedAt = Date.now();
-                p.nodeCount = this.nodes.length;
-                this._saveProjects(list);
-            }
-        } catch (e) {
-            if (!this._quotaWarned) {
-                this._quotaWarned = true;
-                Logger.warn('[画布] 画布保存失败（本地存储空间不足），图片过多时请及时清理');
-                UI.toast('画布自动保存失败：本地存储空间不足，图片节点过多时建议同步素材库后删除大图', 'warn', 6000);
-            }
+        const id = this.currentProjectId;
+        if (!id) return;
+        const state = { nodes: this.nodes, edges: this.edges, viewport: this.viewport };
+        const list = this._projects();
+        const p = list.find(x => x.id === id);
+        if (p) {
+            p.updatedAt = Date.now();
+            p.nodeCount = this.nodes.length;
+            this._saveProjects(list);
         }
+        return this._writeProject(id, state); // 返回 Promise：await _saveNow() 可等待写盘完成
     },
 
     save() {
@@ -390,7 +424,7 @@ const CanvasModule = {
         this._idCounter = maxId + 1;
     },
 
-    _restore() {
+    async _restore() {
         try {
             let projects = this._projects();
             if (projects.length === 0) {
@@ -400,15 +434,19 @@ const CanvasModule = {
                 if (raw) { try { legacy = JSON.parse(raw); } catch (e) { legacy = null; } }
                 const id = this._newProjectId();
                 projects = [{ id, name: '默认项目', createdAt: Date.now(), updatedAt: Date.now() }];
-                localStorage.setItem(this._projectKey(id), JSON.stringify(legacy || { nodes: [], edges: [], viewport: { x: 0, y: 0, k: 1 } }));
+                await this._writeProject(id, legacy || { nodes: [], edges: [], viewport: { x: 0, y: 0, k: 1 } });
                 this._saveProjects(projects);
             }
             const curId = localStorage.getItem(this.PROJECT_CURRENT_KEY);
             const current = projects.find(p => p.id === curId) || projects[0];
             this.currentProjectId = current.id;
             localStorage.setItem(this.PROJECT_CURRENT_KEY, current.id);
-            const dataRaw = localStorage.getItem(this._projectKey(current.id));
-            this._applyLoadedState(dataRaw ? JSON.parse(dataRaw) : { nodes: [], edges: [] });
+            const dataRaw = await this._readProject(current.id);
+            let state = null;
+            if (dataRaw) { try { state = JSON.parse(dataRaw); } catch (e) { state = null; } }
+            this._applyLoadedState(state || { nodes: [], edges: [] });
+            // init 里的同步 renderAll 先渲染了空画布，异步载入完成后重绘一次
+            this.renderAll();
         } catch (e) {
             Logger.warn('[画布] 恢复画布失败: ' + e.message);
             this.nodes = [];
@@ -419,17 +457,18 @@ const CanvasModule = {
     // ===== 项目库管理 =====
 
     /** 切换项目：先落盘当前，再载入目标；清空撤销栈与选区 */
-    _loadProject(id) {
+    async _loadProject(id) {
         if (!this._projects().find(p => p.id === id)) return;
         if (id === this.currentProjectId) { this._renderProjects(); return; }
         this._saveNow();
-        const dataRaw = localStorage.getItem(this._projectKey(id));
-        try {
-            this._applyLoadedState(dataRaw ? JSON.parse(dataRaw) : { nodes: [], edges: [] });
-        } catch (e) {
-            Logger.warn('[画布] 项目数据损坏，已重置: ' + e.message);
-            this._applyLoadedState({ nodes: [], edges: [] });
+        const dataRaw = await this._readProject(id);
+        let state = null;
+        if (dataRaw) { try { state = JSON.parse(dataRaw); } catch (e) { state = null; } }
+        if (!state) {
+            Logger.warn('[画布] 项目数据损坏，已重置: ' + id);
+            state = { nodes: [], edges: [] };
         }
+        this._applyLoadedState(state);
         this.currentProjectId = id;
         localStorage.setItem(this.PROJECT_CURRENT_KEY, id);
         this._undoStack.length = 0;
@@ -442,7 +481,7 @@ const CanvasModule = {
         Logger.info(`[画布] 切换项目: ${id}`);
     },
 
-    _createProject(name) {
+    async _createProject(name) {
         const list = this._projects();
         const used = new Set(list.map(p => p.name));
         if (!name) {
@@ -452,43 +491,48 @@ const CanvasModule = {
         }
         const p = { id: this._newProjectId(), name, createdAt: Date.now(), updatedAt: Date.now(), nodeCount: 0 };
         list.unshift(p);
-        localStorage.setItem(this._projectKey(p.id), JSON.stringify({ nodes: [], edges: [], viewport: { x: 0, y: 0, k: 1 } }));
+        await this._writeProject(p.id, { nodes: [], edges: [], viewport: { x: 0, y: 0, k: 1 } });
         this._saveProjects(list);
-        this._loadProject(p.id);
+        await this._loadProject(p.id);
         return p;
     },
 
-    _deleteProject(id) {
+    async _deleteProject(id) {
         const list = this._projects();
         const p = list.find(x => x.id === id);
         if (!p) return;
         const next = list.filter(x => x.id !== id);
-        localStorage.removeItem(this._projectKey(id));
+        if (this._diskPersist) {
+            window.electronAPI.deleteCanvasProject(id).catch(() => {});
+        }
+        localStorage.removeItem(this._projectKey(id)); // 兜底清理 localStorage 旧数据
         if (next.length === 0) {
             // 最后一个项目：清空画布而不是删掉
             next.push({ id: this._newProjectId(), name: '默认项目', createdAt: Date.now(), updatedAt: Date.now(), nodeCount: 0 });
-            localStorage.setItem(this._projectKey(next[0].id), JSON.stringify({ nodes: [], edges: [], viewport: { x: 0, y: 0, k: 1 } }));
+            await this._writeProject(next[0].id, { nodes: [], edges: [], viewport: { x: 0, y: 0, k: 1 } });
         }
         this._saveProjects(next);
         if (id === this.currentProjectId) {
-            this._loadProject(next[0].id);
+            await this._loadProject(next[0].id);
         } else {
             this._renderProjects();
         }
     },
 
-    _duplicateProject(id) {
+    async _duplicateProject(id) {
         const list = this._projects();
         const src = list.find(x => x.id === id);
         if (!src) return;
-        const dataRaw = localStorage.getItem(this._projectKey(id));
+        const dataRaw = await this._readProject(id);
         const copy = {
             id: this._newProjectId(),
             name: src.name + ' 副本',
             createdAt: Date.now(), updatedAt: Date.now(),
             nodeCount: src.nodeCount || 0,
         };
-        localStorage.setItem(this._projectKey(copy.id), dataRaw || JSON.stringify({ nodes: [], edges: [] }));
+        let state = null;
+        if (dataRaw) { try { state = JSON.parse(dataRaw); } catch (e) { state = null; } }
+        await this._writeProject(copy.id, state || { nodes: [], edges: [] });
         const idx = list.findIndex(x => x.id === id);
         list.splice(idx + 1, 0, copy);
         this._saveProjects(list);
@@ -528,8 +572,7 @@ const CanvasModule = {
 
         document.getElementById('canvasProjectNewBtn')?.addEventListener('click', () => {
             this._saveNow();
-            const p = this._createProject();
-            UI.toast(`已创建「${p.name}」`, 'success');
+            this._createProject().then(p => UI.toast(`已创建「${p.name}」`, 'success'));
         });
     },
 

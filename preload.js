@@ -16,6 +16,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   compressTimelineVideo: (payload) => ipcRenderer.invoke('timeline:compress-video', payload),
   cancelTimelineCompression: (id) => ipcRenderer.send('timeline:cancel-compression', id),
   ffmpegAvailable: () => ipcRenderer.invoke('video:ffmpeg-available'),
+  // 画布项目磁盘持久化（项目 JSON 可能远超 localStorage 配额，落盘 userData/canvas-projects/）
+  saveCanvasProject: (id, json) => ipcRenderer.invoke('canvas:save-project', { id, json }),
+  loadCanvasProject: (id) => ipcRenderer.invoke('canvas:load-project', { id }),
+  deleteCanvasProject: (id) => ipcRenderer.invoke('canvas:delete-project', { id }),
   // 注册码（一码一机）：授权状态查询 / 激活
   getLicenseState: () => ipcRenderer.invoke('license:get-state'),
   activateLicense: (code) => ipcRenderer.invoke('license:activate', code),

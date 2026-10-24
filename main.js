@@ -543,8 +543,13 @@ app.whenReady().then(() => {
     }
   });
 
-  const timelineCompressions = new Map();
-  ipcMain.on('timeline:cancel-compression', (event, id) => {
+  // ===== 画布项目磁盘持久化 =====
+  // 项目 JSON（含节点内联媒体 base64）可能远超 localStorage 配额（约 5-10MB），
+  // 落盘到 userData/canvas-projects/<账号|shared>/<projectId>.json，localStorage 只保留项目索引。
+  const { registerCanvasPersistIpc } = require('./canvas-persist');
+  registerCanvasPersistIpc(ipcMain, app, auth, fs, fsp);
+
+  const timelineCompressions = new Map();  ipcMain.on('timeline:cancel-compression', (event, id) => {
     const entry = timelineCompressions.get(id);
     if (entry && entry.sender === event.sender) entry.child?.kill('SIGKILL');
     if (entry && entry.sender === event.sender) entry.cancelled = true;

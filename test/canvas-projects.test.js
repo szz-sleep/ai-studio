@@ -51,7 +51,7 @@ app.whenReady().then(async () => {
                 nodes: [{ id: 'text_m1', type: 'text', x: 0, y: 0, w: 240, h: 0, data: { text: 'legacy' } }],
                 edges: [], viewport: { x: 1, y: 2, k: 1.5 },
             }));
-            CM._restore();
+            await CM._restore();
             const p1 = CM.currentProjectId;
             r.migrated = CM._projects().length === 1
                 && CM._projects()[0].name === '默认项目'
@@ -61,34 +61,34 @@ app.whenReady().then(async () => {
 
             // 项目内加一个图片节点
             const img = CM.addNode('image', 50, 50);
-            CM._saveNow();
+            await CM._saveNow();
             const p1NodeCount = CM.nodes.length;
 
-            // 新建项目 → 空画布 + 切换
-            const p2 = CM._createProject('测试B');
+            // 新建项目 → 空画布 + 切换（持久化改磁盘后这些方法均为 async）
+            const p2 = await CM._createProject('测试B');
             r.created = !!p2 && CM.currentProjectId === p2.id && CM.nodes.length === 0;
             // P2 内加视频节点
             CM.addNode('video', 0, 0);
-            CM._saveNow();
+            await CM._saveNow();
             // 切回 P1：数据隔离
-            CM._loadProject(p1);
+            await CM._loadProject(p1);
             r.isolationP1 = CM.currentProjectId === p1 && CM.nodes.length === p1NodeCount
                 && CM.nodes.some(n => n.id === img.id);
             // 再切到 P2：视频节点还在
-            CM._loadProject(p2.id);
+            await CM._loadProject(p2.id);
             r.isolationP2 = CM.currentProjectId === p2.id && CM.nodes.some(n => n.type === 'video');
             // 重命名
             CM._renameProject(p2.id, '改名B');
             r.renamed = CM._projects().find(p => p.id === p2.id).name === '改名B';
             // 复制
-            CM._duplicateProject(p2.id);
+            await CM._duplicateProject(p2.id);
             const copy = CM._projects().find(p => p.name === '改名B 副本');
             r.duplicated = !!copy && CM.currentProjectId === p2.id;
             // 删除副本（非当前项目）
-            CM._deleteProject(copy.id);
+            await CM._deleteProject(copy.id);
             r.deletedCopy = !CM._projects().find(p => p.id === copy.id) && CM.currentProjectId === p2.id;
             // 删除当前项目 → 落到剩余第一个
-            CM._deleteProject(p2.id);
+            await CM._deleteProject(p2.id);
             r.deletedCurrent = CM.currentProjectId !== p2.id && CM._projects().length === 1;
             // 面板渲染
             CM._renderProjects();

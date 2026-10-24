@@ -225,7 +225,7 @@ function assert(name, cond, extra) {
 
         // 项目重命名：模拟真实双击序列（单击触发重渲染 → dblclick 落在新元素上）
         const list = document.getElementById('canvasProjectsList');
-        if (CM._projects().length === 0) CM._createProject('重命名前的项目'); // setup 清过索引则重建
+        if (CM._projects().length === 0) await CM._createProject('重命名前的项目'); // setup 清过索引则重建（持久化改造后为 async）
         CM._renderProjects();
         const pid = CM.currentProjectId;
         const item = list.querySelector('.canvas-project-item[data-id="' + pid + '"]');
@@ -243,7 +243,7 @@ function assert(name, cond, extra) {
         }
         r.renamed = CM._projects().find(x => x.id === pid)?.name === '重命名后的项目';
         // 非活动项目重命名（委托按 id 查实时元素）
-        const pB = CM._createProject('待改名B');
+        const pB = await CM._createProject('待改名B');
         await new Promise(res => setTimeout(res, 50));
         const itemB = list.querySelector('.canvas-project-item[data-id="' + pB.id + '"]');
         itemB.querySelector('.canvas-project-name').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
@@ -256,7 +256,7 @@ function assert(name, cond, extra) {
             await new Promise(res => setTimeout(res, 80));
         }
         r.inactiveRenamed = CM._projects().find(x => x.id === pB.id)?.name === '改名B完成';
-        CM._loadProject(pid); // 还原当前项目
+        await CM._loadProject(pid); // 还原当前项目
         return r;
     })()`);
     assert('pin.activeToggles', rMisc.pinActive === true, rMisc.pinActive);

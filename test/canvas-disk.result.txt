@@ -1,0 +1,6 @@
+PASS disk.persistAvailable
+PASS disk.fileWritten
+PASS disk.fileHasMedia
+PASS disk.restored
+PASS disk.mediaSurvived
+ALL PASS
