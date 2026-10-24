@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 保存远程资源到本地历史目录，返回 { ok, path, fileUrl } 或 { ok:false, error }
   saveToLocal: (payload) => ipcRenderer.invoke('history:save', payload),
   saveHistoryVideo: (payload) => ipcRenderer.invoke('history:save-video-bytes', payload),
+  saveHistoryBytes: (payload) => ipcRenderer.invoke('history:save-bytes', payload),
   // 抽取视频末帧（30 秒两段生成的衔接用），返回 { ok, dataUrl }
   extractLastFrame: (payload) => ipcRenderer.invoke('video:extract-last-frame', payload),
   // 拼接多段视频并落盘，返回 { ok, path, fileUrl }

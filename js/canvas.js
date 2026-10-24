@@ -574,6 +574,103 @@ const CanvasModule = {
             this._saveNow();
             this._createProject().then(p => UI.toast(`已创建「${p.name}」`, 'success'));
         });
+
+        // ===== 历史记录面板（与主页历史同源：History 模块） =====
+        const hWrap = document.getElementById('canvasHistory');
+        const hPanel = document.getElementById('canvasHistoryPanel');
+        const hHandle = document.getElementById('canvasHistoryHandle');
+        hHandle?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            hPanel.classList.toggle('hidden');
+            if (!hPanel.classList.contains('hidden')) this._renderHistoryPanel();
+        });
+        hPanel?.addEventListener('click', (e) => e.stopPropagation());
+        // 点击画布其他区域收起面板
+        document.addEventListener('mousedown', (e) => {
+            if (hWrap && hWrap.contains(e.target)) return;
+            hPanel?.classList.add('hidden');
+        });
+        document.getElementById('canvasHistoryClearBtn')?.addEventListener('click', async () => {
+            if (!History.getAll().length) return;
+            if (await UI.confirm('确定清空全部历史记录吗？（仅清除记录列表，已落盘的文件保留）', { danger: true })) {
+                History.clear();
+                this._renderHistoryPanel();
+            }
+        });
+    },
+
+    /** 渲染画布历史记录悬浮面板 */
+    _renderHistoryPanel() {
+        const list = document.getElementById('canvasHistoryList');
+        if (!list) return;
+        const items = (typeof History !== 'undefined') ? History.getAll() : [];
+        if (!items.length) {
+            list.innerHTML = '<div class="canvas-history-empty">暂无记录<br>画布生成的图片/视频会自动保存在这里</div>';
+            return;
+        }
+        list.innerHTML = '';
+        items.forEach((item, index) => {
+            const div = document.createElement('div');
+            div.className = 'canvas-history-item';
+            const timeStr = new Date(item.time).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+            div.title = item.prompt || ''; // 用 property 赋值而非拼 HTML，防注入
+            div.innerHTML = (item.type === 'video'
+                ? `<video src="${item.url}" preload="metadata" muted></video>`
+                : `<img src="${item.url}" loading="lazy" alt="">`)
+                + `<span class="h-tag">${timeStr}</span><button class="h-del" title="删除">×</button>`;
+            div.addEventListener('click', (e) => {
+                if (e.target.closest('.h-del')) return;
+                if (item.type === 'video') UI.previewVideo(item.url, '');
+                else UI.previewImage(item.url, '');
+            });
+            div.querySelector('.h-del').addEventListener('click', async (e) => {
+                e.stopPropagation();
+                if (await UI.confirm('确定删除这条历史记录吗？', { danger: true })) {
+                    History.remove(index);
+                    this._renderHistoryPanel();
+                }
+            });
+            list.appendChild(div);
+        });
+    },
+
+    /**
+     * 画布生成结果自动进历史记录（与主页历史同源：History 模块）
+     * - http(s) 结果：走 History 自带 autosave（主进程下载到 history 目录）
+     * - base64 结果：先经主进程落盘 history 目录，历史里存 file:// 路径，避免大 base64 撑爆 localStorage
+     */
+    _saveResultToHistory(type, url, prompt, model) {
+        try {
+            if (!url) return;
+            const item = { type, url, prompt: prompt || '', model: model || '', time: Date.now(), source: 'canvas' };
+            if (/^data:/i.test(url) && window.electronAPI?.saveHistoryBytes) {
+                (async () => {
+                    try {
+                        const blob = await (await fetch(url)).blob();
+                        const bytes = new Uint8Array(await blob.arrayBuffer());
+                        const saved = await window.electronAPI.saveHistoryBytes({
+                            bytes,
+                            folder: type === 'video' ? '视频' : '图片',
+                            filename: `ai-${type}-${Date.now()}${type === 'video' ? '.mp4' : '.png'}`,
+                        });
+                        if (saved?.ok) {
+                            item.url = saved.fileUrl;
+                            Logger.info('[画布] 生成结果已保存到本地: ' + saved.path);
+                        } else {
+                            Logger.warn('[画布] 生成结果落盘失败，历史条目将内联保存: ' + (saved?.error || ''));
+                        }
+                    } catch (e) {
+                        Logger.warn('[画布] 历史落盘异常: ' + e.message);
+                    }
+                    History.add(item);
+                    this._renderHistoryPanel();
+                })();
+            } else {
+                History.add({ ...item, autosave: true }).then(() => this._renderHistoryPanel());
+            }
+        } catch (e) {
+            Logger.warn('[画布] 历史记录保存失败: ' + e.message);
+        }
     },
 
     _renderProjects() {
@@ -1138,16 +1235,27 @@ const CanvasModule = {
             const target = e.target;
             if (target.closest('textarea, select, input, button, video, audio, .cnode-port, .cnode-ref-labels')) return;
             e.stopPropagation();
-            this._selectNode(el.dataset.id, e.shiftKey || e.ctrlKey || e.metaKey);
+            const id = el.dataset.id;
+            const additive = e.shiftKey || e.ctrlKey || e.metaKey;
+            const wasSelected = this.selection.has(id);
+            if (additive) {
+                // Ctrl/Shift 多选：未选中则加入；已选中则保持现有多选不变，允许整体拖动
+                // （旧逻辑在按下瞬间切换选中，导致 Ctrl 多选后一拖就只剩一个节点）
+                if (!wasSelected) this._selectNode(id, true);
+            } else {
+                this._selectNode(id, false);
+            }
             const world = this._screenToWorld(e.clientX, e.clientY);
             this._drag = {
                 type: 'node',
                 startWx: world.x, startWy: world.y,
-                origins: Array.from(this.selection).map(id => {
-                    const nn = this.getNode(id);
-                    return { id, x: nn.x, y: nn.y };
+                origins: Array.from(this.selection).map(id2 => {
+                    const nn = this.getNode(id2);
+                    return { id: id2, x: nn.x, y: nn.y };
                 }),
                 moved: false,
+                // Ctrl/Shift 点在已选节点上：松手时未拖动则从多选中移除（实现 Ctrl+单击取消单个）
+                toggleOff: (additive && wasSelected) ? id : null,
             };
         });
 
@@ -1649,6 +1757,7 @@ const CanvasModule = {
             setStatus('idle', { error: '', done: true });
             this.renderAll();
             this.save();
+            this._saveResultToHistory('image', url, prompt, model);
             UI.toast('图片生成成功！可继续连线到视频节点', 'success');
             Logger.success('[画布] 图片生成完成');
         } catch (err) {
@@ -1975,7 +2084,7 @@ const CanvasModule = {
                 this._drag = { type: 'select', startWx: world.x, startWy: world.y };
             } else if (e.button === 0 || e.button === 1) {
                 // 拖拽平移
-                this._drag = { type: 'pan', sx: e.clientX, sy: e.clientY, ox: this.viewport.x, oy: this.viewport.y };
+                this._drag = { type: 'pan', sx: e.clientX, sy: e.clientY, ox: this.viewport.x, oy: this.viewport.y, moved: false };
                 vp.classList.add('panning');
             }
             if (this._tempEdge) {
@@ -2011,6 +2120,7 @@ const CanvasModule = {
         }
         const d = this._drag;
         if (d.type === 'pan') {
+            if (Math.abs(e.clientX - d.sx) > 3 || Math.abs(e.clientY - d.sy) > 3) d.moved = true;
             this.viewport.x = d.ox + (e.clientX - d.sx);
             this.viewport.y = d.oy + (e.clientY - d.sy);
             this._applyViewport();
@@ -2092,6 +2202,14 @@ const CanvasModule = {
 
         if (d.type === 'node' && d.moved) {
             this.save();
+        } else if (d.type === 'node' && d.toggleOff) {
+            // Ctrl/Shift 单击已选节点（未拖动）：从多选中移除该节点
+            this.selection.delete(d.toggleOff);
+            this._renderSelection();
+        } else if (d.type === 'pan' && !d.moved) {
+            // 单击空白（非拖动）：取消节点选中与小标红色高亮
+            this.selection.clear();
+            this._setRefPick(null);
         } else if (d.type === 'select' && d.cur) {
             const r = d.cur;
             this._refPick = null; // 框选清除标签点选的高亮
@@ -3129,6 +3247,7 @@ const CanvasModule = {
             node.data.status = 'done';
             node.data.progress = 100;
             node.data.videoUrl = videoUrl;
+            this._saveResultToHistory('video', videoUrl, node.data.prompt || '', model);
             this._updateVideoNodeStatus(
                 this._nodesLayer.querySelector(`.cnode[data-id="${node.id}"]`), node);
             UI.toast('视频生成成功！', 'success');

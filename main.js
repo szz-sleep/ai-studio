@@ -545,6 +545,24 @@ app.whenReady().then(() => {
       return { ok: false, error: err.message };
     }
   });
+  // 通用字节落盘：画布等模块把 base64 解码后的图片/视频写入历史目录（folder 可指定 图片/视频）
+  ipcMain.handle('history:save-bytes', async (event, { bytes, folder, filename }) => {
+    try {
+      const data = Buffer.from(bytes);
+      if (!data.length || data.length > 200 * 1024 * 1024) throw new Error('文件大小超出本地历史记录限制');
+      const safeFolder = String(folder || '默认').replace(/[\\/:*?"<>|]/g, '_');
+      const safeName = String(filename || `ai-file-${Date.now()}`)
+        .replace(/[\\/:*?"<>|]/g, '_')
+        .slice(-80);
+      const dir = getHistoryDir(safeFolder);
+      const localPath = path.join(dir, safeName);
+      await fsp.writeFile(localPath, data);
+      await enforceHistoryQuota(dir);
+      return { ok: true, path: localPath, fileUrl: 'file://' + localPath };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
   // 本地持久化：把远程视频/图片保存到本地 history 目录，返回本地 file:// 路径
   ipcMain.handle('history:save', async (event, { url, folder, filename }) => {
     try {
