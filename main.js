@@ -7,8 +7,6 @@ const http = require('http');
 const net = require('net');
 const os = require('os');
 const { spawn, execSync } = require('child_process');
-const license = require('./license.js');
-const auth = require('./auth.js');
 
 // 更名为「云镜AI Studio」后，固定用户数据目录，避免 localStorage（API 配置/会话）丢失
 app.setPath('userData', path.join(app.getPath('appData'), 'ai-studio'));
@@ -43,10 +41,10 @@ function downloadToBuffer(url) {
   });
 }
 
-// 保存目录：~/Documents/AI Studio/history/<用户uid|shared>/{视频|图片}
-// 按 uid 一级子目录实现多用户工作空间隔离；未登录（测试/降级）落 shared
+// 保存目录：~/Documents/AI Studio/history/shared/{视频|图片}
+// （多用户账号体系已移除，统一落 shared；旧版按 uid 的子目录启动时自动迁移合并）
 function getHistoryDir(folder) {
-  const base = path.join(app.getPath('documents'), 'AI Studio', 'history', auth.currentUid() || 'shared');
+  const base = path.join(app.getPath('documents'), 'AI Studio', 'history', 'shared');
   const dir = path.join(base, folder || '默认');
   fs.mkdirSync(dir, { recursive: true });
   return dir;
@@ -437,19 +435,12 @@ const menuTemplate = [
       {
         label: '关于 云镜AI Studio',
         click: async () => {
-          let licText = '未激活';
-          try {
-            const st = await license.getState();
-            if (st.status === 'ok') licText = st.expiryTime ? ('已激活（' + new Date(st.expiryTime).toLocaleDateString() + ' 到期）') : '已激活（永久）';
-            else if (st.status === 'expired') licText = '已过期';
-            else if (st.status === 'clock_rollback') licText = '系统时间异常';
-          } catch { /* 忽略 */ }
           const { dialog } = require('electron');
           dialog.showMessageBox(mainWindow, {
             type: 'info',
             title: '关于 云镜AI Studio',
             message: '云镜AI Studio - AI创作工坊',
-            detail: '版本 V2.0.1\n湖北生而为一科技有限公司\n授权：' + licText
+            detail: '版本 V2.0.1\n湖北生而为一科技有限公司'
           });
         }
       }
@@ -457,17 +448,63 @@ const menuTemplate = [
   }
 ];
 
+// ===== 旧版多用户数据迁移（账号体系已移除）=====
+// 把按 uid 隔离的磁盘数据搬回 shared 空间：只做 rename、不覆盖已有文件、绝不删除，可重复执行。
+// 选择"最近使用"的账号目录（文件 mtime 最新），多个账号时其余目录原样保留。
+function migrateLegacyUserDirs() {
+  try {
+    const moveAll = (srcDir, destDir) => {
+      for (const name of fs.readdirSync(srcDir)) {
+        const src = path.join(srcDir, name);
+        const dest = path.join(destDir, name);
+        try { fs.renameSync(src, dest); } catch (e) { if (e.code !== 'EEXIST' && e.code !== 'ENOTEMPTY') throw e; }
+      }
+    };
+    // 画布项目：userData/canvas-projects/<uid>/*.json → shared/
+    const cpBase = path.join(app.getPath('userData'), 'canvas-projects');
+    const cpDirs = fs.readdirSync(cpBase, { withFileTypes: true })
+      .filter(d => d.isDirectory() && d.name !== 'shared')
+      .map(d => d.name);
+    if (cpDirs.length) {
+      const newest = cpDirs.map(uid => {
+        const dir = path.join(cpBase, uid);
+        let m = 0;
+        try { for (const f of fs.readdirSync(dir)) m = Math.max(m, fs.statSync(path.join(dir, f)).mtimeMs); } catch { /* 忽略 */ }
+        return { uid, m };
+      }).sort((a, b) => b.m - a.m)[0];
+      const shared = path.join(cpBase, 'shared');
+      fs.mkdirSync(shared, { recursive: true });
+      moveAll(path.join(cpBase, newest.uid), shared);
+      console.log('[migrate] 画布项目已从账号空间迁回 shared:', newest.uid);
+    }
+    // 历史媒体：Documents/AI Studio/history/<uid>/{视频|图片|默认} → shared/
+    const hBase = path.join(app.getPath('documents'), 'AI Studio', 'history');
+    const hDirs = fs.readdirSync(hBase, { withFileTypes: true })
+      .filter(d => d.isDirectory() && d.name !== 'shared')
+      .map(d => d.name);
+    if (hDirs.length) {
+      const newest = hDirs.map(uid => {
+        const dir = path.join(hBase, uid);
+        let m = 0;
+        try { for (const f of fs.readdirSync(dir, { recursive: true })) { try { m = Math.max(m, fs.statSync(path.join(dir, f)).mtimeMs); } catch { /* 忽略 */ } } } catch { /* 忽略 */ }
+        return { uid, m };
+      }).sort((a, b) => b.m - a.m)[0];
+      const shared = path.join(hBase, 'shared');
+      fs.mkdirSync(shared, { recursive: true });
+      const srcDir = path.join(hBase, newest.uid);
+      for (const folder of fs.readdirSync(srcDir, { withFileTypes: true }).filter(d => d.isDirectory())) {
+        fs.mkdirSync(path.join(shared, folder.name), { recursive: true });
+        moveAll(path.join(srcDir, folder.name), path.join(shared, folder.name));
+      }
+      console.log('[migrate] 历史媒体已从账号空间迁回 shared:', newest.uid);
+    }
+  } catch (e) {
+    console.warn('[migrate] 旧数据迁移失败（不影响使用）:', e.message);
+  }
+}
+
 app.whenReady().then(() => {
-  // 注册码机制（一码一机）：预热指纹、推进防回拨受信时间
-  license.init().then((st) => console.log('[license] 授权状态:', st.status, '机器码:', st.machineCode)).catch(() => {});
-
-  // 注册码 IPC
-  ipcMain.handle('license:get-state', () => license.getState());
-  ipcMain.handle('license:activate', (event, code) => license.activate(String(code || '')));
-
-  // 本地多用户账号 IPC；测试/异常入口（非 main.js 启动）不启用登录门禁
-  auth.setTestMode(path.resolve(app.getAppPath()) !== path.resolve(__dirname));
-  auth.initIpc(ipcMain);
+  migrateLegacyUserDirs();
 
   // 拉起 Agent 对话后端（异步，不阻塞窗口创建）
   startAgentBackend();
@@ -545,9 +582,9 @@ app.whenReady().then(() => {
 
   // ===== 画布项目磁盘持久化 =====
   // 项目 JSON（含节点内联媒体 base64）可能远超 localStorage 配额（约 5-10MB），
-  // 落盘到 userData/canvas-projects/<账号|shared>/<projectId>.json，localStorage 只保留项目索引。
+  // 落盘到 userData/canvas-projects/shared/<projectId>.json，localStorage 只保留项目索引。
   const { registerCanvasPersistIpc } = require('./canvas-persist');
-  registerCanvasPersistIpc(ipcMain, app, auth, fs, fsp);
+  registerCanvasPersistIpc(ipcMain, app, fs, fsp);
 
   const timelineCompressions = new Map();  ipcMain.on('timeline:cancel-compression', (event, id) => {
     const entry = timelineCompressions.get(id);

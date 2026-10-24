@@ -25,8 +25,6 @@
     },
     "files": [
       "main.js",
-      "license.js",
-      "auth.js",
       "canvas-persist.js",
       "preload.js",
       "index.html",
@@ -58,8 +56,6 @@
       "artifactName": "云镜AI Studio-${version}-${arch}.${ext}",
       "files": [
         "main.js",
-        "license.js",
-        "auth.js",
         "canvas-persist.js",
         "preload.js",
         "index.html",
@@ -119,8 +115,6 @@
       ],
       "files": [
         "main.js",
-        "license.js",
-        "auth.js",
         "canvas-persist.js",
         "preload.js",
         "index.html",

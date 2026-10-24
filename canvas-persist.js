@@ -11,10 +11,10 @@
  */
 const path = require('path');
 
-function registerCanvasPersistIpc(ipcMain, app, auth, fsSync, fsp) {
+function registerCanvasPersistIpc(ipcMain, app, fsSync, fsp) {
   function canvasProjectDir() {
-    const scope = String((auth && auth.currentUid()) || 'shared').replace(/[^a-zA-Z0-9_-]/g, '_');
-    const dir = path.join(app.getPath('userData'), 'canvas-projects', scope);
+    // 多用户账号体系已移除，统一落 shared（旧版按 uid 的子目录由主进程启动时迁移合并）
+    const dir = path.join(app.getPath('userData'), 'canvas-projects', 'shared');
     try { fsSync.mkdirSync(dir, { recursive: true }); } catch { /* 已存在 */ }
     return dir;
   }

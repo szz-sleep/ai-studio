@@ -21,7 +21,7 @@ PASS ref.twoLabels :: ["图片1","图片2"]
 PASS ref.labelText :: ["图片1","图片2"]
 PASS ref.titleHasName :: "图片1：第一张 —— 在提示词中可用「图片1」引用这个素材"
 PASS ref.singleNoLabels :: true
-PASS ref.clickSelectsSource :: {"src":"image_mvmglb3y_5","exp":"image_mvmglb3y_5","before":["text_mvmglb3q_1"],"after":["image_mvmglb3y_5"]}
+PASS ref.clickSelectsSource :: {"src":"image_mvmhkuzw_5","exp":"image_mvmhkuzw_5","before":["text_mvmhkuzl_1"],"after":["image_mvmhkuzw_5"]}
 PASS ref.noNodeDragOnMousedown :: true
 PASS ref.redHighlight :: {"pick":true,"border":"rgb(239, 68, 68)"}
 PASS ref.pickClearedOnNormalSelect :: {"cleared":true,"border":"rgb(59, 130, 246)"}

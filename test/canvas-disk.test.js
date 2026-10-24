@@ -23,7 +23,7 @@ const assert = (name, cond, extra) => {
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 const { registerCanvasPersistIpc } = require('../canvas-persist');
-registerCanvasPersistIpc(ipcMain, app, { currentUid: () => null }, fs, fsp); // 未登录 → shared 目录
+registerCanvasPersistIpc(ipcMain, app, fs, fsp); // 统一 shared 目录（账号体系已移除）
 
 app.whenReady().then(async () => {
     try {

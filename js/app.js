@@ -905,8 +905,7 @@ const App = {
     }
 };
 
-// 启动：等待登录门禁放行（测试/无 auth 环境立即放行），再初始化应用
+// 启动：直接初始化应用（登录门禁已移除，无账号体系）
 document.addEventListener('DOMContentLoaded', () => {
-    const gate = (window.Auth && window.Auth.ready) ? window.Auth.ready : Promise.resolve();
-    gate.then(() => { try { App.init(); } catch (e) { console.error('应用初始化失败:', e); } });
+    try { App.init(); } catch (e) { console.error('应用初始化失败:', e); }
 });

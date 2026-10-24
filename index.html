@@ -11,60 +11,6 @@
 </head>
 <body>
 
-    <!-- 激活遮罩：未激活/异常时覆盖全应用（license.js 校验通过后才隐藏） -->
-    <div id="activationOverlay" class="activation-overlay">
-        <div class="activation-card">
-            <div class="activation-logo"><img src="assets/icon.png" width="46" height="46" alt=""></div>
-            <h1 class="activation-title">激活 云镜AI Studio</h1>
-            <p class="activation-sub" id="activationSub">请将下方机器码发送给管理员，获取对应的注册码（一个注册码仅能在一台电脑上激活）</p>
-            <div class="activation-machine">
-                <span class="activation-machine-label">机器码</span>
-                <span id="activationMachineCode" class="activation-machine-code">读取中…</span>
-                <button type="button" id="activationCopyBtn" class="activation-btn-copy" title="复制机器码">复制</button>
-            </div>
-            <div class="activation-input-row">
-                <input type="text" id="activationCodeInput" placeholder="输入卡密（YJ-XXXX-XXXX-XXXX）或注册码" autocomplete="off" spellcheck="false">
-            </div>
-            <div id="activationMsg" class="activation-msg"></div>
-            <button type="button" id="activationBtn" class="activation-btn-activate">激 活</button>
-            <div class="activation-footer">湖北生而为一科技有限公司</div>
-        </div>
-    </div>
-
-    <!-- 登录遮罩：卡密激活通过后，需登录/注册本地账号进入工作空间（多用户数据隔离） -->
-    <div id="authOverlay" class="activation-overlay hidden">
-        <div class="activation-card">
-            <div class="activation-logo"><img src="assets/icon.png" width="46" height="46" alt=""></div>
-            <h1 class="activation-title" id="authTitle">登录 云镜AI Studio</h1>
-            <p class="activation-sub">每个账号拥有独立的 API Key、历史记录、素材库与画布项目</p>
-            <div class="activation-input-row">
-                <input type="text" id="authUsername" placeholder="用户名（2-24 位，可含中文/字母/数字/下划线）" autocomplete="username" spellcheck="false" maxlength="24">
-            </div>
-            <div class="activation-input-row">
-                <div class="pw-wrap">
-                    <input type="password" id="authPassword" placeholder="密码（至少 6 位）" autocomplete="current-password">
-                    <button type="button" class="pw-eye" data-eye="authPassword" tabindex="-1" title="显示/隐藏密码">
-                        <svg class="eye-open" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                        <svg class="eye-off hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                    </button>
-                </div>
-            </div>
-            <div class="activation-input-row hidden" id="authPassword2Row">
-                <div class="pw-wrap">
-                    <input type="password" id="authPassword2" placeholder="再次输入密码" autocomplete="new-password">
-                    <button type="button" class="pw-eye" data-eye="authPassword2" tabindex="-1" title="显示/隐藏密码">
-                        <svg class="eye-open" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                        <svg class="eye-off hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                    </button>
-                </div>
-            </div>
-            <div id="authMsg" class="activation-msg"></div>
-            <button type="button" id="authSubmitBtn" class="activation-btn-activate">登 录</button>
-            <div class="auth-toggle-row"><a href="javascript:void(0)" id="authToggleLink">没有账号？注册一个</a></div>
-            <div class="activation-footer">湖北生而为一科技有限公司</div>
-        </div>
-    </div>
-
     <!-- 顶部导航 -->
     <header class="top-bar">
         <div class="logo">
@@ -73,11 +19,6 @@
             <span class="logo-sub">湖北生而为一科技有限公司</span>
         </div>
         <div class="top-right">
-            <span id="userBadge" class="user-badge hidden" title="点击打开账号菜单"></span>
-            <div id="userMenu" class="user-menu hidden">
-                <button type="button" id="userMenuLogout">退出登录</button>
-                <button type="button" id="userMenuDelete" class="danger">注销用户…</button>
-            </div>
             <span id="keyStatus" class="key-status unset">未设置API Key</span>
             <button id="settingsBtn" class="btn-icon" title="设置" onclick="document.getElementById('settingsModal').classList.remove('hidden')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
             <button id="themeToggleBtnTop" class="btn-icon" title="切换深色/浅色模式">
@@ -916,8 +857,6 @@
     <script src="js/redraw.js"></script>
     <script src="js/agent.js"></script>
     <script src="js/canvas.js"></script>
-    <script src="js/activation.js"></script>
-    <script src="js/auth.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>
