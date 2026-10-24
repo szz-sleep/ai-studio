@@ -668,7 +668,7 @@ const CanvasModule = {
         if (type === 'image') {
             base.data = {
                 url: '', name: '', assetId: null,
-                model: '', promptOwn: '', ratio: '1:1', resolution: '720p',
+                model: '', promptOwn: '', ratio: '1:1', resolution: '720P',
                 status: 'idle', error: '',
             };
             // 新建图片节点默认用工具栏下方图片模型（若已加载）
@@ -971,8 +971,8 @@ const CanvasModule = {
                             <option value="3:4">3:4</option><option value="9:16">9:16</option>
                         </select>
                         <select class="cnode-img-res" title="分辨率">
-                            <option value="480p">480p</option><option value="720p" selected>720p</option>
-                            <option value="1080p">1080p</option><option value="4K">4K</option>
+                            <option value="480P">480P</option><option value="720P" selected>720P</option>
+                            <option value="1080P">1080P</option><option value="4K">4K</option>
                         </select>
                         <button class="cnode-btn cnode-img-generate-btn" title="生成图片（有上游图片时为图生图）">${this._ICONS.zap} 生图</button>
                     </div>
@@ -1108,12 +1108,16 @@ const CanvasModule = {
             };
         });
 
-        // 双击：图片节点上传 / 素材节点选择 / 音频节点上传 / 视频节点上传
+        // 双击：图片节点打开预览（空节点上传）/ 素材节点选择 / 音频节点上传 / 视频节点上传
         el.addEventListener('dblclick', (e) => {
             if (e.target.closest('textarea, select, input, button, video, audio')) return;
             const nn = node();
             if (!nn) return;
-            if (nn.type === 'image') this._pickLocalImage(nn);
+            // 图片节点：已有图 → 双击打开大图预览（替换图片走卡片左下角的替换按钮）；空节点 → 双击上传
+            if (nn.type === 'image') {
+                if (nn.data && nn.data.url) this._openImagePreview(nn.data.url);
+                else this._pickLocalImage(nn);
+            }
             if (nn.type === 'material') this._pickMaterial(nn);
             if (nn.type === 'audio') this._pickLocalAudio(nn);
             if (nn.type === 'video') this._pickLocalVideo(nn);
@@ -1403,10 +1407,41 @@ const CanvasModule = {
     /** 图片节点实际像素尺寸（复用文生图页的 RESOLUTION_SIZE_MAP） */
     _imageSize(node) {
         try {
-            const map = (typeof RESOLUTION_SIZE_MAP !== 'undefined') ? RESOLUTION_SIZE_MAP : null;
-            const size = map && map[node.data.resolution] && map[node.data.resolution][node.data.ratio];
-            return size || '1920x1920';
+            // 与文生图/图生图页统一：模型感知档位计算（gpt-image 走 GPT_IMAGE_TIERS，火山系走标准阶梯）
+            if (typeof ImageSize !== 'undefined' && ImageSize.compute) {
+                return ImageSize.compute(node.data.model || '', node.data.resolution || '720P', node.data.ratio || '1:1').size;
+            }
+            return '1920x1920';
         } catch (e) { return '1920x1920'; }
+    },
+
+    /** 参考图 → Blob（gpt-image multipart 直传用；支持 dataURI 与公网 URL） */
+    async _refToBlob(src, name) {
+        try {
+            const resp = await fetch(src);
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            return await resp.blob();
+        } catch (e) {
+            throw new Error(`参考图「${name || '图片'}」获取失败（${e.message}）。gpt-image 需要图片字节本身，请换用本地上传的图片`);
+        }
+    },
+
+    /** 双击打开图片大图预览（点击/Esc/再次双击关闭） */
+    _openImagePreview(url) {
+        document.getElementById('cnode-img-lightbox')?.remove();
+        const ov = document.createElement('div');
+        ov.id = 'cnode-img-lightbox';
+        ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;cursor:zoom-out;';
+        const img = document.createElement('img');
+        img.src = url;
+        img.alt = '图片预览';
+        img.style.cssText = 'max-width:92vw;max-height:92vh;border-radius:10px;box-shadow:0 12px 48px rgba(0,0,0,.5);';
+        ov.appendChild(img);
+        ov.addEventListener('click', () => ov.remove());
+        ov.addEventListener('dblclick', (e) => { e.stopPropagation(); ov.remove(); });
+        const esc = (e) => { if (e.key === 'Escape') { ov.remove(); document.removeEventListener('keydown', esc); } };
+        document.addEventListener('keydown', esc);
+        document.body.appendChild(ov);
     },
 
     /** 视频时长钳制：4~30 秒整数（对齐 infinite-canvas 的 VIDEO_SECONDS_MIN/MAX） */
@@ -1494,28 +1529,56 @@ const CanvasModule = {
 
         try {
             // —— 收集参考图（宽松模式，与图生图页面同规则） ——
-            const refs = [];
+            // gpt-image 系：multipart 需要图片字节本身，跳过临时图床托管，直接用 dataURI/URL
+            const isGptImage = /gpt-image/i.test(model || '');
+            const refItems = [];
             for (const m of mediaNodes) {
-                let v = null;
                 if (VideoModule._validAssetId(m.data.assetId)) {
-                    v = 'asset://' + m.data.assetId;
+                    refItems.push({ asset: 'asset://' + m.data.assetId, name: m.data.name || '未命名' });
                 } else if (m.data.url && m.data.url.startsWith('http')) {
-                    v = m.data.url;
+                    refItems.push({ url: m.data.url, name: m.data.name || '未命名' });
                 } else if (m.data.url) {
-                    setStatus('uploading');
-                    v = await VideoModule._uploadToTempHost(m.data.url, m.data.name || 'canvas-image');
-                    if (!v || v.startsWith('data:')) {
-                        throw new Error(`参考图「${m.data.name || '未命名'}」上传公网托管失败，建议同步到素材库后重试`);
-                    }
+                    refItems.push({ dataUrl: m.data.url, name: m.data.name || '未命名' });
                 }
-                if (v) refs.push(v);
+            }
+            const refs = [];
+            for (const it of refItems) {
+                if (it.asset) { refs.push(it.asset); continue; }
+                if (it.url) { refs.push(it.url); continue; }
+                if (isGptImage) { refs.push(it.dataUrl); continue; }   // multipart 直接取字节，无需托管
+                setStatus('uploading');
+                const v = await VideoModule._uploadToTempHost(it.dataUrl, it.name);
+                if (!v || v.startsWith('data:')) {
+                    throw new Error(`参考图「${it.name}」上传公网托管失败，建议同步到素材库后重试`);
+                }
+                refs.push(v);
             }
 
             setStatus('generating');
-            Logger.req(`[画布] 图片生成: 模型=${model}, 模式=${refs.length > 0 ? '图生图(' + refs.length + '图)' : '文生图'}, 尺寸=${this._imageSize(node)}`);
+            Logger.req(`[画布] 图片生成: 模型=${model}, 模式=${refs.length > 0 ? (isGptImage ? '图生图-multipart(' + refs.length + '图)' : '图生图(' + refs.length + '图)') : '文生图'}, 尺寸=${this._imageSize(node)}`);
 
             let result;
-            if (refs.length > 0) {
+            if (refs.length > 0 && isGptImage) {
+                // gpt-image 系：multipart 直传参考图文件字节（与图生图页同规则，探测验证唯一生效通道）
+                const files = [];
+                for (let i = 0; i < refItems.length; i++) {
+                    const src = refItems[i].dataUrl || refItems[i].url;
+                    if (!src) {
+                        throw new Error(`参考图「${refItems[i].name}」是素材库引用，gpt-image 不支持，请重新上传本地图片`);
+                    }
+                    const blob = await this._refToBlob(src, refItems[i].name);
+                    const ext = (blob.type && blob.type.includes('jpeg')) ? 'jpg' : (blob.type && blob.type.includes('webp')) ? 'webp' : 'png';
+                    files.push({ blob, name: `canvas-ref-${i + 1}.${ext}` });
+                }
+                result = await API.generateImageEditMultipart({
+                    prompt, model,
+                    size: this._imageSize(node),
+                    files,
+                    ratio: node.data.ratio || '1:1',
+                    qualityLabel: node.data.resolution || '720P',
+                    signal: abort.signal,
+                });
+            } else if (refs.length > 0) {
                 result = await API.generateImageEdit({
                     prompt, model,
                     size: this._imageSize(node),

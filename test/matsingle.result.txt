@@ -1,0 +1,20 @@
+PASS single.firstEdge :: true
+PASS single.secondDenied :: true
+PASS single.noSecondEdge :: true
+PASS absorb.mtypeSet :: true
+PASS absorb.urlSet :: true
+PASS absorb.nameSet :: true
+PASS absorb.uploading :: true
+PASS absorb.assetUploaded :: true
+PASS absorb.uploadCleared :: true
+PASS sync.refreshedMtype :: true
+PASS sync.refreshedAsset :: true
+PASS sync.refreshedUrl :: true
+PASS sync.audioDispatched :: true
+PASS sync.emptyNoCrash :: true
+RBUTTON {"_idi":"material_mv55r73n_f","_idv":"material_mv55r73q_g","_ida":"material_mv55r73s_h","_idf":"material_mv55r73v_i","imageBtn":true,"videoBtn":true,"audioBtn":true,"freshBtn":true,"debugTexts":["同步素材","同步素材","同步素材","同步素材"]}
+PASS btn.image
+PASS btn.video
+PASS btn.audio
+PASS btn.fresh
+SUMMARY PASS 18 / FAIL 0
