@@ -202,12 +202,6 @@ const Config = {
         }
     },
 
-    // 恢复某平台地址为默认预设值
-    resetBaseUrl(platform) {
-        platform = platform || this.getPlatform();
-        localStorage.removeItem(ScopedStore.key(`opc_base_url_${platform}`));
-    },
-
     // ===== 上传限制 =====
 
     getUploadSizeMB() {

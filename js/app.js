@@ -53,12 +53,6 @@ const Logger = {
         }
         this._body.scrollTop = this._body.scrollHeight;
     },
-    /** 导出全部界面日志文本（排查用） */
-    exportText() {
-        if (!this._body) this._init();
-        if (!this._body) return '';
-        return Array.from(this._body.querySelectorAll('.log-entry')).map(el => el.textContent).join('\n');
-    },
     _escape(s) {
         const div = document.createElement('div');
         div.textContent = String(s);

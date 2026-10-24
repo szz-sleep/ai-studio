@@ -908,59 +908,6 @@ const VideoModule = {
     },
 
     /**
-     * 按目标比例裁剪图片（居中裁切，不拉伸）
-     * @param {string} b64 - 纯 base64
-     * @param {number} targetW
-     * @param {number} targetH
-     * @returns {Promise<string>} 裁剪后的纯 base64
-     */
-    _cropToRatio(b64, targetW, targetH) {
-        return new Promise((resolve) => {
-            let mime = 'image/png';
-            if (b64.startsWith('/9j/')) mime = 'image/jpeg';
-            else if (b64.startsWith('UklGR')) mime = 'image/webp';
-
-            const img = new Image();
-            img.onload = () => {
-                const targetRatio = targetW / targetH;
-                const imgRatio = img.width / img.height;
-
-                let cropW, cropH, cropX, cropY;
-                if (imgRatio > targetRatio) {
-                    // 图片更宽，裁左右
-                    cropH = img.height;
-                    cropW = img.height * targetRatio;
-                    cropX = (img.width - cropW) / 2;
-                    cropY = 0;
-                } else if (imgRatio < targetRatio) {
-                    // 图片更高，裁上下
-                    cropW = img.width;
-                    cropH = img.width / targetRatio;
-                    cropX = 0;
-                    cropY = (img.height - cropH) / 2;
-                } else {
-                    // 比例一致，不用裁
-                    resolve(b64);
-                    return;
-                }
-
-                Logger.info(`[图生视频] 裁剪图片 ${img.width}x${img.height} → ${Math.round(cropW)}x${Math.round(cropH)} (目标 ${targetW}x${targetH})`);
-
-                const canvas = document.createElement('canvas');
-                canvas.width = Math.round(cropW);
-                canvas.height = Math.round(cropH);
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
-
-                const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
-                resolve(dataUrl.substring(dataUrl.indexOf(',') + 1));
-            };
-            img.onerror = () => resolve(b64);
-            img.src = 'data:' + mime + ';base64,' + b64;
-        });
-    },
-
-    /**
      * 带进度回调的上传（供九宫格实时显示进度）。
      * 委托给共享的 uploadMediaToHost（XHR 实现，可区分被拒/网络错误）。
      */
@@ -1063,74 +1010,6 @@ const VideoModule = {
             Logger.error(`[上传托管] 异常: ${e.message}`);
             // 上传托管失败会导致火山无法解析素材（火山只接受公网 HTTP URL），必须明确报错而不是静默降级
             throw new Error('素材无法上传到公网托管，火山引擎不支持 base64 素材。请检查网络后重试');
-        }
-    },
-
-    /**
-     * 从素材库 URL 下载文件并填充到九宫格
-     * @param {string} url - 素材库中的 HTTP URL
-     * @param {string} type - 类型 ('image' | 'audio' | 'video')
-     * @param {number} index - 九宫格索引
-     */
-    async _fetchUrlToMedia(url, type, index) {
-        try {
-            Logger.info(`[素材库] 正在加载: ${url}`);
-
-            // 先通过 fetch 下载
-            const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
-            if (!resp.ok) {
-                UI.toast('素材加载失败', 'error');
-                return;
-            }
-
-            const blob = await resp.blob();
-            const mimeType = blob.type || (type === 'image' ? 'image/png' : type === 'audio' ? 'audio/mpeg' : 'video/mp4');
-
-            // 构造文件名
-            const extMap = {
-                'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp',
-                'audio/mpeg': '.mp3', 'audio/wav': '.wav', 'audio/ogg': '.ogg',
-                'video/mp4': '.mp4', 'video/webm': '.webm', 'video/quicktime': '.mov'
-            };
-            const ext = extMap[mimeType] || '.bin';
-            const name = '素材_' + Date.now() + ext;
-
-            // 创建 File 对象
-            const file = new File([blob], name, { type: mimeType });
-
-            // 通过 mediagrid 的 handleMediaFile 来填充
-            // 由于 handleMediaFile 是 initMediaGrid 的闭包内部函数，无法直接调用
-            // 我们使用另一种方式：触发文件输入，或直接通过九宫格暴露的接口
-
-            // 查找九宫格内部是否有可用的文件输入
-            const fileInput = document.getElementById('i2vFileInput');
-            if (fileInput) {
-                // 使用 DataTransfer 模拟文件选择
-                const dt = new DataTransfer();
-                dt.items.add(file);
-                fileInput.files = dt.files;
-
-                // 触发 change 事件（mediagrid 监听了此事件）
-                fileInput.dispatchEvent(new Event('change'));
-
-                Logger.info(`[素材库] 已填充到九宫格: ${name}`);
-                UI.toast('已添加到素材区', 'success');
-            }
-
-            // 也要保存到素材库（如果还没有的话）
-            const lib = MaterialLib.getAll();
-            if (!lib.find(i => i.url === url)) {
-                MaterialLib.add({
-                    name: name,
-                    url: url,
-                    type: type,
-                    mimeType: mimeType,
-                    size: blob.size
-                });
-            }
-        } catch (e) {
-            Logger.error(`[素材库] 加载失败: ${e.message}`);
-            UI.toast('素材加载失败，请重试', 'error');
         }
     }
 };
