@@ -77,6 +77,15 @@
         "!push_view.txt",
         "!node_modules/@ffmpeg-installer/win32-x64/**",
         "!node_modules/@ffmpeg-installer/linux-x64/**"
+      ],
+      "extraResources": [
+        {
+          "from": "agent-server",
+          "to": "agent-server",
+          "filter": [
+            "agent-server"
+          ]
+        }
       ]
     },
     "dmg": {

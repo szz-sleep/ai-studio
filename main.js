@@ -169,11 +169,13 @@ function cleanupTmpDir(dir) {
 // ============ 云镜 Agent 后端（my-agent FastAPI，127.0.0.1:8765） ============
 // Agent 对话标签页依赖这个本地服务；随应用自动拉起，退出时关闭。
 // 源码版：用下方本机路径的 Python 直接跑源码（仅开发机有效）
-// 安装版：用随包分发的 resources/agent-server/agent-server.exe（PyInstaller 独立打包，无需 Python）
-// 源码版路径（跨平台）：Windows 为原开发机路径；macOS 为 ~/Desktop/AGENT/my-agent
+// 安装版：用随包分发的 resources/agent-server/agent-server(.exe)（PyInstaller 独立打包，无需 Python）
+// 源码版路径（跨平台）：Windows 为原开发机路径；macOS 优先 ~/Documents/AGENT/my-agent，回退 ~/Desktop/AGENT/my-agent
 const AGENT_DIR = process.platform === 'win32'
   ? 'C:\\Users\\Administrator\\Desktop\\AGENT\\my-agent'
-  : path.join(os.homedir(), 'Desktop', 'AGENT', 'my-agent');
+  : [path.join(os.homedir(), 'Documents', 'AGENT', 'my-agent'),
+     path.join(os.homedir(), 'Desktop', 'AGENT', 'my-agent')]
+      .find(p => fs.existsSync(path.join(p, 'server.py'))) || path.join(os.homedir(), 'Desktop', 'AGENT', 'my-agent');
 // mac 源码版 Python 候选：WorkBuddy 托管 venv 优先，其次系统解释器
 const AGENT_PYTHON_WIN = 'C:\\Users\\Administrator\\.workbuddy\\binaries\\python\\envs\\default\\Scripts\\python.exe';
 const AGENT_PYTHON_CANDIDATES = process.platform === 'win32'
