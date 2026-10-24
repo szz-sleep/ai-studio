@@ -165,14 +165,15 @@ const API = {
         });
 
         // 如果某类为空，把无法识别的也塞进去（兼容策略）
+        // 注意：灌入后清空 other，避免同一批模型重复出现在多个分类
         if (image.length === 0 && other.length > 0) {
-            other.forEach(m => image.push(m));
+            other.splice(0).forEach(m => image.push(m));
         }
         if (video.length === 0 && other.length > 0) {
-            other.forEach(m => video.push(m));
+            other.splice(0).forEach(m => video.push(m));
         }
         if (text.length === 0 && other.length > 0) {
-            other.forEach(m => text.push(m));
+            other.splice(0).forEach(m => text.push(m));
         }
 
         return { image, video, text, other };
@@ -199,9 +200,9 @@ const API = {
            size: size || '1024x1024',
             n: n || 1
         };
-        if (quality) {
-            // gpt-image 系列（MUX 等中转）质量档位为 auto/low/medium/high
-            body.quality = /gpt-image/i.test(model) ? ({ standard: 'medium', hd: 'high' }[quality] || 'auto') : quality;
+        if (quality && !/gpt-image/i.test(model)) {
+            // MuxTech 文档明确 gpt-image 系不使用 quality 参数，尺寸即档位
+            body.quality = quality;
         }
         if (style) body.style = style;
         // 图片参数：支持单图和多图
@@ -247,25 +248,67 @@ const API = {
    },
 
     /**
-     * 图生图 - 按模型家族分路：
-     * - gpt-image 系列（OpenAI 系，如 MUX 中转）→ POST /v1/images/generations，
-     *   参考图放 images 字段与 prompt/size 同发（该系没有 edits 专用接口）
-     * - 其余（火山 Seedream 等）→ POST /v1/images/edits（原逻辑不动）
+     * 图生图（gpt-image 系专用）- multipart 直传参考图文件
+     * POST /v1/images/edits (multipart/form-data)
+     * 探测结论（2026-10-18）：gpt-image 系模型只有 multipart 文件直传才能收到参考图；
+     * JSON 通道的 image/images 字段会被上游忽略（纯文生图）。
+     * @param {object} opts
+     * @param {Array<{blob: Blob, name: string}>} opts.files - 参考图文件
      */
-    async generateImageEdit(opts) {
-        const { model, images } = opts;
-        if (/gpt-image/i.test(model || '')) {
-            // 素材库 asset:// 引用是火山专属通道，gpt-image 走不通
-            if (Array.isArray(images) && images.some((u) => String(u).startsWith('asset://'))) {
-                throw new Error('gpt-image 模型不支持火山素材库引用，请改用本地上传图片，或换 doubao-seedream 系模型');
-            }
-            Logger.info('[API] 图生图(gpt-image 系): ' + (images ? images.length : 0) + ' 张参考图, 模型=' + model + ', 尺寸=' + (opts.size || 'auto') + ' → /v1/images/generations');
-            return this.generateImage({ prompt: opts.prompt, model, size: opts.size, n: 1, images, ratio: opts.ratio, qualityLabel: opts.qualityLabel, signal: opts.signal });
+    async generateImageEditMultipart({ prompt, model, size, quality, files, signal }) {
+        const fd = new FormData();
+        fd.append('model', model);
+        fd.append('prompt', prompt);
+        fd.append('n', '1');
+        if (size) fd.append('size', size);
+        if (quality) fd.append('quality', quality);
+        if (files.length === 1) {
+            fd.append('image', files[0].blob, files[0].name || 'ref.png');
+        } else {
+            // 多参考图：按 MuxTech 文档，重复 image 字段
+            files.forEach(f => fd.append('image', f.blob, f.name || 'ref.png'));
         }
-        return this._generateImageEditVolc(opts);
+        Logger.info(`[API] 图生图(multipart): ${files.length} 张参考图, 模型=${model}, 尺寸=${size || 'auto'}`);
+
+        const controller = new AbortController();
+        const mergedSignal = signal || controller.signal;
+        const timeoutId = setTimeout(() => controller.abort(), 180000);
+
+        try {
+            const platform = Config.getCurrentPlatformConfig();
+            const endpoint = platform.imageEditEndpoint || '/v1/images/edits';
+            const headers = this._headers();
+            delete headers['Content-Type']; // 交给浏览器生成带 boundary 的 multipart 头
+            Logger.info('[API] 请求端点: ' + this._url(endpoint));
+            const resp = await fetch(this._url(endpoint), {
+                method: 'POST',
+                headers,
+                body: fd,
+                signal: mergedSignal
+            });
+            clearTimeout(timeoutId);
+            if (!resp.ok) {
+                const errText = await resp.text().catch(() => '');
+                Logger.error('[API] 图生图(multipart) 失败响应: ' + errText.substring(0, 800));
+                let errMsg = '';
+                try { errMsg = JSON.parse(errText).error?.message || ''; } catch (_) {}
+                throw new Error(errMsg || `图生图失败 (${resp.status})${errText ? ': ' + errText.substring(0, 200) : ''}`);
+            }
+            return await resp.json();
+        } catch (err) {
+            clearTimeout(timeoutId);
+            if (err.name === 'AbortError') throw new Error('请求超时或已取消，请重试');
+            throw err;
+        }
     },
 
-    async _generateImageEditVolc({ prompt, model, size, images, ratio, qualityLabel, signal }) {
+    /**
+     * 图生图 - 图片编辑/融合接口
+     * POST /v1/images/edits
+     * JSON 格式，images 数组传纯 base64 + prompt 一次性发给模型
+     * 注意：不传 size、不传 response_format（由模型自动决定）
+     */
+    async generateImageEdit({ prompt, model, size, images, ratio, qualityLabel, signal }) {
         const body = { prompt, model, n: 1 };
         if (size) body.size = size;
 

@@ -24,17 +24,25 @@ const MODEL_IMAGE_CAPS = [
         minSide: 512, maxSide: 4096, minPixels: 3686400, maxPixels: 4096 * 4096,
     },
     {
-        // MUX 等中转的 gpt-image 系列：接受任意 WxH（1024x1024 ~ 3840x2160），
-        // 比例直接用标准阶梯的精确宽高控制；-1K 结尾的型号上限 1024
+        // MuxTech 文档：gpt-image 系走专用档位表（GPT_IMAGE_TIERS），
+        // size 同时决定比例和分辨率档位，不使用 quality 参数。
+        // 该模型在 compute() 中提前返回，不经此 caps 约束（保留条目仅供 label 展示）。
         match: /gpt-image/i, label: 'GPT Image',
-        minSide: 512, minPixels: 512 * 512,
-        maxSideFor(model) { return /-1k$/i.test(String(model || '')) ? 1024 : 4096; },
     },
     {
         match: /qwen-image|wanx/i, label: '通义万相',
         minSide: 512, maxSide: 2048, minPixels: 512 * 512, maxPixels: 2048 * 2048,
     },
 ];
+
+// gpt-image 系专用档位表（MuxTech 文档 2026-10）：size 同时决定比例与分辨率
+// 分辨率映射：480P/720P/1080P → 1K 档；2K → 2K 档；4K → 4K 档
+const GPT_IMAGE_TIERS = {
+    // 21:9 档：短边对齐同档 16:9 行；4K 档 21:9 按 maxSide 4096 反推高（4096x5376 超档位上限）
+    '1K': [[1024,1024],[1280,720],[720,1280],[1024,768],[768,1024],[1200,800],[800,1200],[1680,720]],
+    '2K': [[2048,2048],[2048,1152],[1152,2048],[2048,1536],[1536,2048],[2400,1600],[1600,2400],[2688,1152]],
+    '4K': [[4096,4096],[4096,2304],[2304,4096],[4096,3072],[3072,4096],[3600,2400],[2400,3600],[4096,1756]],
+};
 
 const ImageSize = {
     /** 解析比例字符串 '16:9' → 宽高比数值 */
@@ -58,6 +66,19 @@ const ImageSize = {
         if (caps && caps.sizes) {
             const fixed = caps.sizes[String(ratio)] || caps.sizes['1:1'] || '1024x1024';
             return { size: fixed, preset: usedKey, bumped: null, caps };
+        }
+
+        // gpt-image 系：按 MuxTech 档位表取尺寸（size 同时决定比例与档位），
+        // 在档位内选与请求比例最接近的一项，保证画面比例不跑偏
+        if (/gpt-image/i.test(String(model || ''))) {
+            const tier = resKey === '4K' ? '4K' : resKey === '2K' ? '2K' : '1K';
+            const ar = this._aspect(ratio);
+            let best = GPT_IMAGE_TIERS[tier][0], bestDiff = Infinity;
+            for (const [a, b] of GPT_IMAGE_TIERS[tier]) {
+                const diff = Math.abs(a / b - ar);
+                if (diff < bestDiff) { bestDiff = diff; best = [a, b]; }
+            }
+            return { size: `${best[0]}x${best[1]}`, preset: tier, bumped: null, caps };
         }
 
         // 标准阶梯：16:9/9:16 精确标准尺寸；其他比例：高度 = 阶梯短边值

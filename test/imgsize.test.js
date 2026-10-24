@@ -75,17 +75,14 @@ T('Seedream 4K@16:9 不超上限', () => {
   const r = S.compute('doubao-seedream-4-0-250828', '4K', '16:9');
   eq(r.size, '3840x2160');
 });
-T('GPT Image：任意 WxH，比例精确控制（MUX）', () => {
-  eq(S.compute('gpt-image-2', '1080P', '16:9').size, '1920x1080');
-  eq(S.compute('gpt-image-2', '4K', '16:9').size, '3840x2160');
-  eq(S.compute('gpt-image-2.5-flare-ad', '720P', '9:16').size, '720x1280');
-  eq(S.compute('gpt-image-2', '720P', '1:1').size, '720x720');
-});
-T('GPT Image：-1K 型号上限 1024', () => {
-  const r = S.compute('gpt-image-2-1K', '4K', '16:9');
-  const [w, h] = r.size.split('x').map(Number);
-  eq(r.caps.label, 'GPT Image');
-  if (w > 1024 || h > 1024) throw new Error('超 1K 上限: ' + r.size);
+T('GPT Image：MuxTech 档位表（分辨率→档位，比例就近匹配）', () => {
+  eq(S.compute('gpt-image-2', '1080P', '16:9').size, '1280x720');   // 1K 档
+  eq(S.compute('gpt-image-2', '720P', '1:1').size, '1024x1024');
+  eq(S.compute('gpt-image-2', '2K', '16:9').size, '2048x1152');     // 2K 档
+  eq(S.compute('gpt-image-2', '4K', '16:9').size, '4096x2304');     // 4K 档
+  eq(S.compute('gpt-image-2.5-flare-x', '720P', '9:16').size, '720x1280');
+  eq(S.compute('gpt-image-2', '1080P', '4:3').size, '1024x768');
+  eq(S.compute('gpt-image-2-1K', '720P', '16:9').size, '1280x720'); // -1K 型号同样按档位表
 });
 T('结果尺寸全为偶数', () => {
   for (const res of Object.keys(P)) {

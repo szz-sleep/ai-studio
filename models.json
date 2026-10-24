@@ -12,6 +12,16 @@
       ]
     },
     {
+      "match": "gpt-image",
+      "type": "image",
+      "label": "GPT Image",
+      "tags": [
+        "图片生成",
+        "图生图",
+        "多API渠道"
+      ]
+    },
+    {
       "match": "qwen-image",
       "type": "image",
       "label": "通义万相",
@@ -319,7 +329,10 @@
       "type": "video",
       "label": "LTX Video",
       "local": true,
-      "supportedSizes": {"16:9": "1024x576", "9:16": "576x1024"},
+      "supportedSizes": {
+        "16:9": "1024x576",
+        "9:16": "576x1024"
+      },
       "tags": [
         "视频生成",
         "本地模型"

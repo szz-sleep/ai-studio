@@ -181,6 +181,34 @@ const RedrawModule = {
     },
 
     /**
+     * dataURL 转 Blob（gpt-image multipart 直传用）
+     */
+    _dataUrlToBlob(dataUrl) {
+        const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+        if (!match) throw new Error('无效的图片数据');
+        const binaryStr = atob(match[2]);
+        const bytes = new Uint8Array(binaryStr.length);
+        for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+        return new Blob([bytes], { type: match[1] });
+    },
+
+    /**
+     * 把参考图项转为 Blob（gpt-image multipart 直传用）
+     * 优先本地 base64；其次托管 URL（uguu 公网图/素材库 URL）下载转 Blob
+     */
+    async _itemToBlob(img) {
+        const dataUrl = (typeof img.base64 === 'string' && img.base64.startsWith('data:')) ? img.base64
+            : (typeof img.url === 'string' && img.url.startsWith('data:')) ? img.url : null;
+        if (dataUrl) return this._dataUrlToBlob(dataUrl);
+        if (img.url && /^https?:\/\//.test(img.url)) {
+            const resp = await fetch(img.url);
+            if (!resp.ok) throw new Error(`读取参考图失败 (${resp.status})`);
+            return await resp.blob();
+        }
+        throw new Error('无法读取参考图内容');
+    },
+
+    /**
      * 根据选中的模型/分辨率/比例计算实际像素尺寸
      */
     getSelectedSize(model) {
@@ -284,42 +312,77 @@ const RedrawModule = {
         resultArea.innerHTML = '';
 
        try {
-           // 收集所有参考图：素材库选中的用 asset://<id> 引用（火山素材库，免上传）；普通上传的走已托管的公网 URL
-           const imageList = [];
-           const items = this.uploader.getItems ? this.uploader.getItems() : this.uploader.getImages();
-           for (const img of items) {
-               if (img.type && img.type !== 'image') continue;
-               // 素材库选中的：带火山 assetId → asset:// 引用
-               if (this._validAssetId(img.assetId)) {
-                   imageList.push('asset://' + img.assetId);
-                   Logger.info(`[图生图] 素材库引用: asset://${img.assetId}`);
-                   continue;
+           const isGptImage = /gpt-image/i.test(model);
+           let result;
+           if (isGptImage) {
+               // gpt-image 系：multipart 直传参考图文件（探测验证唯一能收到图的通道）
+               // 跳过 uguu.se 临时托管——上游不引用 URL，需要图片字节本身
+               const files = [];
+               const items = this.uploader.getItems ? this.uploader.getItems() : this.uploader.getImages();
+               for (const img of items) {
+                   if (img.type && img.type !== 'image') continue;
+                   // asset:// 引用是火山素材库专用；gpt-image 取不到字节则报错提示
+                   if (this._validAssetId(img.assetId) && !(img.url || img.base64)) {
+                       UI.toast('素材库引用不支持当前模型，请重新上传本地图片', 'error', 6000);
+                       throw new Error('素材库引用不支持 gpt-image 模型');
+                   }
+                   const blob = await this._itemToBlob(img);
+                   const ext = (blob.type && blob.type.includes('jpeg')) ? 'jpg' : (blob.type && blob.type.includes('webp')) ? 'webp' : 'png';
+                   files.push({ blob, name: (img.name || 'ref') + '.' + ext });
+                   Logger.info(`[图生图] multipart 参考图: ${img.name || 'image'} (${blob.type}, ${blob.size}B)`);
                }
-               // 普通上传：mediagrid 已自动托管，/或直接取 url
-               const url = img.url || img.base64 || '';
-               if (!url) {
-                   UI.toast('存在无效图片，请移除后重试', 'error');
-                   Logger.warn('[图生图] 发现无 url 且无 base64 的图片项');
-                   throw new Error('无效图片');
+               if (files.length === 0) throw new Error('无有效参考图');
+
+               Logger.req(`[图生图] multipart 发送 ${files.length} 张参考图 + 提示词`);
+               const selRatio = document.querySelector('#i2iRatio .ratio-btn.active')?.dataset.ratio || '16:9';
+               const resolution = this.getSelectedResolution();
+               result = await API.generateImageEditMultipart({
+                   prompt,
+                   model,
+                   size,
+                   files,
+                   ratio: selRatio,
+                   qualityLabel: resolution,
+                   signal: this.abortController.signal
+               });
+           } else {
+               // 火山系：原有通道不变（素材库 asset:// 引用 / uguu.se 托管公网 URL）
+               const imageList = [];
+               const items = this.uploader.getItems ? this.uploader.getItems() : this.uploader.getImages();
+               for (const img of items) {
+                   if (img.type && img.type !== 'image') continue;
+                   // 素材库选中的：带火山 assetId → asset:// 引用
+                   if (this._validAssetId(img.assetId)) {
+                       imageList.push('asset://' + img.assetId);
+                       Logger.info(`[图生图] 素材库引用: asset://${img.assetId}`);
+                       continue;
+                   }
+                   // 普通上传：mediagrid 已自动托管，/或直接取 url
+                   const url = img.url || img.base64 || '';
+                   if (!url) {
+                       UI.toast('存在无效图片，请移除后重试', 'error');
+                       Logger.warn('[图生图] 发现无 url 且无 base64 的图片项');
+                       throw new Error('无效图片');
+                   }
+                   imageList.push(url.startsWith('data:') ? await this._uploadToTempHost(url, img.name || 'image') : url);
+                   Logger.info(`[图生图] 参考图: ${img.name || 'image'} -> ${url.startsWith('data:') ? '(已托管)' : url.substring(0, 80)}`);
                }
-               imageList.push(url.startsWith('data:') ? await this._uploadToTempHost(url, img.name || 'image') : url);
-               Logger.info(`[图生图] 参考图: ${img.name || 'image'} -> ${url.startsWith('data:') ? '(已托管)' : url.substring(0, 80)}`);
+
+               Logger.req(`[图生图] 发送 ${imageList.length} 张参考图 + 提示词`);
+               imageList.forEach((u, i) => Logger.info(`[图生图] 图${i + 1}: ${u.substring(0, 90)}`));
+
+               const selRatio = document.querySelector('#i2iRatio .ratio-btn.active')?.dataset.ratio || '16:9';
+               const resolution = this.getSelectedResolution();
+               result = await API.generateImageEdit({
+                   prompt,
+                   model,
+                   size,
+                   images: imageList,
+                   ratio: selRatio,
+                   qualityLabel: resolution,
+                   signal: this.abortController.signal
+               });
            }
-
-           Logger.req(`[图生图] 发送 ${imageList.length} 张参考图 + 提示词`);
-           imageList.forEach((u, i) => Logger.info(`[图生图] 图${i + 1}: ${u.substring(0, 90)}`));
-
-           const selRatio = document.querySelector('#i2iRatio .ratio-btn.active')?.dataset.ratio || '16:9';
-           const resolution = this.getSelectedResolution();
-           const result = await API.generateImageEdit({
-               prompt,
-               model,
-               size,
-               images: imageList,
-               ratio: selRatio,
-               qualityLabel: resolution,
-               signal: this.abortController.signal
-           });
 
             Logger.req(`[图生图] API 返回状态: ${result.code || 200}`);
             Logger.success(`[图生图] 生成成功`);
