@@ -79,8 +79,10 @@ app.whenReady().then(async () => {
             const files = (await fsp.readdir(dir).catch(() => [])).filter(f => f.endsWith('.json'));
             assert('disk.persistAvailable', r.diskPersist === true, r.diskPersist);
             assert('disk.fileWritten', files.length >= 1, files);
-            const raw = await fsp.readFile(path.join(dir, files[0]), 'utf8').catch(() => '');
-            assert('disk.fileHasMedia', raw.includes('data:image/png;base64,AAAA'), raw.length);
+            // 依次读所有项目文件：只要任一文件内联媒体完整落盘即为通过
+            // （画布初始化/项目切换会产生多个项目文件，不能假定媒体在第一个）
+            const allRaw = await Promise.all(files.map(f => fsp.readFile(path.join(dir, f), 'utf8').catch(() => '')));
+            assert('disk.fileHasMedia', allRaw.some(raw => raw.includes('data:image/png;base64,AAAA')), allRaw.map(s => s.length));
             assert('disk.restored', r.restoredNodeCount === 1 && r.currentOk === true, r);
             assert('disk.mediaSurvived', (r.restoredUrlPrefix || '') === 'data:image/png;base64,', r.restoredUrlPrefix);
         }
