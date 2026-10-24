@@ -20,7 +20,6 @@
   "build": {
     "appId": "com.zhrccp.aistudio",
     "productName": "云镜AI Studio",
-    "executableName": "AIStudio",
     "directories": {
       "output": "dist"
     },
@@ -55,7 +54,7 @@
       ],
       "icon": "assets/icon.icns",
       "category": "public.app-category.productivity",
-      "artifactName": "AI-Studio-${version}-${arch}.${ext}",
+      "artifactName": "云镜AI Studio-${version}-${arch}.${ext}",
       "files": [
         "main.js",
         "license.js",

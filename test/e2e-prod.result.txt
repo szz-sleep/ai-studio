@@ -1,0 +1,5 @@
+FAIL 正式域名直连：卡密激活成功 → ok :: 激活应成功: 请输入卡密或注册码
+FAIL 激活记录持久化：重启后 getState 仍 ok :: 应为 ok: {"machineCode":"A1B2-C3D4-E5F6-0718","trustedTime":1792845657456,"rollback":false,"status":"not_activated"}
+FAIL 心跳：服务器确认绑定有效 :: 心跳后仍应 ok: {"machineCode":"A1B2-C3D4-E5F6-0718","trustedTime":1792845657530,"rollback":false,"status":"not_activated"}
+PASS 换指纹（第二台机器）激活同一卡 → 拒绝
+==== e2e-prod: 1 passed, 3 failed ====

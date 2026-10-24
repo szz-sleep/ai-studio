@@ -172,8 +172,26 @@ function cleanupTmpDir(dir) {
 // Agent 对话标签页依赖这个本地服务；随应用自动拉起，退出时关闭。
 // 源码版：用下方本机路径的 Python 直接跑源码（仅开发机有效）
 // 安装版：用随包分发的 resources/agent-server/agent-server.exe（PyInstaller 独立打包，无需 Python）
-const AGENT_DIR = 'C:\\Users\\Administrator\\Desktop\\AGENT\\my-agent';   // 仅源码版使用
-const AGENT_PYTHON = 'C:\\Users\\Administrator\\.workbuddy\\binaries\\python\\envs\\default\\Scripts\\python.exe'; // 仅源码版使用
+// 源码版路径（跨平台）：Windows 为原开发机路径；macOS 为 ~/Desktop/AGENT/my-agent
+const AGENT_DIR = process.platform === 'win32'
+  ? 'C:\\Users\\Administrator\\Desktop\\AGENT\\my-agent'
+  : path.join(os.homedir(), 'Desktop', 'AGENT', 'my-agent');
+// mac 源码版 Python 候选：WorkBuddy 托管 venv 优先，其次系统解释器
+const AGENT_PYTHON_WIN = 'C:\\Users\\Administrator\\.workbuddy\\binaries\\python\\envs\\default\\Scripts\\python.exe';
+const AGENT_PYTHON_CANDIDATES = process.platform === 'win32'
+  ? [AGENT_PYTHON_WIN]
+  : [
+      path.join(os.homedir(), '.workbuddy', 'binaries', 'python', 'envs', 'default', 'bin', 'python3'),
+      '/usr/local/bin/python3',
+      '/usr/bin/python3',
+    ];
+/** 选一个可用的 Python 解释器跑源码版后端 */
+function resolveAgentPython() {
+  for (const p of AGENT_PYTHON_CANDIDATES) {
+    try { fs.accessSync(p, fs.constants.X_OK); return p; } catch { /* 下一个 */ }
+  }
+  return null;
+}
 const AGENT_PORT = 8765;
 let agentChild = null; // 仅在由本应用拉起时才持有引用，退出时才会去关
 
@@ -222,26 +240,36 @@ async function detectSystemProxy() {
   } catch { return null; }
 }
 
-/** 解析 Agent 后端启动方式：安装版用内置 agent-server.exe，源码版用本机 Python+uvicorn */
+/** 解析 Agent 后端启动方式：安装版用内置 agent-server 二进制，源码版用本机 Python+uvicorn */
 function agentBackendSpec() {
   if (app.isPackaged) {
-    const exe = path.join(process.resourcesPath, 'agent-server', 'agent-server.exe');
-    if (!fs.existsSync(exe)) {
+    // win: agent-server.exe（PyInstaller）；mac: agent-server（同名无后缀，后续可加）
+    const binName = process.platform === 'win32' ? 'agent-server.exe' : 'agent-server';
+    const exe = path.join(process.resourcesPath, 'agent-server', binName);
+    if (fs.existsSync(exe)) {
+      return { exe, args: [], cwd: path.dirname(exe), frozen: true };
+    }
+    // mac 打包版暂无内置二进制时，回退源码模式（开发机可用；正式分发建议 PyInstaller）
+    if (process.platform === 'darwin') {
+      console.warn('[agent] 未找到内置后端 ' + exe + '，尝试源码模式回退');
+    } else {
       console.warn('[agent] 未找到内置后端 ' + exe + '，Agent 功能不可用');
       return null;
     }
-    return { exe, args: [], cwd: path.dirname(exe), frozen: true };
   }
   if (!fs.existsSync(path.join(AGENT_DIR, 'server.py'))) {
-    console.warn('[agent] 未找到 ' + AGENT_DIR + '\\server.py，Agent 功能不可用');
+    console.warn('[agent] 未找到 ' + path.join(AGENT_DIR, 'server.py') + '，Agent 功能不可用');
     return null;
   }
-  if (!fs.existsSync(AGENT_PYTHON)) {
-    console.warn('[agent] 未找到 Python 解释器 ' + AGENT_PYTHON + '，Agent 功能不可用');
+  const py = process.platform === 'win32'
+    ? (fs.existsSync(AGENT_PYTHON_WIN) ? AGENT_PYTHON_WIN : null)
+    : resolveAgentPython();
+  if (!py) {
+    console.warn('[agent] 未找到可用的 Python 解释器，Agent 功能不可用');
     return null;
   }
   return {
-    exe: AGENT_PYTHON,
+    exe: py,
     args: ['-m', 'uvicorn', 'server:app', '--host', '127.0.0.1', '--port', String(AGENT_PORT)],
     cwd: AGENT_DIR,
     frozen: false,
