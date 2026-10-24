@@ -306,13 +306,17 @@ function _readMacPinFile(parts) {
 function _readMacPinRegistry(parts) {
   return new Promise((resolve) => {
     if (_test.registryDisabled || process.platform !== 'win32') return resolve(null);
-    execFile('reg', ['query', 'HKCU\\Software\\AIStudio', '/v', 'LicenseMac'], { timeout: 5000, windowsHide: true }, (err, stdout) => {
-      if (err) return resolve(null);
-      const m = String(stdout || '').match(/LicenseMac\s+REG_SZ\s+([0-9A-F]{12}):([0-9a-f]{64})/i);
-      if (!m) return resolve(null);
-      const mac = _macFmt(m[1]);
-      resolve(mac && _macPinTag(parts, mac) === m[2].toLowerCase() ? mac : null);
-    });
+    let child;
+    try {
+      child = execFile('reg', ['query', 'HKCU\\Software\\AIStudio', '/v', 'LicenseMac'], { timeout: 5000, windowsHide: true }, (err, stdout) => {
+        if (err) return resolve(null);
+        const m = String(stdout || '').match(/LicenseMac\s+REG_SZ\s+([0-9A-F]{12}):([0-9a-f]{64})/i);
+        if (!m) return resolve(null);
+        const mac = _macFmt(m[1]);
+        resolve(mac && _macPinTag(parts, mac) === m[2].toLowerCase() ? mac : null);
+      });
+    } catch { resolve(null); return; } // reg 被安全策略拦截等 → 视为无注册表 pin
+    child.on('error', () => resolve(null));
   });
 }
 
@@ -323,7 +327,10 @@ function _writeMacPinEverywhere(parts, mac) {
   try { fs.mkdirSync(dataDir(), { recursive: true }); } catch { /* 目录已存在 */ }
   try { fs.writeFileSync(macPinFile(), JSON.stringify({ mac: hex12, tag }), 'utf8'); } catch { /* 忽略 */ }
   if (!_test.registryDisabled && process.platform === 'win32') {
-    execFile('reg', ['add', 'HKCU\\Software\\AIStudio', '/v', 'LicenseMac', '/t', 'REG_SZ', '/d', `${hex12}:${tag}`, '/f'], { timeout: 5000, windowsHide: true }, () => {});
+    try {
+      const c = execFile('reg', ['add', 'HKCU\\Software\\AIStudio', '/v', 'LicenseMac', '/t', 'REG_SZ', '/d', `${hex12}:${tag}`, '/f'], { timeout: 5000, windowsHide: true }, () => {});
+      c.on('error', () => {});
+    } catch { /* reg 不可用（安全策略/精简系统）→ 仅文件钉存 */ }
   }
 }
 
@@ -400,24 +407,24 @@ function _readTimeCandidates(digest) {
 function _readTimeRegistry(digest) {
   return new Promise((resolve) => {
     if (_test.registryDisabled) return resolve(null);
-    if (process.platform === 'win32') {
-      execFile('reg', ['query', 'HKCU\\Software\\AIStudio', '/v', 'LicenseGuard'], { timeout: 5000, windowsHide: true }, (err, stdout) => {
-        if (err) return resolve(null);
-        const m = String(stdout || '').match(/LicenseGuard\s+REG_SZ\s+(\d+):([0-9a-f]{64})/i);
-        if (!m) return resolve(null);
-        const t = Number(m[1]);
-        resolve(t === t && m[2] === _timeHmac(digest, t) ? t : null);
-      });
-    } else if (process.platform === 'darwin') {
-      execFile('defaults', ['read', 'com.zhrccp.aistudio', 'LicenseGuard'], { timeout: 5000 }, (err, stdout) => {
-        const m = String(stdout || '').trim().match(/^(\d+):([0-9a-f]{64})$/i);
-        if (!m) return resolve(null);
-        const t = Number(m[1]);
-        resolve(t === t && m[2] === _timeHmac(digest, t) ? t : null);
-      });
-    } else {
-      resolve(null);
-    }
+    const handle = (err, stdout) => {
+      if (err) return resolve(null);
+      const m = String(stdout || '').match(/(?:LicenseGuard\s+REG_SZ|^)(\d+):([0-9a-f]{64})/im);
+      if (!m) return resolve(null);
+      const t = Number(m[1]);
+      resolve(t > 0 && m[2] === _timeHmac(digest, t) ? t : null);
+    };
+    try {
+      if (process.platform === 'win32') {
+        const c = execFile('reg', ['query', 'HKCU\\Software\\AIStudio', '/v', 'LicenseGuard'], { timeout: 5000, windowsHide: true }, handle);
+        c.on('error', () => resolve(null));
+      } else if (process.platform === 'darwin') {
+        const c = execFile('defaults', ['read', 'com.zhrccp.aistudio', 'LicenseGuard'], { timeout: 5000 }, handle);
+        c.on('error', () => resolve(null));
+      } else {
+        resolve(null);
+      }
+    } catch { resolve(null); } // reg/defaults 被安全策略拦截等 → 视为无注册表时间
   });
 }
 
@@ -427,11 +434,15 @@ function _writeTimeEverywhere(t, digest) {
   try { fs.writeFileSync(timeFile(), payload, 'utf8'); } catch { /* 忽略 */ }
   try { fs.writeFileSync(timeFileBak(), payload, 'utf8'); } catch { /* 忽略 */ }
   if (!_test.registryDisabled) {
-    if (process.platform === 'win32') {
-      execFile('reg', ['add', 'HKCU\\Software\\AIStudio', '/v', 'LicenseGuard', '/t', 'REG_SZ', '/d', `${t}:${_timeHmac(digest, t)}`, '/f'], { timeout: 5000, windowsHide: true }, () => {});
-    } else if (process.platform === 'darwin') {
-      execFile('defaults', ['write', 'com.zhrccp.aistudio', 'LicenseGuard', `${t}:${_timeHmac(digest, t)}`], { timeout: 5000 }, () => {});
-    }
+    try {
+      if (process.platform === 'win32') {
+        const c = execFile('reg', ['add', 'HKCU\\Software\\AIStudio', '/v', 'LicenseGuard', '/t', 'REG_SZ', '/d', `${t}:${_timeHmac(digest, t)}`, '/f'], { timeout: 5000, windowsHide: true }, () => {});
+        c.on('error', () => {});
+      } else if (process.platform === 'darwin') {
+        const c = execFile('defaults', ['write', 'com.zhrccp.aistudio', 'LicenseGuard', `${t}:${_timeHmac(digest, t)}`], { timeout: 5000 }, () => {});
+        c.on('error', () => {});
+      }
+    } catch { /* reg/defaults 不可用 → 仅文件钉存 */ }
   }
 }
 

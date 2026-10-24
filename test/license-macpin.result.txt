@@ -1,0 +1,7 @@
+PASS MAC 漂移（模拟重启换网卡）指纹应保持不变
+PASS 钉存文件被清（杀毒误删）→ 用注册表；两者都无 → 重新钉当前 MAC
+PASS 篡改钉存 MAC（标签不符）→ 应回退当前 MAC，不采信篡改值
+PASS 别机的钉存拷贝过来（密钥不同）→ 不采信
+PASS 无 board/guid 的机器不钉存（跟随当前 MAC）
+PASS 恢复环境
+TOTAL pass=6 fail=0

@@ -1,0 +1,11 @@
+PASS 服务端批量生成卡密（永久 + 1天）
+PASS 服务器 ping 可达
+PASS 机器A激活永久卡 → ok（mode:network）
+PASS 停掉服务器 → getState 仍 ok（本地验签授权，断网可用）
+PASS 机器B激活同一卡 → 拒绝（一码一机）
+PASS 管理员解绑 → 机器B激活成功；机器A心跳被判定指纹不匹配 → 锁定
+PASS 封禁 → 心跳后本地授权清除 → not_activated
+PASS 1天卡激活 → ok；激活时间拨回5天 → 心跳判定过期并锁定（不宽限）
+PASS 服务器不可达 → 激活明确报错（不静默降级）
+PASS 未配置服务器 → 离线注册码模式照常可用（向后兼容）
+==== license-net.test.js: 10 passed, 0 failed ====

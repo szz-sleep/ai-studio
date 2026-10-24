@@ -1,0 +1,16 @@
+PASS 真实机器码格式 XXXX-XXXX-XXXX-XXXX（真实指纹采集链路）
+PASS 初始状态 not_activated
+PASS 永久码激活成功 → ok
+PASS 激活记录持久化：重新 getState 仍为 ok
+PASS 冒充私钥签发的码 → 拒绝
+PASS 换一台机器（指纹不同）的码 → 拒绝且提示一码一机
+PASS 过期码 → 拒绝激活
+PASS 一年期码激活 → ok 且 expiryTime 存在
+PASS 注册码归一化：小写/无横线/多余空格均可激活
+PASS license.json 被改坏 → license_corrupt
+PASS 时间回拨检测：受信时间领先 5 天 → clock_rollback
+PASS 回拨期间激活永久码 → 拒绝（时间异常优先）
+PASS 回拨恢复（清受信时间）→ ok
+PASS 受信时间文件被篡改（HMAC 不匹配）→ 视为无效而非采纳
+PASS 重置环境后全新机器：not_activated（模拟新装机）
+==== license.test.js: 15 passed, 0 failed ====
