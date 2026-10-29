@@ -179,6 +179,52 @@ const API = {
         return { image, video, text, other };
     },
 
+    // ── 图片异步任务（规避 Cloudflare/网关 100 秒超时掐断长请求）──
+    // 提交时带 async 标记：服务端支持则返回 202 + 任务 ID，轮询 GET /v1/jobs/{id} 取结果；
+    // 服务端不支持（400/404/422）时自动回退同步请求，并按平台记住，后续不再尝试。
+    _asyncCap: {},
+
+    _platformKey() {
+        const p = Config.getCurrentPlatformConfig();
+        return p.id || p.baseUrl || 'default';
+    },
+
+    /**
+     * 轮询图片生成任务直到完成
+     * GET /v1/jobs/{id} → { id, status: queued|running|succeeded|failed, result?, error? }
+     * @returns 成功时返回 job.result（与同步接口响应结构完全一致）
+     */
+    async pollImageJob(jobId, signal, interval = 3000, timeout = 900000) {
+        const start = Date.now();
+        let consecutiveErrors = 0;
+        while (true) {
+            if (signal?.aborted) throw new DOMException('用户取消了生成', 'AbortError');
+            if (Date.now() - start > timeout) {
+                throw new Error(`生成超时（超过 ${Math.round(timeout / 60000)} 分钟），任务 ${jobId.substring(0, 8)} 可能仍在后台执行（结果不会计费作废，请稍后到平台核对），建议降低尺寸/质量档位后重试`);
+            }
+            let job;
+            try {
+                const resp = await fetch(this._url(`/v1/jobs/${encodeURIComponent(jobId)}`), { headers: this._headers() });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    throw new Error(err.error?.message || `查询任务状态失败 (${resp.status})`);
+                }
+                job = await resp.json();
+                consecutiveErrors = 0;
+            } catch (err) {
+                if (err.name === 'AbortError') throw err;
+                // 网络抖动容忍：连续 5 次轮询失败才判定失败
+                consecutiveErrors++;
+                if (consecutiveErrors >= 5) throw new Error('轮询任务状态失败：' + err.message);
+                await new Promise(r => setTimeout(r, interval));
+                continue;
+            }
+            if (job.status === 'succeeded') return job.result;
+            if (job.status === 'failed') throw new Error(job.error || '生成失败');
+            await new Promise(r => setTimeout(r, interval));
+        }
+    },
+
     /**
      * 文生图（图生图通过 image/images 参数支持）
      * POST /v1/images/generations
@@ -193,7 +239,22 @@ const API = {
      * @param {string[]} [opts.images] - 多图 base64 数组，所有图片+提示词一次发给模型
      * @param {AbortSignal} [opts.signal]
      */
-    async generateImage({ prompt, model, size, n, quality, style, image, images, ratio, qualityLabel, signal }) {
+    async generateImage(opts) {
+        const platformKey = this._platformKey();
+        const useAsync = this._asyncCap[platformKey] !== false;
+        try {
+            return await this._generateImageOnce(opts, useAsync);
+        } catch (err) {
+            if (err && err.__asyncUnsupported) {
+                this._asyncCap[platformKey] = false;
+                Logger.warn('[API] 平台不支持 async 模式，本次及后续回退同步请求');
+                return await this._generateImageOnce(opts, false);
+            }
+            throw err;
+        }
+    },
+
+    async _generateImageOnce({ prompt, model, size, n, quality, style, image, images, ratio, qualityLabel, signal }, useAsync) {
         const body = {
            prompt,
            model,
@@ -209,14 +270,15 @@ const API = {
         if (Array.isArray(images) && images.length > 0) {
             // 多图：传 images 数组（纯 base64，无 data URI 前缀）
             body.images = images;
-            Logger.info(`[API] 图片生成请求: 多图模式, ${images.length} 张图, 模型=${model}, 尺寸=${body.size}`);
+            Logger.info(`[API] 图片生成请求: 多图模式, ${images.length} 张图, 模型=${model}, 尺寸=${body.size}${useAsync ? ', 异步模式' : ''}`);
         } else if (typeof image === 'string') {
             // 单图：传 image
             body.image = image;
-            Logger.info(`[API] 图片生成请求: 单图模式, 模型=${model}, 尺寸=${body.size}`);
+            Logger.info(`[API] 图片生成请求: 单图模式, 模型=${model}, 尺寸=${body.size}${useAsync ? ', 异步模式' : ''}`);
         } else {
-            Logger.info(`[API] 图片生成请求: 纯文生图, 模型=${model}, 尺寸=${body.size}`);
+            Logger.info(`[API] 图片生成请求: 纯文生图, 模型=${model}, 尺寸=${body.size}${useAsync ? ', 异步模式' : ''}`);
         }
+        if (useAsync) body.async = true;
 
         // 带超时的 fetch
         const controller = new AbortController();
@@ -233,9 +295,24 @@ const API = {
                 signal: mergedSignal
             });
             clearTimeout(timeoutId);
+            // 202 = 异步任务已受理，轮询取结果
+            if (resp.status === 202) {
+                this._asyncCap[this._platformKey()] = true;
+                const job = await resp.json().catch(() => ({}));
+                if (!job.id) throw new Error('异步任务受理响应缺少任务 ID');
+                Logger.info('[API] 异步任务已受理: ' + job.id + '，开始轮询结果');
+                return await this.pollImageJob(job.id, signal);
+            }
             if (!resp.ok) {
                 const err = await resp.json().catch(() => ({}));
-                throw new Error(err.error?.message || `图片生成失败 (${resp.status})`);
+                const message = err.error?.message || `图片生成失败 (${resp.status})`;
+                // 平台可能不认识 async 字段而拒绝请求 → 标记后回退同步重试
+                if (useAsync && (resp.status === 400 || resp.status === 404 || resp.status === 422)) {
+                    const e = new Error(message);
+                    e.__asyncUnsupported = true;
+                    throw e;
+                }
+                throw new Error(message);
             }
             return await resp.json();
         } catch (err) {
@@ -255,20 +332,36 @@ const API = {
      * @param {object} opts
      * @param {Array<{blob: Blob, name: string}>} opts.files - 参考图文件
      */
-    async generateImageEditMultipart({ prompt, model, size, quality, files, signal }) {
+    async generateImageEditMultipart(opts) {
+        const platformKey = this._platformKey();
+        const useAsync = this._asyncCap[platformKey] !== false;
+        try {
+            return await this._generateImageEditMultipartOnce(opts, useAsync);
+        } catch (err) {
+            if (err && err.__asyncUnsupported) {
+                this._asyncCap[platformKey] = false;
+                Logger.warn('[API] 平台不支持 async 模式，本次及后续回退同步请求');
+                return await this._generateImageEditMultipartOnce(opts, false);
+            }
+            throw err;
+        }
+    },
+
+    async _generateImageEditMultipartOnce({ prompt, model, size, quality, files, signal }, useAsync) {
         const fd = new FormData();
         fd.append('model', model);
         fd.append('prompt', prompt);
         fd.append('n', '1');
         if (size) fd.append('size', size);
         if (quality) fd.append('quality', quality);
+        if (useAsync) fd.append('async', '1');
         if (files.length === 1) {
             fd.append('image', files[0].blob, files[0].name || 'ref.png');
         } else {
             // 多参考图：按 MuxTech 文档，重复 image 字段
             files.forEach(f => fd.append('image', f.blob, f.name || 'ref.png'));
         }
-        Logger.info(`[API] 图生图(multipart): ${files.length} 张参考图, 模型=${model}, 尺寸=${size || 'auto'}`);
+        Logger.info(`[API] 图生图(multipart): ${files.length} 张参考图, 模型=${model}, 尺寸=${size || 'auto'}${useAsync ? ', 异步模式' : ''}`);
 
         const controller = new AbortController();
         const mergedSignal = signal || controller.signal;
@@ -287,11 +380,25 @@ const API = {
                 signal: mergedSignal
             });
             clearTimeout(timeoutId);
+            // 202 = 异步任务已受理，轮询取结果
+            if (resp.status === 202) {
+                this._asyncCap[this._platformKey()] = true;
+                const job = await resp.json().catch(() => ({}));
+                if (!job.id) throw new Error('异步任务受理响应缺少任务 ID');
+                Logger.info('[API] 异步任务已受理: ' + job.id + '，开始轮询结果');
+                return await this.pollImageJob(job.id, signal);
+            }
             if (!resp.ok) {
                 const errText = await resp.text().catch(() => '');
                 Logger.error('[API] 图生图(multipart) 失败响应: ' + errText.substring(0, 800));
                 let errMsg = '';
                 try { errMsg = JSON.parse(errText).error?.message || ''; } catch (_) {}
+                // 平台可能不认识 async 字段而拒绝请求 → 标记后回退同步重试
+                if (useAsync && (resp.status === 400 || resp.status === 404 || resp.status === 422)) {
+                    const e = new Error(errMsg || `图生图失败 (${resp.status})`);
+                    e.__asyncUnsupported = true;
+                    throw e;
+                }
                 if (errMsg) throw new Error(errMsg);
                 if (resp.status === 524) {
                     throw new Error('图生图失败：服务商源站超时 (Cloudflare 524)，生成耗时超过其 100 秒上限。建议：降低尺寸/质量档位、减少参考图数量，或联系服务商（根治需他们调大超时或提供异步接口）。');
@@ -312,15 +419,31 @@ const API = {
      * JSON 格式，images 数组传纯 base64 + prompt 一次性发给模型
      * 注意：不传 size、不传 response_format（由模型自动决定）
      */
-    async generateImageEdit({ prompt, model, size, images, ratio, qualityLabel, signal }) {
+    async generateImageEdit(opts) {
+        const platformKey = this._platformKey();
+        const useAsync = this._asyncCap[platformKey] !== false;
+        try {
+            return await this._generateImageEditOnce(opts, useAsync);
+        } catch (err) {
+            if (err && err.__asyncUnsupported) {
+                this._asyncCap[platformKey] = false;
+                Logger.warn('[API] 平台不支持 async 模式，本次及后续回退同步请求');
+                return await this._generateImageEditOnce(opts, false);
+            }
+            throw err;
+        }
+    },
+
+    async _generateImageEditOnce({ prompt, model, size, images, ratio, qualityLabel, signal }, useAsync) {
         const body = { prompt, model, n: 1 };
         if (size) body.size = size;
+        if (useAsync) body.async = true;
 
         // images 数组直接透传：普通上传为公网 URL，素材库选中为 asset://<id> 引用
         // 不再在浏览器端 base64 拼接，避免请求体过大导致 413；后端构造 content 数组 + image_url 透传火山
         if (Array.isArray(images) && images.length > 0) {
             body.images = images;
-            Logger.info('[API] 图生图: ' + images.length + ' 张参考图, 模型=' + model + ', 尺寸=' + (size || 'auto'));
+            Logger.info('[API] 图生图: ' + images.length + ' 张参考图, 模型=' + model + ', 尺寸=' + (size || 'auto') + (useAsync ? ', 异步模式' : ''));
         }
 
         const controller = new AbortController();
@@ -338,9 +461,24 @@ const API = {
                 signal: mergedSignal
             });
             clearTimeout(timeoutId);
+            // 202 = 异步任务已受理，轮询取结果
+            if (resp.status === 202) {
+                this._asyncCap[this._platformKey()] = true;
+                const job = await resp.json().catch(() => ({}));
+                if (!job.id) throw new Error('异步任务受理响应缺少任务 ID');
+                Logger.info('[API] 异步任务已受理: ' + job.id + '，开始轮询结果');
+                return await this.pollImageJob(job.id, signal);
+            }
             if (!resp.ok) {
                 const err = await resp.json().catch(() => ({}));
-                throw new Error(err.error?.message || '图生图失败 (' + resp.status + ')');
+                const message = err.error?.message || '图生图失败 (' + resp.status + ')';
+                // 平台可能不认识 async 字段而拒绝请求 → 标记后回退同步重试
+                if (useAsync && (resp.status === 400 || resp.status === 404 || resp.status === 422)) {
+                    const e = new Error(message);
+                    e.__asyncUnsupported = true;
+                    throw e;
+                }
+                throw new Error(message);
             }
             return await resp.json();
         } catch (err) {
