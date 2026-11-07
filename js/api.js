@@ -732,7 +732,10 @@ const API = {
         });
         if (!resp.ok) {
             const err = await resp.json().catch(() => ({}));
-            throw new Error(err.error?.message || `查询长视频任务失败 (${resp.status})`);
+            const error = new Error(err.error?.message || `查询长视频任务失败 (${resp.status})`);
+            error.status = resp.status;
+            error.code = err.error?.code;
+            throw error;
         }
         return await resp.json();
     },
@@ -749,7 +752,10 @@ const API = {
         });
         if (!resp.ok && resp.status !== 409) {
             const err = await resp.json().catch(() => ({}));
-            throw new Error(err.error?.message || `取消长视频任务失败 (${resp.status})`);
+            const error = new Error(err.error?.message || `取消长视频任务失败 (${resp.status})`);
+            error.status = resp.status;
+            error.code = err.error?.code;
+            throw error;
         }
         return resp.status === 204 ? { id: taskId, status: 'cancelled' } : await resp.json();
     },

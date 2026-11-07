@@ -1,3 +1,12 @@
+/** H3 长视频任务状态中文文案（任务列表与详情面板共用）。 */
+const TIMELINE_STATUS_LABELS = {
+    queued: '排队中', preparing: '准备参考素材', submitting: '提交工作流', sampling: '工作流生成中',
+    low_resolution_sampling: '低分辨率采样', high_resolution_sampling: '高分辨率采样',
+    assembling: '合并音视频', transferring: '正在取回视频', reconnecting: '等待响应',
+    running: '生成中', processing: '生成中', completed: '已完成', failed: '失败', error: '失败',
+    cancelling: '正在取消', cancelled: '已取消', canceled: '已取消', expired: '已过期'
+};
+
 /** H3 long-video timeline editor. */
 const TimelineModule = {
     get STORAGE_KEY() { return ScopedStore.key('h3-timeline-draft-v1'); },
@@ -64,7 +73,19 @@ const TimelineModule = {
     },
 
     _scope() {
-        return `${Config.getPlatform()}|${Config.getCurrentPlatformConfig().baseUrl || ''}`;
+        return `${Config.getPlatform()}|${Config.getCurrentPlatformConfig().baseUrl || ''}|${this._keyFp()}`;
+    },
+
+    /** 当前 API Key 的 djb2 指纹（不存明文），用于任务归属隔离：换 Key 后不再轮询旧 Key 的任务。 */
+    _keyFp() {
+        const key = Config.getCurrentPlatformConfig().apiKey || '';
+        let hash = 5381;
+        for (let i = 0; i < key.length; i++) hash = ((hash << 5) + hash + key.charCodeAt(i)) >>> 0;
+        return hash.toString(36);
+    },
+
+    _isTerminal(status) {
+        return ['completed', 'success', 'succeeded', 'failed', 'error', 'cancelled', 'canceled', 'expired'].includes(String(status || '').toLowerCase());
     },
 
     _saveJobs() {
@@ -75,17 +96,26 @@ const TimelineModule = {
     _loadJobs() {
         try {
             const saved = JSON.parse(localStorage.getItem(this.TASKS_KEY) || '[]');
-            this.jobs = Array.isArray(saved) ? saved.filter(job => job.scope === this._scope()).slice(0, 30) : [];
+            const scope = this._scope();
+            this.jobs = (Array.isArray(saved) ? saved : []).slice(0, 30).filter(job => job && job.id);
+            // 兼容旧版记录（scope 不含 Key 指纹）：补归属标记；非当前 Key 且非终态的任务标过期
+            this.jobs.forEach(job => {
+                if (job.keyFp === undefined) job.keyFp = job.scope === scope ? this._keyFp() : null;
+                if (job.scope !== scope && !this._isTerminal(job.status)) job.status = 'expired';
+            });
         } catch { this.jobs = []; }
         this._renderJobs();
         if (this.jobs.length) this.selectTask(this.jobs[0].id);
-        this.jobs.forEach(job => this._pollTask(job.id));
+        // 只恢复当前 Key 名下未完成任务的轮询
+        this.jobs.forEach(job => {
+            if (job.scope === this._scope() && !this._isTerminal(job.status)) this._pollTask(job.id);
+        });
     },
 
     _renderJobs() {
         const list = document.getElementById('timelineJobsList');
         list.innerHTML = this.jobs.length ? this.jobs.map(job => {
-            const status = this._escape(job.status || 'queued');
+            const status = this._escape(TIMELINE_STATUS_LABELS[String(job.status || '').toLowerCase()] || job.status || '排队中');
             const date = new Date(job.time).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
             return `<div class="timeline-job-row"><button type="button" class="timeline-job ${job.id === this.activeTaskId ? 'selected' : ''}" data-task-id="${this._escape(job.id)}"><span>${date} · ${this._escape(job.model)}</span><strong>${status} · ${Math.round(Number(job.progress) || 0)}%</strong></button><button type="button" class="timeline-job-delete" data-delete-task="${this._escape(job.id)}" aria-label="删除任务 ${this._escape(job.id)}" title="删除此任务">×</button></div>`;
         }).join('') : '<span class="timeline-jobs-empty">暂无任务</span>';
@@ -94,8 +124,9 @@ const TimelineModule = {
     async deleteTask(taskId) {
         const job = this.jobs.find(item => item.id === taskId);
         if (!job) return;
-        const terminal = ['completed', 'success', 'succeeded', 'failed', 'error', 'cancelled', 'canceled'];
-        const running = !terminal.includes(String(job.status || '').toLowerCase());
+        // 非当前 Key 名下的任务（换 Key 后的旧任务）不请求取消，直接本地删除
+        const owned = job.scope === this._scope();
+        const running = owned && !this._isTerminal(job.status);
         const message = running ? '此任务仍在运行。删除将先取消生成，确定继续吗？' : '确定从 H3 任务列表删除此任务吗？';
         if (!(await UI.confirm(message, { danger: true }))) return;
         try {
@@ -572,7 +603,7 @@ const TimelineModule = {
             if (!taskId) throw new Error('后端未返回任务 ID');
             Logger.success(`[H3 时间线] 任务已创建: ${taskId || '未返回任务 ID'}`);
             UI.toast('长视频任务已提交', 'success');
-            this.jobs.unshift({ id: taskId, scope: this._scope(), time: Date.now(), model: plan.model,
+            this.jobs.unshift({ id: taskId, scope: this._scope(), keyFp: this._keyFp(), time: Date.now(), model: plan.model,
                 prompt: plan.global_prompt || plan.segments[0]?.prompt || '', segmentCount: plan.segments.length,
                 status: 'queued', progress: 0, lastResponse: task.data || task });
             this.jobs = this.jobs.slice(0, 30);
@@ -597,13 +628,7 @@ const TimelineModule = {
         const data = task.data || task;
         const progress = Math.max(0, Math.min(100, Number.parseFloat(data.progress) || 0));
         const status = String(data.status || 'queued').toLowerCase();
-        const phaseLabels = {
-            queued: '排队中', preparing: '准备参考素材', submitting: '提交 ComfyUI 工作流', low_resolution_sampling: '低分辨率采样',
-            high_resolution_sampling: '高分辨率采样', assembling: '合并音视频', sampling: '工作流生成中',
-            transferring: '正在取回视频', reconnecting: '等待 ComfyUI 响应', completed: '已完成',
-            failed: '失败', cancelled: '已取消', cancelling: '正在取消', running: '生成中', processing: '生成中'
-        };
-        document.getElementById('timelineTaskStatus').textContent = phaseLabels[data.phase] || phaseLabels[status] || status;
+        document.getElementById('timelineTaskStatus').textContent = TIMELINE_STATUS_LABELS[data.phase] || TIMELINE_STATUS_LABELS[status] || status;
         document.getElementById('timelineProgressFill').style.width = `${progress}%`;
         const current = Number(data.current_segment || 0);
         const total = Number(data.segment_count || this.jobs.find(job => job.id === this.activeTaskId)?.segmentCount || this.segments.length);
@@ -621,7 +646,7 @@ const TimelineModule = {
             return `<div class="timeline-segment-progress-row"><span>${index + 1}</span><div><i style="width:${pct}%"></i></div><em>${this._escape(segment.status || 'queued')}</em></div>`;
         }).join('');
 
-        const terminal = ['completed', 'success', 'succeeded', 'failed', 'error', 'cancelled', 'canceled'].includes(status);
+        const terminal = this._isTerminal(status);
         document.getElementById('timelineCancelTaskBtn').disabled = terminal;
         if (['completed', 'success', 'succeeded'].includes(status)) {
             document.getElementById('timelineProgressFill').style.width = '100%';
@@ -698,7 +723,6 @@ const TimelineModule = {
         const controller = new AbortController();
         this.pollControllers.set(taskId, controller);
         const signal = controller.signal;
-        const terminal = ['completed', 'success', 'succeeded', 'failed', 'error', 'cancelled', 'canceled'];
         while (!signal.aborted) {
             try {
                 const task = await API.getTimelineVideoTask(taskId, { signal });
@@ -716,7 +740,7 @@ const TimelineModule = {
                     this._renderJobs();
                 }
                 if (this.activeTaskId === taskId) this._renderTaskProgress(data);
-                if (terminal.includes(String(data.status || '').toLowerCase())) {
+                if (this._isTerminal(data.status)) {
                     if (['completed', 'success', 'succeeded'].includes(String(data.status).toLowerCase())) {
                         await this._showOutput(taskId);
                     }
@@ -729,7 +753,31 @@ const TimelineModule = {
                 });
             } catch (error) {
                 if (error.name === 'AbortError') { this.pollControllers.delete(taskId); return; }
-                Logger.warn(`[H3 时间线] 查询任务失败，将重试: ${error.message}`);
+                // 404 /「任务不存在」是终态：换 Key 后旧 Key 的任务查不到（MaaS 防泄露设计）或任务已过期，无限重试没有意义
+                const notFound = (Number(error.status) || 0) === 404 || /任务不存在|not\s*found/i.test(error.message || '');
+                if (notFound) {
+                    Logger.warn(`[H3 时间线] 任务 ${taskId} 已不存在（可能已换 API Key 或任务过期），停止轮询`);
+                    const job = this.jobs.find(item => item.id === taskId);
+                    if (job && !this._isTerminal(job.status)) {
+                        job.status = 'expired';
+                        job.lastResponse = { status: 'expired', error: error.message };
+                        this._saveJobs();
+                        this._renderJobs();
+                        if (this.activeTaskId === taskId) this._renderTaskProgress(job.lastResponse);
+                    }
+                    this.pollControllers.delete(taskId);
+                    return;
+                }
+                // 401/403：API Key 失效（被删除/禁用），重试也不会成功，停止轮询
+                const status = Number(error.status) || 0;
+                const unauthorized = status === 401 || status === 403
+                    || /未授权|无权限|鉴权失败|unauthorized|forbidden/i.test(error.message || '');
+                if (unauthorized) {
+                    Logger.warn(`[H3 时间线] 任务 ${taskId} 鉴权失败（${status || '无权限'}，API Key 可能已失效），已停止轮询；恢复 Key 后重启应用可继续跟踪`);
+                    this.pollControllers.delete(taskId);
+                    return;
+                }
+                Logger.warn(`[H3 时间线] 查询任务 ${taskId} 失败，将重试: ${error.message}`);
                 await new Promise(resolve => setTimeout(resolve, 8000));
             }
         }
