@@ -11,6 +11,9 @@ const { spawn, execSync } = require('child_process');
 // 更名为「云镜AI Studio」后，固定用户数据目录，避免 localStorage（API 配置/会话）丢失
 app.setPath('userData', path.join(app.getPath('appData'), 'ai-studio'));
 
+// 渲染层读取应用版本（右下角版本角标与关于对话框统一以 package.json version 为准）
+ipcMain.on('app:get-version', (event) => { event.returnValue = app.getVersion(); });
+
 /**
  * 下载远程文件到本地硬盘
  * @param {string} url - 远程资源地址（http/https 或 blob:）
@@ -442,7 +445,7 @@ const menuTemplate = [
             type: 'info',
             title: '关于 云镜AI Studio',
             message: '云镜AI Studio - AI创作工坊',
-            detail: '版本 V2.1.1\n湖北生而为一科技有限公司'
+            detail: `版本 V${app.getVersion()}\n湖北生而为一科技有限公司`
           });
         }
       }

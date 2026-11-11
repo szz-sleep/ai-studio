@@ -829,8 +829,14 @@
         </div>
     </div>
 
-    <!-- 版本号 -->
-    <div id="appVersion" class="app-version">云镜AI Studio V2.1.1</div>
+    <!-- 版本号：静态文本仅为兜底，实际以 package.json version 为准（下方脚本动态覆盖） -->
+    <div id="appVersion" class="app-version">云镜AI Studio V2.1.3</div>
+    <script>
+      try {
+        var v = window.electronAPI && window.electronAPI.appVersion;
+        if (v) document.getElementById('appVersion').textContent = '云镜AI Studio V' + v;
+      } catch (e) { /* 兜底静态文本 */ }
+    </script>
 
     <!-- 运行日志面板 -->
     <div id="logPanel" class="log-panel" style="display:none;">

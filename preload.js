@@ -3,6 +3,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 // 安全地暴露给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
+  // 应用版本号（取自 package.json version，关于对话框与版本角标共用）
+  appVersion: ipcRenderer.sendSync('app:get-version'),
   // 原生音频文件选择对话框，返回 { ok, name, ext, base64 } 或 { ok:false }
   pickAudio: () => ipcRenderer.invoke('dialog:pick-audio'),
   // 保存远程资源到本地历史目录，返回 { ok, path, fileUrl } 或 { ok:false, error }
