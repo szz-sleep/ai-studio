@@ -12,7 +12,7 @@ PASS inherit.badgeApproved :: "审核通过"
 PASS upload.uploadingStarted :: true
 PASS upload.assetIdFromUpload :: true
 PASS upload.uploadingCleared :: true
-PASS upload.urlSwapped :: true
+PASS upload.urlKept :: true
 PASS upload.nameFromLib :: true
 PASS upload.badgeProcessing :: true
 PASS upload.rejectsEmpty :: true

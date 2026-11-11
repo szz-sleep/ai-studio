@@ -20,5 +20,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 画布项目磁盘持久化（项目 JSON 可能远超 localStorage 配额，落盘 userData/canvas-projects/）
   saveCanvasProject: (id, json) => ipcRenderer.invoke('canvas:save-project', { id, json }),
   loadCanvasProject: (id) => ipcRenderer.invoke('canvas:load-project', { id }),
-  deleteCanvasProject: (id) => ipcRenderer.invoke('canvas:delete-project', { id })
+  deleteCanvasProject: (id) => ipcRenderer.invoke('canvas:delete-project', { id }),
+  // 画布媒体落盘：base64 dataUrl 或远程 url → 本地文件，返回 { ok, path, fileUrl }
+  saveCanvasMedia: (payload) => ipcRenderer.invoke('canvas:save-media', payload)
 });

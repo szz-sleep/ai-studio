@@ -25,6 +25,13 @@
       "y": 346
     },
     {
+      "t": "click",
+      "detail": 1,
+      "target": "cnode-audio-wrap empty",
+      "x": 328,
+      "y": 346
+    },
+    {
       "t": "mousedown",
       "detail": 2,
       "target": "cnode-audio-wrap empty",
@@ -37,6 +44,27 @@
       "target": "cnode-audio-wrap empty",
       "x": 328,
       "y": 346
+    },
+    {
+      "t": "click",
+      "detail": 2,
+      "target": "cnode-audio-wrap empty",
+      "x": 328,
+      "y": 346
+    },
+    {
+      "t": "dblclick",
+      "detail": 2,
+      "target": "cnode-audio-wrap empty",
+      "x": 328,
+      "y": 346
+    },
+    {
+      "t": "click",
+      "detail": 0,
+      "target": "INPUT",
+      "x": 0,
+      "y": 0
     }
   ],
   "pick": "function"

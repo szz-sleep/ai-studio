@@ -926,6 +926,17 @@ const VideoModule = {
         // 已经是 HTTP URL，无需转换
         if (!dataUrl || dataUrl.startsWith('http')) return dataUrl;
 
+        // file:// 本地媒体（画布媒体落盘后的引用）：先读成 data URL 再走同一托管流程
+        if (/^file:/i.test(dataUrl)) {
+            const blob = await (await fetch(dataUrl)).blob();
+            dataUrl = await new Promise((resolve, reject) => {
+                const fr = new FileReader();
+                fr.onload = () => resolve(fr.result);
+                fr.onerror = () => reject(fr.error || new Error('读取本地文件失败'));
+                fr.readAsDataURL(blob);
+            });
+        }
+
         // 解析 base64 DataURL
         const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
         if (!match) return dataUrl;
@@ -989,8 +1000,9 @@ const VideoModule = {
             }
 
             if (!resp) {
-                Logger.warn(`[上传托管] 上传失败: ${lastErr?.message || '未知错误'}`);
-                return dataUrl; // 降级：仍返回原 DataURL
+                // 不再静默降级：降级会把 data: URL 塞给火山（火山不认 base64），
+                // 结果生成成功却没有参考，浪费额度且难排查。必须显式报错。
+                throw new Error('素材上传公网托管失败（3 次重试后仍失败/超时），火山不支持 base64 素材，请检查网络后重试');
             }
 
             const result = await resp.json();

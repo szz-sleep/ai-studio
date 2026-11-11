@@ -2664,8 +2664,26 @@ select option {
 }
 
 /* ===== 素材库弹窗 ===== */
+/* 布局约束：整体弹窗不超过视口高度，header/footer 固定、仅中间列表滚动，
+   保证小屏电脑上「上传/关闭」按钮永远可见（内容再多也不会把按钮挤出屏幕） */
 .material-modal-content {
     max-width: 640px;
+    max-height: min(88vh, 780px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.material-modal-content .modal-header,
+.material-modal-content .modal-footer {
+    flex-shrink: 0;
+}
+.material-modal-content .modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+.material-modal-content .material-lib-grid {
+    max-height: none;
 }
 .material-lib-toolbar {
     display: flex;

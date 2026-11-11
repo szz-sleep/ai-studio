@@ -103,7 +103,7 @@ function assert(name, cond, extra) {
             const nn = CM.getNode(m2.id);
             r.assetFromUpload = nn.data.assetId === 'asset-audio-77';
             r.uploadCleared = !nn.data.uploading;
-            r.urlSwapped = nn.data.url === 'https://hosted.example.com/a.mp3';
+            r.urlKept = nn.data.url === 'data:audio/mpeg;base64,AAAA' && nn.data.sourceUrl === 'https://hosted.example.com/a.mp3';
             const badge = document.querySelector('.cnode[data-id="' + m2.id + '"] .cnode-lib-badge');
             r.badgeProcessing = badge?.textContent === '审核中' && badge.classList.contains('busy');
             // 空音频节点拒绝
@@ -124,7 +124,7 @@ function assert(name, cond, extra) {
     assert('mat.uploadStarted', rMat.uploadStarted, rMat.uploadStarted);
     assert('mat.assetFromUpload', rMat.assetFromUpload, rMat.assetFromUpload);
     assert('mat.uploadCleared', rMat.uploadCleared, rMat.uploadCleared);
-    assert('mat.urlSwapped', rMat.urlSwapped, rMat.urlSwapped);
+    assert('mat.urlKept', rMat.urlKept, rMat.urlKept);
     assert('mat.badgeProcessing', rMat.badgeProcessing, rMat.badgeProcessing);
     assert('mat.rejectsEmpty', rMat.rejectsEmpty, rMat.rejectsEmpty);
 

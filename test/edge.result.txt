@@ -1,9 +1,9 @@
 ALL PASS
 {
   "ids": {
-    "e1": "edge_mvmgm4z9_3",
-    "e2": "edge_mvmgm4zs_6",
-    "e3": "edge_mvmgm500_9",
+    "e1": "edge_mwc7bv11_3",
+    "e2": "edge_mwc7bv1i_6",
+    "e3": "edge_mwc7bv1t_9",
     "n": 3
   },
   "pts": {

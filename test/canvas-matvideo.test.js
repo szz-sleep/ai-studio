@@ -97,7 +97,7 @@ function assert(name, cond, extra) {
             const nn = CM.getNode(m.id);
             r.assetIdFromUpload = nn.data.assetId === 'asset-mv-77';
             r.uploadingCleared = !nn.data.uploading;
-            r.urlSwapped = nn.data.url === 'https://hosted.example.com/ref.mp4';
+            r.urlKept = nn.data.url === 'data:video/mp4;base64,AAAA' && nn.data.sourceUrl === 'https://hosted.example.com/ref.mp4';
             r.nameFromLib = nn.data.name === '托管视频.mp4';
             const badge = document.querySelector('.cnode[data-id="' + m.id + '"] .cnode-lib-badge');
             r.badgeProcessing = badge?.textContent === '审核中' && badge.classList.contains('busy');
@@ -115,7 +115,7 @@ function assert(name, cond, extra) {
     assert('upload.uploadingStarted', rUpload.uploadingStarted, rUpload.uploadingStarted);
     assert('upload.assetIdFromUpload', rUpload.assetIdFromUpload, rUpload.assetIdFromUpload);
     assert('upload.uploadingCleared', rUpload.uploadingCleared, rUpload.uploadingCleared);
-    assert('upload.urlSwapped', rUpload.urlSwapped, rUpload.urlSwapped);
+    assert('upload.urlKept', rUpload.urlKept, rUpload.urlKept);
     assert('upload.nameFromLib', rUpload.nameFromLib, rUpload.nameFromLib);
     assert('upload.badgeProcessing', rUpload.badgeProcessing, rUpload.badgeProcessing);
     assert('upload.rejectsEmpty', rUpload.rejectsEmpty, rUpload.rejectsEmpty);

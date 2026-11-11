@@ -180,7 +180,7 @@ const st1 = { hasInput: false, value: null };
         }
         return { assetId: n.data.assetId, url: n.data.url, uploadedType: window.__uploadedType };
     })()`);
-    assert('S5.audioSyncedToLib', st5.assetId === 'asset_audio_1' && st5.url === 'https://host.example/demo.mp3' && st5.uploadedType === 'audio/mpeg', st5);
+    assert('S5.audioSyncedToLib', st5.assetId === 'asset_audio_1' && st5.url === 'data:audio/mpeg;base64,AAAA' && st5.uploadedType === 'audio/mpeg', st5);
 
     console.log(`RESULT ${failures === 0 ? 'ALL-PASS' : failures + '-FAILED'}`);
     fs.writeFileSync(path.join(__dirname, 'realtap.result.txt'),

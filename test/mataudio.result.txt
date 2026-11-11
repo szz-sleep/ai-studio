@@ -15,7 +15,7 @@ PASS mat.inheritEdge :: true
 PASS mat.uploadStarted :: true
 PASS mat.assetFromUpload :: true
 PASS mat.uploadCleared :: true
-PASS mat.urlSwapped :: true
+PASS mat.urlKept :: true
 PASS mat.badgeProcessing :: true
 PASS mat.rejectsEmpty :: true
 PASS gen.blockedNoAsset :: true

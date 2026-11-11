@@ -98,7 +98,7 @@ const CanvasModule = {
         this._bindProjectPanel();
         // 素材库缓存变化（审核轮询/手动同步）→ 刷新画布内素材状态徽标
         document.addEventListener('aistudio-material-cache', () => this._refreshMaterialBadges());
-        // 退出/切后台前兜底落盘：防抖窗口内的最后一次编辑不丢（300ms 防抖 + 关窗时序问题）
+        // 退出/切后台前兜底落盘：防抖窗口内的最后一次编辑不丢（2s 防抖 + 关窗时序问题）
         window.addEventListener('beforeunload', () => this._saveNow());
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'hidden') this._saveNow();
@@ -280,15 +280,31 @@ const CanvasModule = {
         return div.innerHTML;
     },
 
-    /** 撤销/重做各保留 5 步 */
+    /** 撤销/重做各保留 5 步；另按总字节数封顶，防止大项目快照撑爆内存 */
     _HISTORY_MAX: 5,
+    _HISTORY_MAX_BYTES: 64 * 1024 * 1024,
+
+    _trimHistory(stack) {
+        // 长度上限 + 总字节上限（base64 快照为 ASCII，length≈字节）；
+        // 至少保留 1 步，保证撤销/重做语义完整
+        while (stack.length > this._HISTORY_MAX ||
+               (stack.length > 1 && this._stackBytes(stack) > this._HISTORY_MAX_BYTES)) {
+            stack.shift();
+        }
+    },
+
+    _stackBytes(stack) {
+        let total = 0;
+        for (const s of stack) total += s.length;
+        return total;
+    },
 
     _pushHistory() {
         const snap = JSON.stringify({ nodes: this.nodes, edges: this.edges });
         // 与栈顶快照相同则不入栈（避免"点了撤销却看不出变化"的无效步）
         if (this._undoStack.length > 0 && this._undoStack[this._undoStack.length - 1] === snap) return;
         this._undoStack.push(snap);
-        while (this._undoStack.length > this._HISTORY_MAX) this._undoStack.shift();
+        this._trimHistory(this._undoStack);
         this._redoStack.length = 0;
     },
 
@@ -300,7 +316,7 @@ const CanvasModule = {
         if (this._undoStack.length === 0) return;
         // 当前状态入 redo 栈（同样最多保留 5 步）
         this._redoStack.push(this._snapshotNow());
-        while (this._redoStack.length > this._HISTORY_MAX) this._redoStack.shift();
+        this._trimHistory(this._redoStack);
         const snap = this._undoStack.pop();
         this._applySnapshot(snap);
     },
@@ -308,6 +324,7 @@ const CanvasModule = {
     redo() {
         if (this._redoStack.length === 0) return;
         this._undoStack.push(this._snapshotNow());
+        this._trimHistory(this._undoStack);
         const snap = this._redoStack.pop();
         this._applySnapshot(snap);
     },
@@ -397,7 +414,7 @@ const CanvasModule = {
 
     save() {
         clearTimeout(this._saveTimer);
-        this._saveTimer = setTimeout(() => this._saveNow(), 300);
+        this._saveTimer = setTimeout(() => this._saveNow(), 2000);
     },
 
     /** 把一份数据套用进当前画布（含中断状态清理、id 计数恢复） */
@@ -447,6 +464,8 @@ const CanvasModule = {
             this._applyLoadedState(state || { nodes: [], edges: [] });
             // init 里的同步 renderAll 先渲染了空画布，异步载入完成后重绘一次
             this.renderAll();
+            // 旧项目一次性迁移：内联 base64 媒体 → 本地文件（后台执行，不阻塞界面）
+            this._migrateInlineMedia();
         } catch (e) {
             Logger.warn('[画布] 恢复画布失败: ' + e.message);
             this.nodes = [];
@@ -479,6 +498,8 @@ const CanvasModule = {
         this.renderAll();
         this._renderProjects();
         Logger.info(`[画布] 切换项目: ${id}`);
+        // 旧项目一次性迁移：内联 base64 媒体 → 本地文件（后台执行，不阻塞界面）
+        this._migrateInlineMedia();
     },
 
     async _createProject(name) {
@@ -675,6 +696,71 @@ const CanvasModule = {
             }
         } catch (e) {
             Logger.warn('[画布] 历史记录保存失败: ' + e.message);
+        }
+    },
+
+    /**
+     * 媒体落盘：把 base64 data URL / 远程 http(s) 结果写入本地 canvas-media 目录，
+     * 返回 file:// 引用；失败或已是本地引用时返回原值（不影响功能，仅退回旧存储方式）。
+     * 画布项目 JSON 从此只存路径，不再内联几百 MB base64（卡顿/高内存根治点）。
+     * @param {string} src - data: URL 或 http(s) URL
+     * @param {string} kind - media 类型提示（image/video/audio）
+     */
+    async _persistMediaUrl(src, kind) {
+        try {
+            if (!src || typeof src !== 'string') return src;
+            if (!/^data:/i.test(src) && !/^https?:\/\//i.test(src)) return src;
+            if (!(window.electronAPI && window.electronAPI.saveCanvasMedia)) return src;
+            const payload = /^data:/i.test(src) ? { dataUrl: src, kind } : { url: src, kind };
+            const r = await window.electronAPI.saveCanvasMedia(payload);
+            if (r && r.ok && r.fileUrl) return r.fileUrl;
+            Logger.warn('[画布] 媒体落盘失败，保留原引用: ' + (r && r.error || ''));
+        } catch (e) {
+            Logger.warn('[画布] 媒体落盘异常: ' + e.message);
+        }
+        return src;
+    },
+
+    /** file:// 本地媒体读取为 data URL（本地模型直传/生成前转换用）；非 file:// 原样返回 */
+    async _fileUrlToDataUrl(src) {
+        try {
+            if (!src || typeof src !== 'string' || !/^file:/i.test(src)) return src;
+            const blob = await (await fetch(src)).blob();
+            return await new Promise((resolve, reject) => {
+                const fr = new FileReader();
+                fr.onload = () => resolve(fr.result);
+                fr.onerror = () => reject(fr.error || new Error('读取本地文件失败'));
+                fr.readAsDataURL(blob);
+            });
+        } catch (e) {
+            Logger.warn('[画布] 本地媒体读取失败: ' + (src || '').substring(0, 60) + ' — ' + e.message);
+            return src;
+        }
+    },
+
+    /** 旧项目迁移：节点内联 base64 媒体 → 本地文件（一次性，成功后回写项目） */
+    async _migrateInlineMedia() {
+        if (!(window.electronAPI && window.electronAPI.saveCanvasMedia)) return;
+        let changed = 0, failed = 0;
+        try {
+            for (const n of this.nodes) {
+                const d = n.data || {};
+                if (typeof d.url === 'string' && /^data:/i.test(d.url)) {
+                    const v = await this._persistMediaUrl(d.url, n.type === 'audio' ? 'audio' : 'image');
+                    if (v !== d.url) { d.url = v; changed++; } else failed++;
+                }
+                if (typeof d.videoUrl === 'string' && /^data:/i.test(d.videoUrl)) {
+                    const v = await this._persistMediaUrl(d.videoUrl, 'video');
+                    if (v !== d.videoUrl) { d.videoUrl = v; changed++; } else failed++;
+                }
+            }
+        } catch (e) {
+            Logger.warn('[画布] 内联媒体迁移异常: ' + e.message);
+        }
+        if (changed > 0) {
+            await this._saveNow();
+            this.renderAll();
+            Logger.info(`[画布] 内联媒体迁移完成: ${changed} 个节点转为本地文件引用` + (failed ? `，${failed} 个失败保留原样` : ''));
         }
     },
 
@@ -1756,7 +1842,7 @@ const CanvasModule = {
             const url = item && (item.url || (item.b64_json ? `data:image/png;base64,${item.b64_json}` : ''));
             if (!url) throw new Error('API 未返回图片数据');
 
-            node.data.url = url;
+            node.data.url = await this._persistMediaUrl(url, 'image');
             node.data.assetId = null;   // 新图未入库
             node.data.name = `生成的图片-${new Date().toLocaleTimeString()}`;
             setStatus('idle', { error: '', done: true });
@@ -2514,7 +2600,7 @@ const CanvasModule = {
 
     /** 音频节点数据落地 + 界面刷新（原生对话框与 file input 两条路径共用） */
     async _applyAudioData(node, dataUrl, name) {
-        node.data.url = dataUrl;
+        node.data.url = await this._persistMediaUrl(dataUrl, 'audio');
         node.data.name = name;
         node.data.assetId = null;
         node.data.error = '';
@@ -2566,7 +2652,7 @@ const CanvasModule = {
         try {
             UI.showLoading('正在读取视频...');
             const dataUrl = await API.fileToBase64(file);
-            node.data.videoUrl = dataUrl;
+            node.data.videoUrl = await this._persistMediaUrl(dataUrl, 'video');
             node.data.name = file.name;
             node.data.assetId = null;
             node.data.status = 'idle';
@@ -2623,7 +2709,8 @@ const CanvasModule = {
                 UI.toast('视频已同步到素材库，参考生成时将用 asset:// 引用', 'success');
                 Logger.success(`[画布] 视频已入库: ${rec.id}`);
             } else {
-                if (httpUrl && httpUrl.startsWith('http')) node.data.videoUrl = httpUrl;
+                // 临时托管 URL 不替换节点引用（图床过期会白屏）；需公网引用时生成流程会自动再托管
+                if (httpUrl && httpUrl.startsWith('http')) node.data.sourceUrl = httpUrl;
                 this.renderAll();
                 this.save();
                 UI.toast('视频已上传，火山审核通过后即可用 asset:// 引用（当前仍可宽松模式直接参考）', 'info', 5000);
@@ -2643,7 +2730,7 @@ const CanvasModule = {
         }
         try {
             const dataUrl = await API.fileToBase64(file);
-            node.data.url = dataUrl;
+            node.data.url = await this._persistMediaUrl(dataUrl, 'image');
             node.data.name = file.name;
             node.data.assetId = null;
             this.renderAll();
@@ -2796,13 +2883,13 @@ const CanvasModule = {
             if (rec && VideoModule._validAssetId(rec.id)) {
                 nn.data.assetId = rec.id;
                 nn.data.name = rec.name || nn.data.name;
-                // 用托管 URL 替换 data: 引用，审核轮询后徽标自动变为审核中/通过
-                if (httpUrl && httpUrl.startsWith('http')) { nn.data.url = httpUrl; nn.data.sourceUrl = httpUrl; }
+                // 临时托管 URL 只记 sourceUrl 备查，不再替换节点本地引用（图床过期会导致节点白屏）
+                if (httpUrl && httpUrl.startsWith('http')) nn.data.sourceUrl = httpUrl;
                 this.save();
                 UI.toast('视频已上传到素材库，等待火山审核（审核通过后才能生成视频）', 'info', 5000);
                 Logger.success(`[画布] 视频素材已入库: ${rec.id}`);
             } else {
-                if (httpUrl && httpUrl.startsWith('http')) { nn.data.url = httpUrl; nn.data.sourceUrl = httpUrl; }
+                if (httpUrl && httpUrl.startsWith('http')) nn.data.sourceUrl = httpUrl;
                 this.save();
                 UI.toast('视频已上传，火山审核通过后即可用 asset:// 引用', 'info', 5000);
             }
@@ -2853,12 +2940,12 @@ const CanvasModule = {
             if (rec && VideoModule._validAssetId(rec.id)) {
                 nn.data.assetId = rec.id;
                 nn.data.name = rec.name || nn.data.name;
-                if (httpUrl && httpUrl.startsWith('http')) { nn.data.url = httpUrl; nn.data.sourceUrl = httpUrl; }
+                if (httpUrl && httpUrl.startsWith('http')) nn.data.sourceUrl = httpUrl;
                 this.save();
                 UI.toast('音频已上传到素材库，等待火山审核（审核通过后才能生成视频）', 'info', 5000);
                 Logger.success(`[画布] 音频素材已入库: ${rec.id}`);
             } else {
-                if (httpUrl && httpUrl.startsWith('http')) { nn.data.url = httpUrl; nn.data.sourceUrl = httpUrl; }
+                if (httpUrl && httpUrl.startsWith('http')) nn.data.sourceUrl = httpUrl;
                 this.save();
                 UI.toast('音频已上传，火山审核通过后即可用 asset:// 引用', 'info', 5000);
             }
@@ -2913,15 +3000,15 @@ const CanvasModule = {
             if (rec && VideoModule._validAssetId(rec.id)) {
                 node.data.assetId = rec.id;
                 node.data.name = rec.name || node.data.name;
-                // 用托管 URL 替换 base64：展示不受影响，生成可直接引用，也节省本地存储
-                node.data.url = httpUrl;
+                // 临时托管 URL 只记 sourceUrl 备查，节点引用保持本地（图床过期会导致白屏）
+                if (httpUrl && httpUrl.startsWith('http')) node.data.sourceUrl = httpUrl;
                 this.renderAll();
                 this.save();
                 UI.toast('已同步到素材库，可使用 asset:// 引用', 'success');
                 Logger.success(`[画布] 图片已入库: ${rec.id}`);
             } else {
                 // 托管成功但没拿到有效 assetId（审核中/同步失败）：仍然换用 httpUrl，宽松模式可继续用
-                if (httpUrl && httpUrl.startsWith('http')) node.data.url = httpUrl;
+                if (httpUrl && httpUrl.startsWith('http')) node.data.sourceUrl = httpUrl;
                 this.renderAll();
                 this.save();
                 UI.toast('素材已上传，火山审核通过后即可用 asset:// 引用（当前仍可宽松模式直接生成）', 'info', 5000);
@@ -2953,13 +3040,14 @@ const CanvasModule = {
             if (rec && VideoModule._validAssetId(rec.id)) {
                 node.data.assetId = rec.id;
                 node.data.name = rec.name || node.data.name;
-                node.data.url = httpUrl; // 换托管 URL：展示不受影响，生成可直接引用，且节省本地存储
+                // 临时托管 URL 只记 sourceUrl 备查，节点引用保持本地（图床过期会导致白屏）
+                if (httpUrl && httpUrl.startsWith('http')) node.data.sourceUrl = httpUrl;
                 this.renderAll();
                 this.save();
                 UI.toast('音频已同步到素材库，生成时将用 asset:// 引用', 'success');
                 Logger.success(`[画布] 音频已入库: ${rec.id}`);
             } else {
-                if (httpUrl && httpUrl.startsWith('http')) node.data.url = httpUrl;
+                if (httpUrl && httpUrl.startsWith('http')) node.data.sourceUrl = httpUrl;
                 this.renderAll();
                 this.save();
                 UI.toast('音频已上传，火山审核通过后即可用 asset:// 引用（当前仍可宽松模式直接生成）', 'info', 5000);
@@ -3113,7 +3201,7 @@ const CanvasModule = {
                     if (VideoModule._validAssetId(m.data.assetId)) {
                         value = 'asset://' + m.data.assetId;
                     } else if (isLocalModel) {
-                        value = m.data.url; // base64 直传
+                        value = await this._fileUrlToDataUrl(m.data.url); // base64 直传（本地引用先读出）
                     } else if (m.data.url && m.data.url.startsWith('http')) {
                         value = m.data.url;
                     } else if (m.data.url) {
@@ -3148,7 +3236,7 @@ const CanvasModule = {
                     value = 'asset://' + a.data.assetId;
                 } else if (a.data.url) {
                     if (isLocalModel) {
-                        value = a.data.url; // base64 直传
+                        value = await this._fileUrlToDataUrl(a.data.url); // base64 直传（本地引用先读出）
                     } else if (a.data.url.startsWith('http')) {
                         value = a.data.url;
                     } else {
@@ -3171,13 +3259,14 @@ const CanvasModule = {
                     value = 'asset://' + v.data.assetId;
                 } else if (vurl) {
                     if (isLocalModel) {
-                        value = vurl;
+                        value = await this._fileUrlToDataUrl(vurl); // 本地引用先读出再直传
                     } else if (vurl.startsWith('http')) {
                         value = vurl;
-                    } else if (vurl.startsWith('data:')) {
+                    } else {
+                        // data: / file: 引用 → 托管公网后作为参考视频
                         setUploading(`正在上传参考视频「${v.data.name || '视频'}」...`);
                         value = await VideoModule._uploadToTempHost(vurl, v.data.name || 'canvas-ref-video');
-                        if (!value || value.startsWith('data:')) {
+                        if (!value || value.startsWith('data:') || /^file:/i.test(value)) {
                             throw new Error('参考视频上传公网托管失败，无法作为参考视频');
                         }
                     }
@@ -3251,7 +3340,7 @@ const CanvasModule = {
 
             node.data.status = 'done';
             node.data.progress = 100;
-            node.data.videoUrl = videoUrl;
+            node.data.videoUrl = await this._persistMediaUrl(videoUrl, 'video');
             this._saveResultToHistory('video', videoUrl, node.data.prompt || '', model);
             this._updateVideoNodeStatus(
                 this._nodesLayer.querySelector(`.cnode[data-id="${node.id}"]`), node);
