@@ -7,12 +7,12 @@
 const MAX_MEDIA_ITEMS = 9;
 
 /**
- * 用 XMLHttpRequest 把素材上传到临时托管(uguu.se)，并实时回报进度。
+ * 用 XMLHttpRequest 把素材上传到临时托管，并实时回报进度。
  * 相比 fetch，XHR 能拿到真实的 upload.onprogress 字节进度。
  *
  * 上传策略：
- *  - 超时设为 180 秒（覆盖绝大多数慢网大文件，实际基本够用）
- *  - 失败重试 3 次（超时/网络抖动时自动重试，避免一次失败就放弃）
+ *  - 主通道 uguu.se，超时 180 秒，失败重试 3 次（退避递增）
+ *  - uguu 全部失败后自动切换备用托管 litterbox（catbox 临时托管，72 小时有效）
  *  - 明确区分「上传被拒绝」(HTTP 非200 / success:false) 与「网络/超时」两类错误
  *
  * @param {string|File} dataUrl - base64 DataURL (data:mime;base64,...) 或 File 对象
@@ -116,7 +116,49 @@ async function uploadMediaToHost(dataUrl, filename, onProgress) {
         });
     }
 
-    // 重试最多 3 次，退避递增
+    // 备用托管：litterbox（catbox 临时托管，72h 有效），uguu 宕机时自动切换
+    function uploadLitterboxOnce() {
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            const fd = new FormData();
+            fd.append('reqtype', 'fileupload');
+            fd.append('time', '72h');
+            fd.append('fileToUpload', blob, safeName);
+            xhr.timeout = 180000;
+            xhr.upload.onprogress = (e) => {
+                if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
+            };
+            xhr.onload = () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    const url = String(xhr.responseText || '').trim();
+                    if (/^https?:\/\/\S+$/i.test(url)) resolve(url);
+                    else reject(Object.assign(new Error('备用托管未返回地址'), { kind: 'rejected' }));
+                } else {
+                    reject(Object.assign(new Error(`备用托管拒绝 (HTTP ${xhr.status})`), { kind: 'rejected' }));
+                }
+            };
+            xhr.onerror = () => reject(Object.assign(new Error('网络异常，无法连接备用托管'), { kind: 'network' }));
+            xhr.ontimeout = () => reject(Object.assign(new Error('备用托管上传超时'), { kind: 'network' }));
+            xhr.onabort = () => reject(Object.assign(new Error('上传已中断'), { kind: 'network' }));
+            xhr.open('POST', 'https://litterbox.catbox.moe/resources/internals/api.php', true);
+            xhr.send(fd);
+        });
+    }
+
+    async function uploadLitterbox() {
+        let err = null;
+        for (let i = 0; i < 2; i++) {
+            try {
+                return await uploadLitterboxOnce();
+            } catch (e) {
+                err = e;
+                if (i < 1) await new Promise(r => setTimeout(r, 1000));
+            }
+        }
+        throw err;
+    }
+
+    // 主通道 uguu.se：重试最多 3 次，退避递增
     let lastErr = null;
     for (let attempt = 0; attempt < 3; attempt++) {
         try {
@@ -133,7 +175,19 @@ async function uploadMediaToHost(dataUrl, filename, onProgress) {
             }
         }
     }
-    throw lastErr || new Error('上传失败');
+
+    // uguu 全部失败 → 自动切换备用托管 litterbox
+    try {
+        Logger.warn(`[上传托管] uguu 上传失败(${lastErr?.message || '未知'})，切换备用托管 litterbox...`);
+        if (onProgress) onProgress(1); // 重置进度条
+        const url = await uploadLitterbox();
+        if (onProgress) onProgress(100);
+        Logger.info(`[上传托管] 备用托管成功: ${safeName} → ${url}`);
+        return url;
+    } catch (e2) {
+        Logger.warn(`[上传托管] 备用托管也失败: ${e2.message}`);
+        throw lastErr || e2 || new Error('上传失败');
+    }
 }
 
 /**

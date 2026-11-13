@@ -12,7 +12,7 @@ PASS sync.refreshedAsset :: true
 PASS sync.refreshedUrl :: true
 PASS sync.audioDispatched :: true
 PASS sync.emptyNoCrash :: true
-RBUTTON {"_idi":"material_mwc7anee_f","_idv":"material_mwc7anei_g","_ida":"material_mwc7anem_h","_idf":"material_mwc7aneq_i","imageBtn":true,"videoBtn":true,"audioBtn":true,"freshBtn":true,"debugTexts":["同步素材","同步素材","同步素材","同步素材"]}
+RBUTTON {"_idi":"material_mwempxaj_f","_idv":"material_mwempxao_g","_ida":"material_mwempxas_h","_idf":"material_mwempxaw_i","imageBtn":true,"videoBtn":true,"audioBtn":true,"freshBtn":true,"debugTexts":["同步素材","同步素材","同步素材","同步素材"]}
 PASS btn.image
 PASS btn.video
 PASS btn.audio

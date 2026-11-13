@@ -962,6 +962,41 @@ const VideoModule = {
             for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
             const blob = new Blob([bytes], { type: mimeType });
 
+            // 备用托管：litterbox（catbox 临时托管，72h 有效），uguu 宕机时自动切换；返回纯文本 URL
+            async function uploadLitterbox() {
+                async function once() {
+                    const fd = new FormData();
+                    fd.append('reqtype', 'fileupload');
+                    fd.append('time', '72h');
+                    fd.append('fileToUpload', blob, safeName);
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 120000);
+                    try {
+                        const r = await fetch('https://litterbox.catbox.moe/resources/internals/api.php', {
+                            method: 'POST',
+                            body: fd,
+                            signal: controller.signal
+                        });
+                        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                        const url = (await r.text()).trim();
+                        if (!/^https?:\/\/\S+$/i.test(url)) throw new Error('备用托管未返回地址');
+                        return url;
+                    } finally {
+                        clearTimeout(timeoutId);
+                    }
+                }
+                let err = null;
+                for (let i = 0; i < 2; i++) {
+                    try {
+                        return await once();
+                    } catch (e) {
+                        err = e;
+                        if (i < 1) await new Promise(r => setTimeout(r, 1000));
+                    }
+                }
+                throw err;
+            }
+
             // 单次上传（带超时控制，45s），失败/超时抛出；每次重新构造 FormData（body 不可复用）
             async function uploadOnce() {
                 const fd = new FormData();
@@ -1000,9 +1035,18 @@ const VideoModule = {
             }
 
             if (!resp) {
+                // uguu 全部失败 → 自动切换备用托管 litterbox
+                try {
+                    Logger.warn('[上传托管] uguu 上传失败，切换备用托管 litterbox...');
+                    const httpUrl = await uploadLitterbox();
+                    Logger.info(`[上传托管] 备用托管成功! URL: ${httpUrl}`);
+                    return httpUrl;
+                } catch (e2) {
+                    Logger.warn(`[上传托管] 备用托管也失败: ${e2.message}`);
+                }
                 // 不再静默降级：降级会把 data: URL 塞给火山（火山不认 base64），
                 // 结果生成成功却没有参考，浪费额度且难排查。必须显式报错。
-                throw new Error('素材上传公网托管失败（3 次重试后仍失败/超时），火山不支持 base64 素材，请检查网络后重试');
+                throw new Error('素材上传公网托管失败（主通道与备用通道均失败），火山不支持 base64 素材，请检查网络后重试');
             }
 
             const result = await resp.json();

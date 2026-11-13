@@ -148,6 +148,41 @@ const RedrawModule = {
                 }
             }
 
+            // 备用托管：litterbox（catbox 临时托管，72h 有效），uguu 宕机时自动切换；返回纯文本 URL
+            async function uploadLitterbox() {
+                async function once() {
+                    const fd = new FormData();
+                    fd.append('reqtype', 'fileupload');
+                    fd.append('time', '72h');
+                    fd.append('fileToUpload', blob, safeName);
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 120000);
+                    try {
+                        const r = await fetch('https://litterbox.catbox.moe/resources/internals/api.php', {
+                            method: 'POST',
+                            body: fd,
+                            signal: controller.signal
+                        });
+                        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                        const url = (await r.text()).trim();
+                        if (!/^https?:\/\/\S+$/i.test(url)) throw new Error('备用托管未返回地址');
+                        return url;
+                    } finally {
+                        clearTimeout(timeoutId);
+                    }
+                }
+                let err = null;
+                for (let i = 0; i < 2; i++) {
+                    try {
+                        return await once();
+                    } catch (e) {
+                        err = e;
+                        if (i < 1) await new Promise(r => setTimeout(r, 1000));
+                    }
+                }
+                throw err;
+            }
+
             let resp = null;
             let lastErr = null;
             for (let attempt = 0; attempt < 3; attempt++) {
@@ -162,6 +197,15 @@ const RedrawModule = {
             }
 
             if (!resp) {
+                // uguu 全部失败 → 自动切换备用托管 litterbox
+                try {
+                    Logger.warn('[图生图] uguu 上传失败，切换备用托管 litterbox...');
+                    const httpUrl = await uploadLitterbox();
+                    Logger.info(`[图生图] 备用托管成功: ${httpUrl}`);
+                    return httpUrl;
+                } catch (e2) {
+                    Logger.warn(`[图生图] 备用托管也失败: ${e2.message}`);
+                }
                 Logger.warn(`[图生图] 托管上传失败: ${lastErr?.message || '未知'}`);
                 return dataUrl;
             }
